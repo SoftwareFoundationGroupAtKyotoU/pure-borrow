@@ -39,6 +39,9 @@ infIntro _ _ _ = witness
 infComm :: forall a b -> Witness (a /\ b) (b /\ a)
 infComm _ _ = witness
 
+infMonotone :: forall a b c -> (a <= b) => Witness (a /\ c) (b /\ c)
+infMonotone _ _ _ = witness
+
 infL :: forall a b -> Witness (a /\ b) a
 infL _ _ = witness
 

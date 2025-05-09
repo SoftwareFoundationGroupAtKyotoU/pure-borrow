@@ -36,6 +36,10 @@ common defaults
     -Wredundant-constraints
     -Wunused-packages
 
+  build-depends:
+    base >=4.17 && <5,
+    linear-base >=0.5,
+
 library
   import: defaults
   hs-source-dirs: src
@@ -43,8 +47,6 @@ library
   exposed-modules: Foo
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0
   build-depends:
-    base >=4.17,
-    linear-base >=0.4,
 
 test-suite test
   import: defaults
@@ -57,6 +59,7 @@ test-suite test
     -threaded
 
   build-depends:
-    base >=4.17,
-    linear-base >=0.4,
+    inspection-testing,
     pure-borrow,
+    tasty,
+    tasty-hunit,

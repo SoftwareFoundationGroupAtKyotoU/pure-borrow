@@ -67,6 +67,9 @@ test-suite test
     -O2
     -threaded
 
+  build-tool-depends:
+    tasty-discover:tasty-discover >=5.0.1
+
   build-depends:
     deepseq,
     inspection-testing,

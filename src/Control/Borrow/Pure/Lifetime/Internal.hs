@@ -63,11 +63,11 @@ class α <= β where
   -- | The witness of the relation.
   witness :: Witness α β
 
-instance {-# OVERLAPS #-} (α <= β, α <= γ) => α <= β /\ γ where
+instance (α <= β, α <= γ) => α <= β /\ γ where
   witness = Inf witness witness
   {-# NOINLINE witness #-}
 
-instance {-# OVERLAPS #-} α <= Static where
+instance α <= Static where
   witness = Top
   {-# NOINLINE witness #-}
 

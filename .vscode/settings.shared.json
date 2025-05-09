@@ -1,0 +1,18 @@
+{
+  "haskell.formattingProvider": "fourmolu",
+  "haskell.cabalFormattingProvider": "cabal-gild",
+  "[ci-configs/*.config]": {},
+  "files.associations": {
+    "*.config": "cabal"
+  },
+  "files.exclude": {
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true,
+    "**/CVS": true,
+    "**/.ruby-lsp": true,
+    "**/dist-newstyle": true
+  }
+}

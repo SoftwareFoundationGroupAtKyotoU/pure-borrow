@@ -14,5 +14,14 @@
     "**/CVS": true,
     "**/.ruby-lsp": true,
     "**/dist-newstyle": true
+  },
+  "emeraldwalk.runonsave": {
+    "commands": [
+      {
+        "match": ".*\\.c?(l?hs|hsig)c?$",
+        "isAsync": true,
+        "cmd": "find . -type f \\( -name '*.cabal' -or -name 'cabal.*' -or -name '*.project' \\) -exec cabal run  -- cabal-gild --io {} \\;"
+      }
+    ]
   }
 }

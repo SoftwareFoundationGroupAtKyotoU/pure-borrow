@@ -42,9 +42,13 @@ common defaults
 
 library
   import: defaults
+  build-depends: deepseq
   hs-source-dirs: src
   -- cabal-gild: discover src
-  exposed-modules: Foo
+  exposed-modules:
+    Control.Borrow.Pure.Lifetime
+    Control.Borrow.Pure.Lifetime.Internal
+
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0
   build-depends:
 
@@ -54,12 +58,19 @@ test-suite test
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: Main.hs
+  -- cabal-gild: discover test --exclude=test/Main.hs
+  other-modules:
+    Control.Borrow.Pure.Lifetime.TypingCases
+    Control.Borrow.Pure.LifetimeSpec
+
   ghc-options:
     -O2
     -threaded
 
   build-depends:
+    deepseq,
     inspection-testing,
     pure-borrow,
     tasty,
+    tasty-discover,
     tasty-hunit,

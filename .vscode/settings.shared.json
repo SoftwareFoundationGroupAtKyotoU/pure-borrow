@@ -1,6 +1,8 @@
 {
   "haskell.formattingProvider": "fourmolu",
   "haskell.cabalFormattingProvider": "cabal-gild",
+  "haskell.sessionLoading": "multipleComponents",
+  "haskell.plugin.rename.config.crossModule": true,
   "[ci-configs/*.config]": {},
   "files.associations": {
     "*.config": "cabal"

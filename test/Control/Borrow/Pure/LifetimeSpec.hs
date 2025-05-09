@@ -8,7 +8,7 @@ module Control.Borrow.Pure.LifetimeSpec (
 
 import Control.Borrow.Pure.Lifetime.Internal
 import Control.Borrow.Pure.Lifetime.TypingCases
-import Control.DeepSeq (NFData (..), force)
+import Control.DeepSeq (force)
 import Control.Exception (evaluate)
 import Data.Functor
 import Test.Tasty (TestTree, testGroup)
@@ -34,6 +34,8 @@ test_should_pass =
         void $ evaluate $ force $ withDict l1LeqL2 $ infElimL L1 L2 L3
     , testCase "a <= b => c /\\ a <= b" do
         void $ evaluate $ force $ withDict l1LeqL2 $ infElimR L1 L2 L3
+    , testCase "a <= b => a /\\ c <= b /\\ c" do
+        void $ evaluate $ force $ withDict l1LeqL2 $ infMonotone L1 L2 L3
     , testCase "(a <= b, a <= c) => a <= b /\\ c" do
         void $ evaluate $ force $ withDict l1LeqL2 $ withDict l1LeqL3 $ infIntro L1 L2 L3
     , testCase "a /\\ b <= b /\\ a" do

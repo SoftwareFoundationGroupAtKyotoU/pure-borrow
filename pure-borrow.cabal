@@ -48,6 +48,9 @@ library
   exposed-modules:
     Control.Borrow.Pure.Lifetime
     Control.Borrow.Pure.Lifetime.Internal
+    Control.Borrow.Pure.Lifetime.Token
+    Control.Borrow.Pure.Multiplicity
+    Control.Comonad.Linear
 
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0
   build-depends:

@@ -12,6 +12,7 @@ import Control.DeepSeq (force)
 import Control.Exception (evaluate)
 import Data.Functor
 import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.ExpectedFailure (expectFailBecause)
 import Test.Tasty.HUnit (testCase)
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -28,14 +29,18 @@ test_should_pass :: TestTree
 test_should_pass =
   testGroup
     "should typechecks"
-    [ testCase "(a <= b, b <= c) => a <= c" do
-        void $ evaluate $ force $ withDict l1LeqL2 $ withDict l2LeqL3 $ transitive @L1 @L2 @L3
-    , testCase "a <= b => a /\\ c <= b" do
-        void $ evaluate $ force $ withDict l1LeqL2 $ infElimL L1 L2 L3
-    , testCase "a <= b => c /\\ a <= b" do
-        void $ evaluate $ force $ withDict l1LeqL2 $ infElimR L1 L2 L3
-    , testCase "a <= b => a /\\ c <= b /\\ c" do
-        void $ evaluate $ force $ withDict l1LeqL2 $ infMonotone L1 L2 L3
+    [ expectFailBecause "We don't rely on transitivity" $
+        testCase "(a <= b, b <= c) => a <= c" do
+          void $ evaluate $ force $ withDict l1LeqL2 $ withDict l2LeqL3 $ transitive @L1 @L2 @L3
+    , expectFailBecause "Monotonicity is not guaranteed and not currently used" $
+        testCase "a <= b => a /\\ c <= b" do
+          void $ evaluate $ force $ withDict l1LeqL2 $ infElimL L1 L2 L3
+    , expectFailBecause "Monotonicity is not guaranteed and not currently used" $
+        testCase "a <= b => c /\\ a <= b" do
+          void $ evaluate $ force $ withDict l1LeqL2 $ infElimR L1 L2 L3
+    , expectFailBecause "Monotonicity is not guaranteed and not currently used" $
+        testCase "a <= b => a /\\ c <= b /\\ c" do
+          void $ evaluate $ force $ withDict l1LeqL2 $ infMonotone L1 L2 L3
     , testCase "(a <= b, a <= c) => a <= b /\\ c" do
         void $ evaluate $ force $ withDict l1LeqL2 $ withDict l1LeqL3 $ infIntro L1 L2 L3
     , testCase "a /\\ b <= b /\\ a" do

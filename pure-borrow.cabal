@@ -1,44 +1,79 @@
-cabal-version:      3.0
-name:               pure-borrow
-version:            0.1.0.0
-synopsis:           Pure realization of Rust-style borrows
-description:        Please see README.md.
-license:            BSD-3-Clause
-license-file:       LICENSE
-author:             Yusuke Matsushita
-maintainer:         ysk.m24t@gmail.com
-copyright:          Copyright (c) 2025, Yusuke Matsushita
-category:           Linear Haskell
-build-type:         Simple
-homepage:           https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow
+cabal-version: 3.4
+name: pure-borrow
+version: 0.1.0.0
+synopsis: Pure realization of Rust-style borrows
+description: Please see README.md.
+license: BSD-3-Clause
+license-file: LICENSE
+author: Yusuke Matsushita
+maintainer: ysk.m24t@gmail.com
+copyright: Copyright (c) 2025, Yusuke Matsushita
+category: Linear Haskell
+build-type: Simple
+homepage: https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow
 extra-doc-files:
-    README.md
-    CHANGELOG.md
+  CHANGELOG.md
+  README.md
 
 source-repository head
-    type:     git
-    location: https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow
+  type: git
+  location: https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow
 
-common options
-    ghc-options: -O2 -Wall -Wcompat
+common defaults
+  default-language: GHC2021
+  default-extensions: LinearTypes
+  autogen-modules: Paths_pure_borrow
+  other-modules: Paths_pure_borrow
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wmissing-export-lists
+    -Wmissing-home-modules
+    -Wpartial-fields
+    -Wredundant-constraints
+    -Wunused-packages
+
+  build-depends:
+    base >=4.17 && <5,
+    linear-base >=0.5,
 
 library
-    import:           options
-    default-language: Haskell2010
-    hs-source-dirs:   src
-    exposed-modules:
-        Foo
-    build-depends:
-        base >=4.17,
-        linear-base >=0.4
+  import: defaults
+  build-depends: deepseq
+  hs-source-dirs: src
+  -- cabal-gild: discover src
+  exposed-modules:
+    Control.Borrow.Pure.Lifetime
+    Control.Borrow.Pure.Lifetime.Internal
+
+  build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0
+  build-depends:
 
 test-suite test
-    import:           options
-    default-language: Haskell2010
-    type:             exitcode-stdio-1.0
-    hs-source-dirs:   test
-    main-is:          Main.hs
-    build-depends:
-        base >=4.17,
-        linear-base >=0.4,
-        pure-borrow
+  import: defaults
+  default-language: GHC2021
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Main.hs
+  -- cabal-gild: discover test --exclude=test/Main.hs
+  other-modules:
+    Control.Borrow.Pure.Lifetime.TypingCases
+    Control.Borrow.Pure.LifetimeSpec
+
+  ghc-options:
+    -O2
+    -threaded
+
+  build-tool-depends:
+    tasty-discover:tasty-discover >=5.0.1
+
+  build-depends:
+    deepseq,
+    inspection-testing,
+    pure-borrow,
+    tasty,
+    tasty-discover,
+    tasty-hunit,

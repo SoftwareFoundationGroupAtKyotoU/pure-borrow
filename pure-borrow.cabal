@@ -76,4 +76,5 @@ test-suite test
     pure-borrow,
     tasty,
     tasty-discover,
+    tasty-expected-failure,
     tasty-hunit,

@@ -33,6 +33,8 @@ module Control.Borrow.Pure.Affine.Internal (
   fromAffine,
 ) where
 
+import Data.Comonad.Linear qualified as Data
+import Data.Functor.Linear qualified as Data
 import Data.Int
 import Data.Kind
 import Data.Monoid qualified as Mon
@@ -45,8 +47,13 @@ import Generics.Linear
 import Unsafe.Linear qualified as Unsafe
 
 {- |
-A linear resource that is _entirely_ allocated on GC heap and  can be regarded as 'Affine'.
-It cannot be released promptly, but it is guaranteed to be released in the future by GC.
+An 'Affine' type is either:
+
+  1. allocated entirely on GC heap including its _contents_, or
+  2. a resource already bound nonlinearly.
+
+Second clause is to exclude the nonlinear case where we cannot be sure anything about its consumption.
+So, in particular, you can use 'Affine' types under linear context when you don't need prompt resource management and want let GC to release the resource.
 
 At first glance, this seems rather analogous to 'Prelude.Linear.Consumable', but its 'Prelude.Linear.consume' counterpart 'pop' is _not_ a member of 'Affine'.
 The rationale is that the condition of being maintained by GC is much stronger than mere 'Consumable' types.
@@ -176,6 +183,11 @@ unaff :: Aff a %1 -> a
 unaff (UnsafeAff a) = a
 {-# INLINE unaff #-}
 
+{- | You can bring nonlienar resources into 'Aff' context.
+
+Note that, when you use 'aff' to bring a foreign resource (e.g. 'Foreign.Ptr'),
+it is user's responsibility to ensure 'Forign.free' is called on the resource after the @'Aff' ('Foreign.Ptr' a)@ is popped.
+-}
 aff :: a -> Aff a
 aff = UnsafeAff
 {-# INLINE aff #-}
@@ -187,6 +199,23 @@ fromAffine = Unsafe.toLinear UnsafeAff
 instance Affine (Aff a) where
   affinityWitness = UnsafeAssumeAffinity
   {-# INLINE affinityWitness #-}
+
+instance Data.Functor Aff where
+  fmap f (UnsafeAff a) = UnsafeAff (f a)
+  {-# INLINE fmap #-}
+
+instance Data.Comonad Aff where
+  extract (UnsafeAff a) = a
+  {-# INLINE extract #-}
+
+  duplicate (UnsafeAff a) = UnsafeAff (UnsafeAff a)
+  {-# INLINE duplicate #-}
+
+instance Data.ComonadApply Aff where
+  (UnsafeAff f) <@> (UnsafeAff a) = UnsafeAff (f a)
+  {-# INLINE (<@>) #-}
+
+-- * Generics
 
 instance (GenericAffine a) => Affine (Generically a) where
   affinityWitness = UnsafeAssumeAffinity

@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
-{-# OPTIONS_HADDOCK hidden #-}
+{-# OPTIONS_HADDOCK hide #-}
 
 module Control.Borrow.Pure.Lifetime.Internal (
   module Control.Borrow.Pure.Lifetime.Internal,

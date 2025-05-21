@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE TypeOperators #-}

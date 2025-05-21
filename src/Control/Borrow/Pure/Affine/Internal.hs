@@ -38,6 +38,7 @@ import Data.Kind
 import Data.Monoid qualified as Mon
 import Data.Ord (Down)
 import Data.Semigroup qualified as Sem
+import Data.Unrestricted.Linear (Ur)
 import Data.Word
 import GHC.Base
 import Generics.Linear
@@ -115,9 +116,9 @@ deriving via UnsafeAsAffine Char instance Affine Char
 
 deriving via UnsafeAsAffine Bool instance Affine Bool
 
-deriving via UnsafeAsAffine Sem.Any instance Affine Sem.Any
+deriving newtype instance Affine Sem.Any
 
-deriving via UnsafeAsAffine Sem.All instance Affine Sem.All
+deriving newtype instance Affine Sem.All
 
 deriving via Generically (Maybe a) instance (Affine a) => Affine (Maybe a)
 
@@ -126,7 +127,7 @@ deriving via
   instance
     (Affine a, Affine b) => Affine (Either a b)
 
-deriving via UnsafeAsAffine () instance Affine ()
+deriving via Generically () instance Affine ()
 
 deriving via
   Generically (a, b)
@@ -166,20 +167,26 @@ deriving via (Maybe a) instance (Affine a) => Affine (Mon.First a)
 
 deriving via (Maybe a) instance (Affine a) => Affine (Mon.Last a)
 
+deriving via Generically (Ur a) instance Affine (Ur a)
+
 data Aff a where
-  UnsafeAff :: a -> Aff a
+  UnsafeAff :: a %Many -> Aff a
 
 unaff :: Aff a %1 -> a
 unaff (UnsafeAff a) = a
 {-# INLINE unaff #-}
 
 aff :: a -> Aff a
-aff a = UnsafeAff a
+aff = UnsafeAff
 {-# INLINE aff #-}
 
 fromAffine :: (Affine a) => a %1 -> Aff a
 fromAffine = Unsafe.toLinear UnsafeAff
 {-# INLINE fromAffine #-}
+
+instance Affine (Aff a) where
+  affinityWitness = UnsafeAssumeAffinity
+  {-# INLINE affinityWitness #-}
 
 instance (GenericAffine a) => Affine (Generically a) where
   affinityWitness = UnsafeAssumeAffinity

@@ -49,16 +49,16 @@ import Unsafe.Linear qualified as Unsafe
 {- |
 An 'Affine' type is either:
 
-  1. allocated entirely on GC heap including its _contents_, or
+  1. allocated entirely on GC heap including its /contents/, or
   2. a resource already bound nonlinearly.
 
 Second clause is to exclude the nonlinear case where we cannot be sure anything about its consumption.
 So, in particular, you can use 'Affine' types under linear context when you don't need prompt resource management and want let GC to release the resource.
 
-At first glance, this seems rather analogous to 'Prelude.Linear.Consumable', but its 'Prelude.Linear.consume' counterpart 'pop' is _not_ a member of 'Affine'.
+At first glance, this seems rather analogous to 'Prelude.Linear.Consumable', but its 'Prelude.Linear.consume' counterpart 'pop' is /not/ a member of 'Affine'.
 The rationale is that the condition of being maintained by GC is much stronger than mere 'Consumable' types.
 
-One counterexample is 'Foreign.Ptr' - it is just a pointer to a resource _outside GC heap resource_, and hence the real resouce @a@ will not be freed even after corresponding @'Foreign.Ptr' a@ itself is freed by the GC!
+One counterexample is 'Foreign.Ptr' - it is just a pointer to a resource /outside GC heap resource/, and hence the real resouce @a@ will not be freed even after corresponding @'Foreign.Ptr' a@ itself is freed by the GC!
 
 Despite the similarity, 'Affine' types are not necessarily a 'Consumable' and vice versa - one such example is @'Aff' a@.
 This is an instance of 'Affine' regardless of type parameter @a@, and in particular, any @'Aff' (a -> b)@ is affine regardless of @a@ and @b@.

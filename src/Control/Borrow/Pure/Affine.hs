@@ -5,18 +5,16 @@
 {-# LANGUAGE StandaloneKindSignatures #-}
 
 module Control.Borrow.Pure.Affine (
-  -- * Affine Types
-  Affine,
+  -- * Affine Modality
+  Affable (..),
+  Aff,
+  affu,
+  unaff,
   pop,
 
   -- ** Linear Generics
-  GenericAffine,
-
-  -- * Affine modality
-  Aff,
-  unaff,
-  aff,
-  fromAffine,
+  GenericAffable,
+  GenericallyAffable (..),
 ) where
 
 import Control.Borrow.Pure.Affine.Internal

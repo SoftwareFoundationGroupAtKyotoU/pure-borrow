@@ -12,11 +12,3 @@ import GHC.Base (ZeroBitType)
 newtype Now (α :: Lifetime) = UnsafeNow (# #)
 
 newtype End (α :: Lifetime) = UnsafeEnd (# #)
-
-instance Affine (Now a) where
-  affinityWitness = UnsafeAssumeAffinity
-  {-# INLINE affinityWitness #-}
-
-instance Affine (End a) where
-  affinityWitness = UnsafeAssumeAffinity
-  {-# INLINE affinityWitness #-}

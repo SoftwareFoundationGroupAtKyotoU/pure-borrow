@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE PolyKinds #-}
@@ -15,22 +16,15 @@
 
 module Control.Borrow.Pure.Affine.Internal (
   -- * Affine Types
-  Affine (..),
+  Affable (..),
+  Aff (..),
+  affu,
+  unaff,
   pop,
-  pop#,
-  popZero,
 
   -- ** Linear Generics
-  GenericAffine,
-
-  -- ** Internal utilities for implementing 'Affine
-  AffinityWitness (..),
-
-  -- * Affine modality
-  Aff,
-  aff,
-  unaff,
-  fromAffine,
+  GenericAffable,
+  GenericallyAffable (..),
 ) where
 
 import Data.Comonad.Linear qualified as Data
@@ -38,167 +32,37 @@ import Data.Functor.Linear qualified as Data
 import Data.Int
 import Data.Kind
 import Data.Monoid qualified as Mon
-import Data.Ord (Down)
 import Data.Semigroup qualified as Sem
-import Data.Unrestricted.Linear (Ur)
+import Data.Unrestricted.Linear
 import Data.Word
 import GHC.Base
 import Generics.Linear
+import Prelude.Linear qualified as PL
 import Unsafe.Linear qualified as Unsafe
 
-{- |
-An 'Affine' type is either:
-
-  1. allocated entirely on GC heap including its /contents/, or
-  2. a resource already bound nonlinearly.
-
-Second clause is to exclude the nonlinear case where we cannot be sure anything about its consumption.
-So, in particular, you can use 'Affine' types under linear context when you don't need prompt resource management and want let GC to release the resource.
-
-At first glance, this seems rather analogous to 'Prelude.Linear.Consumable', but its 'Prelude.Linear.consume' counterpart 'pop' is /not/ a member of 'Affine'.
-The rationale is that the condition of being maintained by GC is much stronger than mere 'Consumable' types.
-
-One counterexample is 'Foreign.Ptr' - it is just a pointer to a resource /outside GC heap resource/, and hence the real resouce @a@ will not be freed even after corresponding @'Foreign.Ptr' a@ itself is freed by the GC!
-
-Despite the similarity, 'Affine' types are not necessarily a 'Consumable' and vice versa - one such example is @'Aff' a@.
-This is an instance of 'Affine' regardless of type parameter @a@, and in particular, any @'Aff' (a -> b)@ is affine regardless of @a@ and @b@.
-The independence of 'pop' from 'Affine' is inevitable for this instance - otherwise, we must call 'pop' for codomain types.
-
-The invariant of "always maintained on GC heap" is so strong and it is the responsibilty of library implementors to declare the valid instance of 'Affine'.
-
-To prevent the wrong implementation, 'Affine' has the hidden member constant 'affinityWitness'.
-The type needed to implement is defined in "Control.Borrow.Pure.Affine.Internal", which is hidden in Hacddock.
-
-Most users can use 'Generically' in combination with 'Generics.Linear.TH.deriveGeneric' to derive 'Affine' for the types that can safely be regarded as 'Affine'.
--}
-type Affine :: forall {rep}. TYPE rep -> Constraint
-class Affine a where
-  affinityWitness :: AffinityWitness a
-
-data AffinityWitness a = UnsafeAssumeAffinity
-
-pop :: (Affine a) => a %1 -> ()
-pop = Unsafe.toLinear \_ -> ()
-{-# INLINE pop #-}
-
-pop# :: forall (a :: UnliftedType). (Affine a) => a %1 -> ()
-pop# = Unsafe.toLinear \_ -> ()
-{-# INLINE pop# #-}
-
-popZero :: forall (a :: ZeroBitType). (Affine a) => a %1 -> ()
-popZero = Unsafe.toLinear \_ -> ()
-{-# INLINE popZero #-}
-
-newtype UnsafeAsAffine a = UnsafeAsAffine a
-
--- To suppress the warning.
-_u :: UnsafeAsAffine ()
-_u = UnsafeAsAffine ()
-
-instance Affine (UnsafeAsAffine a) where
-  affinityWitness = UnsafeAssumeAffinity
-  {-# INLINE affinityWitness #-}
-
-deriving via UnsafeAsAffine Int instance Affine Int
-
-deriving via UnsafeAsAffine Int8 instance Affine Int8
-
-deriving via UnsafeAsAffine Int16 instance Affine Int16
-
-deriving via UnsafeAsAffine Int32 instance Affine Int32
-
-deriving via UnsafeAsAffine Int64 instance Affine Int64
-
-deriving via UnsafeAsAffine Word instance Affine Word
-
-deriving via UnsafeAsAffine Word8 instance Affine Word8
-
-deriving via UnsafeAsAffine Word16 instance Affine Word16
-
-deriving via UnsafeAsAffine Word32 instance Affine Word32
-
-deriving via UnsafeAsAffine Word64 instance Affine Word64
-
-deriving via UnsafeAsAffine Char instance Affine Char
-
-deriving via UnsafeAsAffine Bool instance Affine Bool
-
-deriving newtype instance Affine Sem.Any
-
-deriving newtype instance Affine Sem.All
-
-deriving via Generically (Maybe a) instance (Affine a) => Affine (Maybe a)
-
-deriving via
-  Generically (Either a b)
-  instance
-    (Affine a, Affine b) => Affine (Either a b)
-
-deriving via Generically () instance Affine ()
-
-deriving via
-  Generically (a, b)
-  instance
-    (Affine a, Affine b) => Affine (a, b)
-
-deriving via
-  Generically (a, b, c)
-  instance
-    (Affine a, Affine b, Affine c) => Affine (a, b, c)
-
-deriving via
-  Generically (a, b, c, d)
-  instance
-    (Affine a, Affine b, Affine c, Affine d) => Affine (a, b, c, d)
-
-deriving via
-  Generically (a, b, c, d, e)
-  instance
-    (Affine a, Affine b, Affine c, Affine d, Affine e) => Affine (a, b, c, d, e)
-
-deriving via Generically (Sem.Sum a) instance (Affine a) => Affine (Sem.Sum a)
-
-deriving via Generically (Sem.Product a) instance (Affine a) => Affine (Sem.Product a)
-
-deriving via Generically (Sem.First a) instance (Affine a) => Affine (Sem.First a)
-
-deriving via Generically (Sem.Last a) instance (Affine a) => Affine (Sem.Last a)
-
-deriving via Generically (Sem.Dual a) instance (Affine a) => Affine (Sem.Dual a)
-
-deriving via Generically (Down a) instance (Affine a) => Affine (Down a)
-
-deriving via Generically [a] instance (Affine a) => Affine [a]
-
-deriving via (Maybe a) instance (Affine a) => Affine (Mon.First a)
-
-deriving via (Maybe a) instance (Affine a) => Affine (Mon.Last a)
-
-deriving via Generically (Ur a) instance Affine (Ur a)
-
 data Aff a where
-  UnsafeAff :: a %Many -> Aff a
+  UnsafeAff :: a %One -> Aff a
 
 unaff :: Aff a %1 -> a
-unaff (UnsafeAff a) = a
+unaff (UnsafeAff !a) = a
 {-# INLINE unaff #-}
 
-{- | You can bring nonlienar resources into 'Aff' context.
+{- | You can bring unrestricted resources into 'Aff' context.
 
 Note that, when you use 'aff' to bring a foreign resource (e.g. 'Foreign.Ptr'),
 it is user's responsibility to ensure 'Forign.free' is called on the resource after the @'Aff' ('Foreign.Ptr' a)@ is popped.
 -}
-aff :: a -> Aff a
-aff = UnsafeAff
-{-# INLINE aff #-}
+affu :: a -> Aff a
+affu = UnsafeAff
+{-# INLINE affu #-}
 
-fromAffine :: (Affine a) => a %1 -> Aff a
-fromAffine = Unsafe.toLinear UnsafeAff
-{-# INLINE fromAffine #-}
+pop :: Aff a %1 -> ()
+pop = Unsafe.toLinear (\(UnsafeAff !_) -> ())
+{-# INLINE pop #-}
 
-instance Affine (Aff a) where
-  affinityWitness = UnsafeAssumeAffinity
-  {-# INLINE affinityWitness #-}
+instance Consumable (Aff a) where
+  consume = pop
+  {-# INLINE consume #-}
 
 instance Data.Functor Aff where
   fmap f (UnsafeAff a) = UnsafeAff (f a)
@@ -215,38 +79,154 @@ instance Data.ComonadApply Aff where
   (UnsafeAff f) <@> (UnsafeAff a) = UnsafeAff (f a)
   {-# INLINE (<@>) #-}
 
+type Affable :: Type -> Constraint
+class Affable a where
+  aff :: a %1 -> Aff a
+
+instance (Movable a) => Affable (AsMovable a) where
+  aff (AsMovable a) = move a PL.& \(Ur x) -> UnsafeAff (AsMovable x)
+  {-# INLINE aff #-}
+
+deriving via AsMovable (Ur a) instance Affable (Ur a)
+
+deriving via AsMovable Bool instance Affable Bool
+
+deriving via AsMovable Char instance Affable Char
+
+deriving via AsMovable Int instance Affable Int
+
+deriving via AsMovable Int8 instance Affable Int8
+
+deriving via AsMovable Int16 instance Affable Int16
+
+deriving via AsMovable Int32 instance Affable Int32
+
+deriving via AsMovable Int64 instance Affable Int64
+
+deriving via AsMovable Word instance Affable Word
+
+deriving via AsMovable Word8 instance Affable Word8
+
+deriving via AsMovable Word16 instance Affable Word16
+
+deriving via AsMovable Word32 instance Affable Word32
+
+deriving via AsMovable Word64 instance Affable Word64
+
+newtype AsAffable a = AsAffable a
+
+instance (Affable a) => Consumable (AsAffable a) where
+  consume (AsAffable a) = pop (aff a)
+  {-# INLINE consume #-}
+
+deriving newtype instance Affable Sem.Any
+
+deriving newtype instance Affable Sem.All
+
+deriving via GenericallyAffable (Maybe a) instance (Affable a) => Affable (Maybe a)
+
+deriving via
+  GenericallyAffable (Either a b)
+  instance
+    (Affable a, Affable b) => Affable (Either a b)
+
+deriving via GenericallyAffable () instance Affable ()
+
+deriving via
+  GenericallyAffable (a, b)
+  instance
+    (Affable a, Affable b) => Affable (a, b)
+
+deriving via
+  GenericallyAffable (a, b, c)
+  instance
+    (Affable a, Affable b, Affable c) => Affable (a, b, c)
+
+deriving via
+  GenericallyAffable (a, b, c, d)
+  instance
+    (Affable a, Affable b, Affable c, Affable d) => Affable (a, b, c, d)
+
+deriving via
+  GenericallyAffable (a, b, c, d, e)
+  instance
+    (Affable a, Affable b, Affable c, Affable d, Affable e) => Affable (a, b, c, d, e)
+
+deriving via GenericallyAffable (Sem.Sum a) instance (Affable a) => Affable (Sem.Sum a)
+
+deriving via GenericallyAffable (Sem.Product a) instance (Affable a) => Affable (Sem.Product a)
+
+deriving via GenericallyAffable (Sem.First a) instance (Affable a) => Affable (Sem.First a)
+
+deriving via GenericallyAffable (Sem.Last a) instance (Affable a) => Affable (Sem.Last a)
+
+deriving via GenericallyAffable (Sem.Dual a) instance (Affable a) => Affable (Sem.Dual a)
+
+deriving via GenericallyAffable [a] instance (Affable a) => Affable [a]
+
+deriving via (Maybe a) instance (Affable a) => Affable (Mon.First a)
+
+deriving via (Maybe a) instance (Affable a) => Affable (Mon.Last a)
+
 -- * Generics
 
-instance (GenericAffine a) => Affine (Generically a) where
-  affinityWitness = UnsafeAssumeAffinity
-  {-# INLINE affinityWitness #-}
+newtype GenericallyAffable a = GenericallyAffable a
 
-{- | A constraint synonym for types for which 'Affine' instance
+unGenericallyAffable :: GenericallyAffable a %1 -> a
+unGenericallyAffable (GenericallyAffable a) = a
+
+deriving via
+  AsAffable (GenericallyAffable a)
+  instance
+    (GenericAffable a) => Consumable (GenericallyAffable a)
+
+instance (GenericAffable a) => Affable (GenericallyAffable a) where
+  aff = Data.fmap GenericallyAffable PL.. genericAff PL.. unGenericallyAffable
+  {-# INLINE aff #-}
+
+genericAff :: (GenericAffable a) => a %1 -> Aff a
+genericAff a = to Data.<$> gaff (from a)
+
+{- | A constraint synonym for types for which 'Affable' instance
 can be safely derived via 'Generically'.
 -}
-class (Generic a, GAffine (Rep a)) => GenericAffine a
+class (Generic a, GAffable (Rep a)) => GenericAffable a
 
-instance (Generic a, GAffine (Rep a)) => GenericAffine a
+instance (Generic a, GAffable (Rep a)) => GenericAffable a
 
-class (Generic1 f, GAffine (Rep1 f)) => GenericAffine1 f
+type GAffable :: (k -> Type) -> Constraint
+class GAffable f where
+  gaff :: f a %1 -> Aff (f a)
 
-instance (Generic1 f, GAffine (Rep1 f)) => GenericAffine1 f
+instance (Affable a) => GAffable (K1 i a) where
+  gaff (K1 a) = K1 Data.<$> aff a
+  {-# INLINE gaff #-}
 
-type GAffine :: (k -> Type) -> Constraint
-class GAffine f
+instance (GAffable f, GAffable g) => GAffable (f :+: g) where
+  gaff (L1 x) = L1 Data.<$> gaff x
+  gaff (R1 y) = R1 Data.<$> gaff y
+  {-# INLINE gaff #-}
 
-instance (Affine a) => GAffine (K1 i a)
+instance (GAffable f, GAffable g) => GAffable (f :*: g) where
+  gaff (x :*: y) = (:*:) Data.<$> gaff x Data.<@> gaff y
+  {-# INLINE gaff #-}
 
-instance (GAffine f, GAffine g) => GAffine (f :+: g)
+instance GAffable (MP1 Many f) where
+  gaff (MP1 x) = UnsafeAff (MP1 x)
+  {-# INLINE gaff #-}
 
-instance (GAffine f, GAffine g) => GAffine (f :*: g)
+instance (GAffable f) => GAffable (MP1 One f) where
+  gaff (MP1 x) = MP1 Data.<$> gaff x
+  {-# INLINE gaff #-}
 
-instance GAffine (MP1 Many f)
+instance GAffable V1 where
+  gaff = \case {}
+  {-# INLINE gaff #-}
 
-instance (GAffine f) => GAffine (MP1 One f)
+instance GAffable U1 where
+  gaff U1 = UnsafeAff U1
+  {-# INLINE gaff #-}
 
-instance GAffine V1
-
-instance GAffine U1
-
-instance (GAffine f) => GAffine (M1 i c f)
+instance (GAffable f) => GAffable (M1 i c f) where
+  gaff (M1 x) = M1 Data.<$> gaff x
+  {-# INLINE gaff #-}

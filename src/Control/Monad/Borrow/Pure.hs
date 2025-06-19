@@ -1,6 +1,12 @@
 module Control.Monad.Borrow.Pure (
   BO (),
   execBO,
+  runBO,
+  sexecBO,
+  srunBO,
+
+  -- * Parallel computation
+  parBO,
 
   -- * Re-exports
   module Control.Monad.Borrow.Pure.Lifetime,

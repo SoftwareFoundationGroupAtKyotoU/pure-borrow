@@ -2,13 +2,17 @@
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UnliftedNewtypes #-}
 
-module Control.Borrow.Pure.Lifetime.Token where
+module Control.Borrow.Pure.Lifetime.Token (
+  Linearly (),
+  Now (),
+  End (),
+  LinearOnly,
+  withLinearly,
+  endLifetime,
+  SomeNow (..),
+  newLifetime,
+  nowStatic,
+  absurdEndStatic,
+) where
 
-import Control.Borrow.Pure.Affine.Internal
-import Control.Borrow.Pure.Lifetime (Lifetime)
-import Data.Unrestricted.Linear
-import GHC.Base (ZeroBitType)
-
-newtype Now (α :: Lifetime) = UnsafeNow (# #)
-
-newtype End (α :: Lifetime) = UnsafeEnd (# #)
+import Control.Borrow.Pure.Lifetime.Token.Internal

@@ -17,6 +17,7 @@
 module Control.Borrow.Pure.Affine.Internal (
   -- * Affine Types
   Affable (..),
+  AsAffable (..),
   Aff (..),
   affu,
   unaff,
@@ -41,7 +42,7 @@ import Prelude.Linear qualified as PL
 import Unsafe.Linear qualified as Unsafe
 
 data Aff a where
-  UnsafeAff :: a %One -> Aff a
+  UnsafeAff :: !a %One -> Aff a
 
 unaff :: Aff a %1 -> a
 unaff (UnsafeAff !a) = a
@@ -57,7 +58,7 @@ affu = UnsafeAff
 {-# INLINE affu #-}
 
 pop :: Aff a %1 -> ()
-pop = Unsafe.toLinear (\(UnsafeAff !_) -> ())
+pop = Unsafe.toLinear (\(UnsafeAff _) -> ())
 {-# INLINE pop #-}
 
 instance Consumable (Aff a) where

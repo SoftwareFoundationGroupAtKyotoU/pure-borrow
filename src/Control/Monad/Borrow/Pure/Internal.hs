@@ -2,20 +2,30 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MagicHash #-}
+{-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module Control.Monad.Borrow.Pure.Internal (
   module Control.Monad.Borrow.Pure.Internal,
 ) where
 
-import Control.Functor.Linear as Control
+import Control.Concurrent (forkIO)
+import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
+import Control.Exception (evaluate)
+import Control.Functor.Linear qualified as Control
+import Control.Monad qualified as NonLinear
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
-import Data.Functor.Linear as Data
+import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
+import Control.Monad.ST.Strict (ST)
+import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
+import GHC.Base qualified as GHC
 import GHC.Exts (State#, realWorld#)
+import GHC.ST qualified as ST
 import Prelude.Linear qualified as PL
 import System.IO.Linear qualified as L
 import Unsafe.Linear qualified as Unsafe
@@ -59,14 +69,72 @@ instance Control.Monad (BO α) where
     (# s', a #) -> (f a) PL.& \(BO g) -> g s'
   {-# INLINE (>>=) #-}
 
-unsafeBOToIO :: BO α a %1 -> L.IO a
-{-# INLINE unsafeBOToIO #-}
-unsafeBOToIO (BO f) = L.IO (Unsafe.coerce f)
+unsafeBOToLinIO :: BO α a %1 -> L.IO a
+{-# INLINE unsafeBOToLinIO #-}
+unsafeBOToLinIO (BO f) = L.IO (Unsafe.coerce f)
 
-execBO :: BO α a %1 -> Now α %1 -> (Now α, a)
+execBO :: BO α a %1 -> Now α %1 -> a
 {-# NOINLINE execBO #-}
 execBO bo !now =
-  unsafeBOToIO bo PL.& \(L.IO f) ->
+  unsafeBOToLinIO bo PL.& \(L.IO f) ->
     Unsafe.toLinear
-      (\(# _, !a #) -> (now, a))
+      (\(# _, !a #) -> now `PL.lseq` a)
       (f realWorld#)
+
+runBO :: (forall α. BO α (End α -> a)) %1 -> Linearly %1 -> a
+{-# INLINE runBO #-}
+runBO bo lin =
+  case newLifetime lin of
+    MkSomeNow now -> execBO bo now UnsafeEnd
+
+sexecBO :: BO (α /\ β) a %1 -> Now α %1 -> BO β a
+{-# INLINE sexecBO #-}
+sexecBO f now = now `PL.lseq` unsafeCastBO f
+
+unsafeCastBO :: BO α a %1 -> BO β a
+{-# INLINE unsafeCastBO #-}
+unsafeCastBO = Unsafe.coerce
+
+unsafeSTToBO :: ST s a %1 -> BO α a
+{-# INLINE unsafeSTToBO #-}
+unsafeSTToBO (ST.ST f) = BO (Unsafe.coerce f)
+
+unsafeBOToST :: BO α a %1 -> ST s a
+{-# INLINE unsafeBOToST #-}
+unsafeBOToST (BO f) = ST.ST (Unsafe.coerce f)
+
+unsafeIOToBO :: L.IO a %1 -> BO α a
+{-# INLINE unsafeIOToBO #-}
+unsafeIOToBO (L.IO f) = BO (Unsafe.coerce f)
+
+srunBO :: (forall α. BO (α /\ β) (End α -> a)) %1 -> Linearly %1 -> BO β a
+{-# INLINE srunBO #-}
+srunBO bo lin =
+  case newLifetime lin of
+    MkSomeNow now -> Control.do
+      f <- sexecBO bo now
+      Control.pure (f UnsafeEnd)
+
+unsafeSystemIOToBO :: IO a %1 -> BO α a
+{-# INLINE unsafeSystemIOToBO #-}
+unsafeSystemIOToBO (GHC.IO a) = BO (Unsafe.coerce a)
+
+unsafeBOToSystemIO :: BO α a %1 -> IO a
+{-# INLINE unsafeBOToSystemIO #-}
+unsafeBOToSystemIO (BO f) = GHC.IO (Unsafe.coerce f)
+
+{- | Executes two operations in parallel
+
+As the results will always be deterministic,
+can we use sparks?
+-}
+parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
+{-# INLINE parBO #-}
+parBO = Unsafe.toLinear2 \a b -> unsafeSystemIOToBO do
+  ma <- newEmptyMVar
+  mb <- newEmptyMVar
+  NonLinear.void $ forkIO do
+    putMVar ma =<< evaluate =<< unsafeBOToSystemIO a
+  NonLinear.void $ forkIO do
+    putMVar mb =<< evaluate =<< unsafeBOToSystemIO b
+  (,) <$> takeMVar ma <*> takeMVar mb

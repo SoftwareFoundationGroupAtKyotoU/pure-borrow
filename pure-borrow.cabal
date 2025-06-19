@@ -57,6 +57,7 @@ library
     Control.Monad.Borrow.Pure.Lifetime.Internal
     Control.Monad.Borrow.Pure.Lifetime.Token
     Control.Monad.Borrow.Pure.Lifetime.Token.Internal
+    Control.Syntax.DataFlow
     Data.Comonad.Linear
 
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0

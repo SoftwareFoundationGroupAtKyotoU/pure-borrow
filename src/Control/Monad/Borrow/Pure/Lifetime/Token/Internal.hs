@@ -90,11 +90,15 @@ endLifetime :: Now (Al i) %1 -> End (Al i)
 endLifetime UnsafeNow = UnsafeEnd
 
 data SomeNow where
-  MkSomeNow :: Now (Al i) -> SomeNow
+  MkSomeNow :: Now (Al i) %1 -> SomeNow
 
-subsumeEnd :: (β <= α) => End α %1 -> End β
-{-# INLINE subsumeEnd #-}
-subsumeEnd = \UnsafeEnd -> UnsafeEnd
+alreadyEnded :: (β <= α) => End α %1 -> End β
+{-# INLINE alreadyEnded #-}
+alreadyEnded = \UnsafeEnd -> UnsafeEnd
+
+occurringNow :: (α <= β) => Now α %1 -> Now β
+{-# INLINE occurringNow #-}
+occurringNow = \UnsafeNow -> UnsafeNow
 
 newLifetime :: Linearly %1 -> SomeNow
 newLifetime UnsafeLinearly = MkSomeNow UnsafeNow

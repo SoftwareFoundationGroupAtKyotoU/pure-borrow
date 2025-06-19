@@ -6,8 +6,8 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# OPTIONS_HADDOCK hide #-}
 
-module Control.Borrow.Pure.Lifetime.Internal (
-  module Control.Borrow.Pure.Lifetime.Internal,
+module Control.Monad.Borrow.Pure.Lifetime.Internal (
+  module Control.Monad.Borrow.Pure.Lifetime.Internal,
 ) where
 
 import Control.DeepSeq (NFData (..))

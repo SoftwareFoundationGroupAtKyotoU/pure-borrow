@@ -4,7 +4,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 
-module Control.Borrow.Pure.Affine (
+module Control.Monad.Borrow.Pure.Affine (
   -- * Affine Modality
   Affable (..),
   AsAffable (..),
@@ -18,4 +18,4 @@ module Control.Borrow.Pure.Affine (
   GenericallyAffable (..),
 ) where
 
-import Control.Borrow.Pure.Affine.Internal
+import Control.Monad.Borrow.Pure.Affine.Internal

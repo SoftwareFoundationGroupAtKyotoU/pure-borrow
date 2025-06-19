@@ -6,11 +6,11 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# OPTIONS_GHC -fdefer-type-errors -Wno-deferred-type-errors #-}
 
-module Control.Borrow.Pure.Lifetime.TypingCases (
-  module Control.Borrow.Pure.Lifetime.TypingCases,
+module Control.Monad.Borrow.Pure.Lifetime.TypingCases (
+  module Control.Monad.Borrow.Pure.Lifetime.TypingCases,
 ) where
 
-import Control.Borrow.Pure.Lifetime.Internal
+import Control.Monad.Borrow.Pure.Lifetime.Internal
 
 data Dict c where
   MkDict :: (c) => Dict c

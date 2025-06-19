@@ -2,7 +2,7 @@
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UnliftedNewtypes #-}
 
-module Control.Borrow.Pure.Lifetime.Token (
+module Control.Monad.Borrow.Pure.Lifetime.Token (
   Linearly (),
   Now (),
   End (),
@@ -15,4 +15,4 @@ module Control.Borrow.Pure.Lifetime.Token (
   absurdEndStatic,
 ) where
 
-import Control.Borrow.Pure.Lifetime.Token.Internal
+import Control.Monad.Borrow.Pure.Lifetime.Token.Internal

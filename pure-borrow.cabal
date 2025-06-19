@@ -49,12 +49,14 @@ library
   hs-source-dirs: src
   -- cabal-gild: discover src
   exposed-modules:
-    Control.Borrow.Pure.Affine
-    Control.Borrow.Pure.Affine.Internal
-    Control.Borrow.Pure.Lifetime
-    Control.Borrow.Pure.Lifetime.Internal
-    Control.Borrow.Pure.Lifetime.Token
-    Control.Borrow.Pure.Lifetime.Token.Internal
+    Control.Monad.Borrow.Pure
+    Control.Monad.Borrow.Pure.Affine
+    Control.Monad.Borrow.Pure.Affine.Internal
+    Control.Monad.Borrow.Pure.Internal
+    Control.Monad.Borrow.Pure.Lifetime
+    Control.Monad.Borrow.Pure.Lifetime.Internal
+    Control.Monad.Borrow.Pure.Lifetime.Token
+    Control.Monad.Borrow.Pure.Lifetime.Token.Internal
     Data.Comonad.Linear
 
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0
@@ -68,8 +70,8 @@ test-suite test
   main-is: Main.hs
   -- cabal-gild: discover test --exclude=test/Main.hs
   other-modules:
-    Control.Borrow.Pure.Lifetime.TypingCases
-    Control.Borrow.Pure.LifetimeSpec
+    Control.Monad.Borrow.Pure.Lifetime.TypingCases
+    Control.Monad.Borrow.Pure.LifetimeSpec
 
   ghc-options:
     -O2

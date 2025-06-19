@@ -7,6 +7,7 @@
 module Control.Borrow.Pure.Affine (
   -- * Affine Modality
   Affable (..),
+  AsAffable (..),
   Aff,
   affu,
   unaff,

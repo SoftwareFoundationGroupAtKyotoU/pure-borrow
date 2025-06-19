@@ -1,10 +1,10 @@
 {-# LANGUAGE ExplicitNamespaces #-}
 
-module Control.Borrow.Pure.Lifetime (
+module Control.Monad.Borrow.Pure.Lifetime (
   type (/\),
   type (<=),
   type Static,
   Lifetime,
 ) where
 
-import Control.Borrow.Pure.Lifetime.Internal
+import Control.Monad.Borrow.Pure.Lifetime.Internal

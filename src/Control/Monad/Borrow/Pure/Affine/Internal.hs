@@ -14,7 +14,7 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# OPTIONS_HADDOCK hide #-}
 
-module Control.Borrow.Pure.Affine.Internal (
+module Control.Monad.Borrow.Pure.Affine.Internal (
   -- * Affine Types
   Affable (..),
   AsAffable (..),

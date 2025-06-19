@@ -2,14 +2,14 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints -O0 #-}
 
-module Control.Borrow.Pure.LifetimeSpec (
-  module Control.Borrow.Pure.LifetimeSpec,
+module Control.Monad.Borrow.Pure.LifetimeSpec (
+  module Control.Monad.Borrow.Pure.LifetimeSpec,
 ) where
 
-import Control.Borrow.Pure.Lifetime.Internal
-import Control.Borrow.Pure.Lifetime.TypingCases
 import Control.DeepSeq (force)
 import Control.Exception (evaluate)
+import Control.Monad.Borrow.Pure.Lifetime.Internal
+import Control.Monad.Borrow.Pure.Lifetime.TypingCases
 import Data.Functor
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.ExpectedFailure (expectFailBecause)

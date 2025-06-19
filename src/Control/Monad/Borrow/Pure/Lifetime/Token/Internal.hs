@@ -7,12 +7,12 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# OPTIONS_HADDOCK hide #-}
 
-module Control.Borrow.Pure.Lifetime.Token.Internal (
-  module Control.Borrow.Pure.Lifetime.Token.Internal,
+module Control.Monad.Borrow.Pure.Lifetime.Token.Internal (
+  module Control.Monad.Borrow.Pure.Lifetime.Token.Internal,
 ) where
 
-import Control.Borrow.Pure.Affine.Internal
-import Control.Borrow.Pure.Lifetime.Internal
+import Control.Monad.Borrow.Pure.Affine.Internal
+import Control.Monad.Borrow.Pure.Lifetime.Internal
 import Data.Unrestricted.Linear
 import GHC.Stack (HasCallStack)
 

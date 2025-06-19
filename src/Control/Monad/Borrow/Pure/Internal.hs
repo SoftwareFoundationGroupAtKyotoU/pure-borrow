@@ -1,4 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeData #-}
@@ -10,13 +12,18 @@ module Control.Monad.Borrow.Pure.Internal (
 
 import Control.Functor.Linear as Control
 import Control.Monad.Borrow.Pure.Lifetime
+import Control.Monad.Borrow.Pure.Lifetime.Token
 import Data.Functor.Linear as Data
 import Data.Kind (Type)
-import GHC.Exts (State#)
+import GHC.Exts (State#, realWorld#)
 import Prelude.Linear qualified as PL
+import System.IO.Linear qualified as L
+import Unsafe.Linear qualified as Unsafe
+
+-- NOTE: We want to use `TypeData` extension for 'ForBO', but it makes Haddock panic!
 
 type ForBO :: Lifetime -> Type
-type data ForBO α
+data ForBO α
 
 -- Morally an ST Monad, but linear!
 newtype BO α a = BO (State# (ForBO α) %1 -> (# State# (ForBO α), a #))
@@ -51,3 +58,15 @@ instance Control.Monad (BO α) where
   BO fa >>= f = BO \s -> case fa s of
     (# s', a #) -> (f a) PL.& \(BO g) -> g s'
   {-# INLINE (>>=) #-}
+
+unsafeBOToIO :: BO α a %1 -> L.IO a
+{-# INLINE unsafeBOToIO #-}
+unsafeBOToIO (BO f) = L.IO (Unsafe.coerce f)
+
+execBO :: BO α a %1 -> Now α %1 -> (Now α, a)
+{-# NOINLINE execBO #-}
+execBO bo !now =
+  unsafeBOToIO bo PL.& \(L.IO f) ->
+    Unsafe.toLinear
+      (\(# _, !a #) -> (now, a))
+      (f realWorld#)

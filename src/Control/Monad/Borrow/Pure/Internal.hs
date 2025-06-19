@@ -13,6 +13,7 @@ module Control.Monad.Borrow.Pure.Internal (
   module Control.Monad.Borrow.Pure.Internal,
 ) where
 
+import Control.Exception qualified as SystemIO
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
@@ -127,8 +128,8 @@ unsafeBOToSystemIO :: BO α a %1 -> IO a
 {-# INLINE unsafeBOToSystemIO #-}
 unsafeBOToSystemIO (BO f) = GHC.IO (Unsafe.coerce f)
 
-unsafePerformUndupableBO :: BO α a %1 -> a
-unsafePerformUndupableBO (BO f) = runBO# \s ->
+unsafePerformEvaluateUndupableBO :: BO α a %1 -> a
+unsafePerformEvaluateUndupableBO (BO f) = runBO# \s ->
   case Unsafe.toLinear GHC.noDuplicate# s of
     s -> case f s of
       (# s, !a #) -> dropState# s `PL.lseq` a
@@ -139,8 +140,12 @@ parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
 parBO a b =
   -- TODO: define explicit rules to when to invoke noDuplicate#
   BO \s -> case Unsafe.toLinear GHC.noDuplicate# s of
-    s -> case Unsafe.toLinear2 GHC.spark# (unsafePerformUndupableBO a) s of
-      (# s, a #) -> case Unsafe.toLinear2 GHC.spark# (unsafePerformUndupableBO b) s of
+    s -> case Unsafe.toLinear2 GHC.spark# (unsafePerformEvaluateUndupableBO a) s of
+      (# s, a #) -> case Unsafe.toLinear2 GHC.spark# (unsafePerformEvaluateUndupableBO b) s of
         (# s, b #) -> case Unsafe.toLinear2 GHC.seq# a s of
-          (# s, a #) -> case Unsafe.toLinear2 GHC.seq# b s of
-            (# s, b #) -> (# s, (a, b) #)
+          (# s, !a #) -> case Unsafe.toLinear2 GHC.seq# b s of
+            (# s, !b #) -> (# s, (a, b) #)
+
+evaluate :: a %1 -> BO α a
+{-# INLINE evaluate #-}
+evaluate a = unsafeSystemIOToBO (Unsafe.toLinear SystemIO.evaluate a)

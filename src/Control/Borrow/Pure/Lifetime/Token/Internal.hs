@@ -1,6 +1,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UnliftedNewtypes #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -15,7 +16,11 @@ import Control.Borrow.Pure.Lifetime.Internal
 import Data.Unrestricted.Linear
 import GHC.Stack (HasCallStack)
 
+type role Now nominal
+
 data Now (α :: Lifetime) = UnsafeNow
+
+type role End nominal
 
 data End (α :: Lifetime) = UnsafeEnd
 
@@ -85,6 +90,10 @@ endLifetime UnsafeNow = UnsafeEnd
 
 data SomeNow where
   MkSomeNow :: Now (Al i) -> SomeNow
+
+subsumeEnd :: (β <= α) => End α %1 -> End β
+{-# INLINE subsumeEnd #-}
+subsumeEnd = \UnsafeEnd -> UnsafeEnd
 
 newLifetime :: Linearly %1 -> SomeNow
 newLifetime UnsafeLinearly = MkSomeNow UnsafeNow

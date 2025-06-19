@@ -4,7 +4,9 @@
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE UnboxedTuples #-}
 
-module Control.Monad.Borrow.Pure.Internal where
+module Control.Monad.Borrow.Pure.Internal (
+  module Control.Monad.Borrow.Pure.Internal,
+) where
 
 import Control.Functor.Linear as Control
 import Control.Monad.Borrow.Pure.Lifetime

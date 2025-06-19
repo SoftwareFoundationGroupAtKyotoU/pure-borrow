@@ -133,11 +133,14 @@ unsafePerformUndupableBO (BO f) = runBO# \s ->
     s -> case f s of
       (# s, !a #) -> dropState# s `PL.lseq` a
 
+-- | Run two computations in parallel, returning their results as a tuple.
 parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
 {-# INLINE parBO #-}
-parBO a b = BO \s -> case Unsafe.toLinear GHC.noDuplicate# s of
-  s -> case Unsafe.toLinear2 GHC.spark# (unsafePerformUndupableBO a) s of
-    (# s, a #) -> case Unsafe.toLinear2 GHC.spark# (unsafePerformUndupableBO b) s of
-      (# s, b #) -> case Unsafe.toLinear2 GHC.seq# a s of
-        (# s, a #) -> case Unsafe.toLinear2 GHC.seq# b s of
-          (# s, b #) -> (# s, (a, b) #)
+parBO a b =
+  -- TODO: define explicit rules to when to invoke noDuplicate#
+  BO \s -> case Unsafe.toLinear GHC.noDuplicate# s of
+    s -> case Unsafe.toLinear2 GHC.spark# (unsafePerformUndupableBO a) s of
+      (# s, a #) -> case Unsafe.toLinear2 GHC.spark# (unsafePerformUndupableBO b) s of
+        (# s, b #) -> case Unsafe.toLinear2 GHC.seq# a s of
+          (# s, a #) -> case Unsafe.toLinear2 GHC.seq# b s of
+            (# s, b #) -> (# s, (a, b) #)

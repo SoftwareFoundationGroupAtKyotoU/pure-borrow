@@ -6,23 +6,21 @@
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UnliftedNewtypes #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module Control.Monad.Borrow.Pure.Internal (
   module Control.Monad.Borrow.Pure.Internal,
 ) where
 
-import Control.Concurrent (forkIO)
-import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
-import Control.Exception (evaluate)
 import Control.Functor.Linear qualified as Control
-import Control.Monad qualified as NonLinear
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
 import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
 import Control.Monad.ST.Strict (ST)
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
+import GHC.Base (TYPE)
 import GHC.Base qualified as GHC
 import GHC.Exts (State#, realWorld#)
 import GHC.ST qualified as ST
@@ -73,13 +71,19 @@ unsafeBOToLinIO :: BO α a %1 -> L.IO a
 {-# INLINE unsafeBOToLinIO #-}
 unsafeBOToLinIO (BO f) = L.IO (Unsafe.coerce f)
 
+runBO# :: forall {rep} α (o :: TYPE rep). (State# (ForBO α) %1 -> o) %1 -> o
+{-# NOINLINE runBO# #-}
+runBO# f = Unsafe.coerce f realWorld#
+
 execBO :: BO α a %1 -> Now α %1 -> a
-{-# NOINLINE execBO #-}
-execBO bo !now =
-  unsafeBOToLinIO bo PL.& \(L.IO f) ->
-    Unsafe.toLinear
-      (\(# _, !a #) -> now `PL.lseq` a)
-      (f realWorld#)
+{-# INLINE execBO #-}
+execBO (BO f) !now =
+  now `PL.lseq` case runBO# f of
+    (# s, !a #) -> dropState# s `PL.lseq` a
+
+dropState# :: State# a %1 -> ()
+{-# INLINE dropState# #-}
+dropState# = Unsafe.toLinear \_ -> ()
 
 runBO :: (forall α. BO α (End α -> a)) %1 -> Linearly %1 -> a
 {-# INLINE runBO #-}
@@ -123,18 +127,17 @@ unsafeBOToSystemIO :: BO α a %1 -> IO a
 {-# INLINE unsafeBOToSystemIO #-}
 unsafeBOToSystemIO (BO f) = GHC.IO (Unsafe.coerce f)
 
-{- | Executes two operations in parallel
+unsafePerformUndupableBO :: BO α a %1 -> a
+unsafePerformUndupableBO (BO f) = runBO# \s ->
+  case Unsafe.toLinear GHC.noDuplicate# s of
+    s -> case f s of
+      (# s, !a #) -> dropState# s `PL.lseq` a
 
-As the results will always be deterministic,
-can we use sparks?
--}
 parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
 {-# INLINE parBO #-}
-parBO = Unsafe.toLinear2 \a b -> unsafeSystemIOToBO do
-  ma <- newEmptyMVar
-  mb <- newEmptyMVar
-  NonLinear.void $ forkIO do
-    putMVar ma =<< evaluate =<< unsafeBOToSystemIO a
-  NonLinear.void $ forkIO do
-    putMVar mb =<< evaluate =<< unsafeBOToSystemIO b
-  (,) <$> takeMVar ma <*> takeMVar mb
+parBO a b = BO \s -> case Unsafe.toLinear GHC.noDuplicate# s of
+  s -> case Unsafe.toLinear2 GHC.spark# (unsafePerformUndupableBO a) s of
+    (# s, a #) -> case Unsafe.toLinear2 GHC.spark# (unsafePerformUndupableBO b) s of
+      (# s, b #) -> case Unsafe.toLinear2 GHC.seq# a s of
+        (# s, a #) -> case Unsafe.toLinear2 GHC.seq# b s of
+          (# s, b #) -> (# s, (a, b) #)

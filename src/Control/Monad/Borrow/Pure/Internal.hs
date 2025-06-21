@@ -3,11 +3,13 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE QualifiedDo #-}
+{-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UnliftedNewtypes #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Control.Monad.Borrow.Pure.Internal (
   module Control.Monad.Borrow.Pure.Internal,
@@ -17,9 +19,12 @@ import Control.Exception qualified as SystemIO
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
+import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Monad.ST.Strict (ST)
+import Data.Coerce qualified
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
+import Data.Unrestricted.Linear (lseq)
 import GHC.Base (TYPE)
 import GHC.Base qualified as GHC
 import GHC.Exts (State#, realWorld#)
@@ -134,3 +139,37 @@ parBO a b =
 evaluate :: a %1 -> BO α a
 {-# INLINE evaluate #-}
 evaluate a = unsafeSystemIOToBO (Unsafe.toLinear SystemIO.evaluate a)
+
+-- | Mutable reference to some resource 'a'
+type Mut :: Lifetime -> Type -> Type
+newtype Mut α a = UnsafeMut a
+
+type role Mut nominal nominal
+
+-- | Immutable shared reference to some resource 'a'
+type Share :: Lifetime -> Type -> Type
+newtype Share α a = UnsafeShare a
+
+type role Share nominal representational
+
+{- | A (mutable) lent resource to 'a', which
+will only be available at the 'End' of the lifetime 'α'.
+-}
+type Lend :: Lifetime -> Type -> Type
+newtype Lend α a = UnsafeLend a
+
+type role Lend nominal nominal
+
+-- | Borrow a resource linearly and obtain the mutable reference to it and 'Lend' witness to reclaim the resource to lend at the 'End' of the lifetime.
+borrow :: a %1 -> Linearly %1 -> (Mut α a, Lend α a)
+borrow = Unsafe.toLinear \a lin ->
+  lin `lseq` (UnsafeMut a, UnsafeLend a)
+
+-- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
+reclaim :: End α %1 -> Lend α a %1 -> a
+reclaim end = end `lseq` coerceLin
+
+-- | Reborrow a mutable reference from sublifetime
+reborrow :: (β <= α) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
+reborrow = Unsafe.toLinear \mutA ->
+  (Data.Coerce.coerce mutA, Data.Coerce.coerce mutA)

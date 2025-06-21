@@ -14,7 +14,9 @@ module Control.Monad.Borrow.Pure.Lifetime.Token.Internal (
 
 import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Lifetime.Internal
+import Data.Kind (Constraint)
 import Data.Unrestricted.Linear
+import GHC.Base (TYPE, UnliftedType)
 import GHC.Stack (HasCallStack)
 
 type role Now nominal
@@ -34,11 +36,15 @@ type LinearOnlyWitness a = (# #) -> UnsafeLinearOnly# a
 unsafeLinearOnly :: LinearOnlyWitness a
 unsafeLinearOnly = \_ -> MkUnsafeLinearOnly# (# #)
 
+type LinearOnly :: forall rep. TYPE rep -> Constraint
 class LinearOnly a where
   unsafeWithLinear :: LinearOnlyWitness a
 
 withLinearly :: (LinearOnly a) => a %1 -> (Linearly, a)
 withLinearly !a = (UnsafeLinearly, a)
+
+withLinearly# :: forall (a :: UnliftedType). (LinearOnly a) => a %1 -> (# Linearly, a #)
+withLinearly# !a = (# UnsafeLinearly, a #)
 
 instance LinearOnly Linearly where
   unsafeWithLinear = unsafeLinearOnly
@@ -94,10 +100,6 @@ alreadyEnded :: (β <= α) => End α %1 -> End β
 {-# INLINE alreadyEnded #-}
 alreadyEnded = \UnsafeEnd -> UnsafeEnd
 
-occurringNow :: (α <= β) => Now α %1 -> Now β
-{-# INLINE occurringNow #-}
-occurringNow = \UnsafeNow -> UnsafeNow
-
 newLifetime :: Linearly %1 -> SomeNow
 newLifetime UnsafeLinearly = MkSomeNow UnsafeNow
 
@@ -106,5 +108,5 @@ nowStatic :: Now Static
 nowStatic = UnsafeNow
 
 -- | Static lifetime lasts forever
-absurdEndStatic :: (HasCallStack) => End Static %1 -> a
-absurdEndStatic UnsafeEnd = error "Unreachable: if you see this, you created an End Static in the internal code!"
+neverEnds :: (HasCallStack) => End Static %1 -> a
+neverEnds UnsafeEnd = error "Unreachable: if you see this, you created an End Static in the internal code!"

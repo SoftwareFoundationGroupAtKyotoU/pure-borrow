@@ -1,4 +1,5 @@
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UnliftedNewtypes #-}
 
@@ -8,13 +9,13 @@ module Control.Monad.Borrow.Pure.Lifetime.Token (
   End (),
   LinearOnly,
   withLinearly,
+  withLinearly#,
   endLifetime,
   SomeNow (..),
   newLifetime,
   nowStatic,
-  absurdEndStatic,
+  neverEnds,
   alreadyEnded,
-  occurringNow,
 ) where
 
 import Control.Monad.Borrow.Pure.Lifetime.Token.Internal

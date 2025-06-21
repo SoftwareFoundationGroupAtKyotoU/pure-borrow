@@ -47,7 +47,7 @@ library
     linear-generics,
 
   hs-source-dirs: src
-  -- cabal-gild: discover src
+  -- cabal-gild: discover src --exclude src/**/Utils.hs
   exposed-modules:
     Control.Monad.Borrow.Pure
     Control.Monad.Borrow.Pure.Affine
@@ -58,8 +58,13 @@ library
     Control.Monad.Borrow.Pure.Lifetime.Token
     Control.Monad.Borrow.Pure.Lifetime.Token.Internal
     Control.Syntax.DataFlow
+    Data.Coerce.Directed
     Data.Comonad.Linear
+    Data.MutVar.Linear
+    Data.MutVar.Linear.Unlifted
 
+  -- cabal-gild: discover src --include src/**/Utils.hs
+  other-modules: Control.Monad.Borrow.Pure.Utils
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0
   build-depends:
 

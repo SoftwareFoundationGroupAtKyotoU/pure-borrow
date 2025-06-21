@@ -11,6 +11,14 @@ module Control.Monad.Borrow.Pure (
   -- * Parallel computation
   parBO,
 
+  -- * Borrows and refernces
+  Mut (),
+  Share (),
+  Lend (),
+  borrow,
+  reclaim,
+  reborrow,
+
   -- * Re-exports
   module Control.Monad.Borrow.Pure.Lifetime,
   module Control.Monad.Borrow.Pure.Lifetime.Token,

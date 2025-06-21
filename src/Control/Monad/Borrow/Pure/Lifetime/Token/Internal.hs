@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RoleAnnotations #-}
@@ -14,6 +15,7 @@ module Control.Monad.Borrow.Pure.Lifetime.Token.Internal (
 
 import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Lifetime.Internal
+import Data.Coerce.Directed (type (<:) (..))
 import Data.Kind (Constraint)
 import Data.Unrestricted.Linear
 import GHC.Base (TYPE, UnliftedType)
@@ -99,6 +101,9 @@ data SomeNow where
 alreadyEnded :: (β <= α) => End α %1 -> End β
 {-# INLINE alreadyEnded #-}
 alreadyEnded = \UnsafeEnd -> UnsafeEnd
+
+instance (β <= α) => End α <: End β where
+  upcast = alreadyEnded
 
 newLifetime :: Linearly %1 -> SomeNow
 newLifetime UnsafeLinearly = MkSomeNow UnsafeNow

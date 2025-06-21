@@ -8,7 +8,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Data.Coerce.Directed (
-  type (<:),
+  type (<:) (..),
   AsCoercible (..),
   GenericUpcast,
   genericUpcast,

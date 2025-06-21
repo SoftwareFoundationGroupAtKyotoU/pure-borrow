@@ -17,7 +17,6 @@ import Control.Exception qualified as SystemIO
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
-import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
 import Control.Monad.ST.Strict (ST)
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
@@ -76,25 +75,19 @@ runBO# :: forall {rep} α (o :: TYPE rep). (State# (ForBO α) %1 -> o) %1 -> o
 {-# NOINLINE runBO# #-}
 runBO# f = Unsafe.coerce f realWorld#
 
-execBO :: BO α a %1 -> Now α %1 -> a
+execBO :: BO α a %1 -> Now α %1 -> (Now α, a)
 {-# INLINE execBO #-}
 execBO (BO f) !now =
-  now `PL.lseq` case runBO# f of
-    (# s, !a #) -> dropState# s `PL.lseq` a
+  case runBO# f of
+    (# s, !a #) -> dropState# s `PL.lseq` (now, a)
 
 dropState# :: State# a %1 -> ()
 {-# INLINE dropState# #-}
 dropState# = Unsafe.toLinear \_ -> ()
 
-runBO :: (forall α. BO α (End α -> a)) %1 -> Linearly %1 -> a
-{-# INLINE runBO #-}
-runBO bo lin =
-  case newLifetime lin of
-    MkSomeNow now -> execBO bo now UnsafeEnd
-
-sexecBO :: BO (α /\ β) a %1 -> Now α %1 -> BO β a
+sexecBO :: BO (α /\ β) a %1 -> Now α %1 -> BO β (Now α, a)
 {-# INLINE sexecBO #-}
-sexecBO f now = now `PL.lseq` unsafeCastBO f
+sexecBO f now = unsafeCastBO ((now,) PL.. Unsafe.toLinear (\ !a -> a) Control.<$> f)
 
 unsafeCastBO :: BO α a %1 -> BO β a
 {-# INLINE unsafeCastBO #-}
@@ -111,14 +104,6 @@ unsafeBOToST (BO f) = ST.ST (Unsafe.coerce f)
 unsafeIOToBO :: L.IO a %1 -> BO α a
 {-# INLINE unsafeIOToBO #-}
 unsafeIOToBO (L.IO f) = BO (Unsafe.coerce f)
-
-srunBO :: (forall α. BO (α /\ β) (End α -> a)) %1 -> Linearly %1 -> BO β a
-{-# INLINE srunBO #-}
-srunBO bo lin =
-  case newLifetime lin of
-    MkSomeNow now -> Control.do
-      f <- sexecBO bo now
-      Control.pure (f UnsafeEnd)
 
 unsafeSystemIOToBO :: IO a %1 -> BO α a
 {-# INLINE unsafeSystemIOToBO #-}

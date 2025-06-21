@@ -60,15 +60,9 @@ instance Affable (Now α) where
   aff UnsafeNow = UnsafeAff UnsafeNow
   {-# INLINE aff #-}
 
-deriving via AsAffable (Now α) instance Consumable (Now α)
-
-instance Dupable (Now α) where
-  dup2 UnsafeNow = (UnsafeNow, UnsafeNow)
-  {-# INLINE dup2 #-}
-
-instance Movable (Now α) where
-  move UnsafeNow = Ur UnsafeNow
-  {-# INLINE move #-}
+instance LinearOnly (Now α) where
+  unsafeWithLinear = unsafeLinearOnly
+  {-# INLINE unsafeWithLinear #-}
 
 instance Affable (End α) where
   aff UnsafeEnd = UnsafeAff UnsafeEnd
@@ -86,8 +80,12 @@ instance Movable (End α) where
   move UnsafeEnd = Ur UnsafeEnd
   {-# INLINE move #-}
 
-endLifetime :: Now (Al i) %1 -> End (Al i)
-endLifetime UnsafeNow = UnsafeEnd
+instance LinearOnly (End α) where
+  unsafeWithLinear = unsafeLinearOnly
+  {-# INLINE unsafeWithLinear #-}
+
+endLifetime :: Now (Al i) %1 -> (Ur (End (Al i)))
+endLifetime UnsafeNow = Ur UnsafeEnd
 
 data SomeNow where
   MkSomeNow :: Now (Al i) %1 -> SomeNow

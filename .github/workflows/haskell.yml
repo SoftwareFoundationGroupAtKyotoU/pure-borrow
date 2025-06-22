@@ -182,7 +182,7 @@ jobs:
     continue-on-error: ${{matrix.plan.is_head}}
     strategy:
       matrix:
-        plan: ${{ [fromJSON(needs.ci-enumerate.outputs.plan)[0]] }}
+        plan: ${{ fromJSON(needs.ci-enumerate.outputs.plan)[0] }}
       fail-fast: false
     env:
       cabal: 3.10.1.0

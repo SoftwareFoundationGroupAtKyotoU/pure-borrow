@@ -84,6 +84,7 @@ test-suite test
   other-modules:
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
+    Data.Vector.Mutable.Linear.BorrowSpec
 
   ghc-options:
     -O2
@@ -94,6 +95,7 @@ test-suite test
 
   build-depends:
     deepseq,
+    falsify,
     inspection-testing,
     pure-borrow,
     tasty,

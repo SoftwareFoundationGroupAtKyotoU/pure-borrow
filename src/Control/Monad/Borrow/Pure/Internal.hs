@@ -33,6 +33,7 @@ import Control.Monad qualified as NonLinear
 import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
+import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Monad.ST.Strict (ST)
 import Control.Syntax.DataFlow qualified as DataFlow
@@ -48,9 +49,7 @@ import Data.Monoid qualified as Mon
 import Data.Ord qualified as Ord
 import Data.Semigroup qualified as Sem
 import Data.Tuple (Solo (..))
-import Data.Type.Bool (type (||))
 import Data.Type.Coercion (Coercion (..))
-import Data.Type.Equality (type (==))
 import Data.Var.Linear (Var)
 import Data.Vector.Mutable.Linear (Vector)
 import Data.Word
@@ -178,6 +177,9 @@ evaluate a = unsafeSystemIOToBO (Unsafe.toLinear SystemIO.evaluate a)
 -- | Mutable reference to some resource 'a'
 type Mut :: Lifetime -> Type -> Type
 newtype Mut α a = UnsafeMut a
+
+instance LinearOnly (Mut α a) where
+  unsafeWithLinear = unsafeLinearOnly
 
 type role Mut nominal nominal
 

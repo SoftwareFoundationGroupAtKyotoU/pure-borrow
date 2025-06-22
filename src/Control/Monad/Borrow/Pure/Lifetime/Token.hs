@@ -5,6 +5,7 @@
 
 module Control.Monad.Borrow.Pure.Lifetime.Token (
   Linearly (),
+  linearly,
   Now (),
   End (),
   LinearOnly,

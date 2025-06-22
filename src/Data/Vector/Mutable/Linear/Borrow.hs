@@ -1,5 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
@@ -12,6 +13,8 @@ module Data.Vector.Mutable.Linear.Borrow (
   constant,
   fromList,
   fromVector,
+  toVector,
+  toList,
   unsafeFromVector,
   size,
   unsafeGet,
@@ -21,6 +24,8 @@ module Data.Vector.Mutable.Linear.Borrow (
   unsafeIndicesMut,
   indicesMut,
   splitAtMut,
+  unsafeSwap,
+  swap,
 ) where
 
 import Control.Functor.Linear qualified as Control
@@ -36,6 +41,7 @@ import Data.Vector qualified as V
 import Data.Vector.Mutable (RealWorld)
 import Data.Vector.Mutable qualified as MV
 import GHC.Exts qualified as GHC
+import GHC.IO (unsafePerformIO)
 import GHC.Stack (HasCallStack)
 import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
@@ -77,6 +83,15 @@ fromVector v l =
       $! unsafePerformEvaluateUndupableBO
       $! unsafeSystemIOToBO
       $! V.thaw v
+
+toVector :: Vector a %1 -> V.Vector a
+{-# NOINLINE toVector #-}
+toVector = GHC.noinline
+  $ Unsafe.toLinear \(Vector v) -> unsafePerformIO $ V.unsafeFreeze v
+
+toList :: Vector a %1 -> [a]
+{-# INLINE toList #-}
+toList = Unsafe.toLinear V.toList . toVector
 
 {- | Unsafely thaws 'V.Vector' (from @vector@ package) to a 'Vector',
 reusing the same memory.
@@ -161,12 +176,26 @@ indicesMut = Unsafe.toLinear2 \v is ->
             error ("indicesMut: duplicate indices: " <> show is) v
         | otherwise -> unsafeIndicesMut v is
 
-splitAtMut :: Mut α (Vector a) %1 -> Int %1 -> (Mut α (Vector a), Mut α (Vector a))
+splitAtMut :: Int %1 -> Mut α (Vector a) %1 -> (Mut α (Vector a), Mut α (Vector a))
 {-# INLINE splitAtMut #-}
-splitAtMut = Unsafe.toLinear2 \(UnsafeMut (Vector v)) i ->
+splitAtMut = Unsafe.toLinear2 \i (UnsafeMut (Vector v)) ->
   let (v1, v2) = MV.splitAt i v
    in (UnsafeMut (Vector v1), UnsafeMut (Vector v2))
 
 instance LinearOnly (Vector a) where
   unsafeWithLinear = unsafeLinearOnly
   {-# INLINE unsafeWithLinear #-}
+
+unsafeSwap :: Mut α (Vector a) %1 -> Int -> Int -> BO α (Mut α (Vector a))
+unsafeSwap = Unsafe.toLinear3 \(UnsafeMut v) i j -> Control.do
+  () <- unsafeSystemIOToBO $ MV.unsafeSwap v.content i j
+  Control.pure $ UnsafeMut v
+
+swap :: (HasCallStack) => Mut α (Vector a) %1 -> Int -> Int -> BO α (Mut α (Vector a))
+swap v i j = DataFlow.do
+  (len, v) <- size v
+  case len of
+    Ur len ->
+      if i < 0 || i >= len || j < 0 || j >= len
+        then error ("swap: index out of bound: " <> show (i, j) <> " for length " <> show len) v
+        else unsafeSwap v i j

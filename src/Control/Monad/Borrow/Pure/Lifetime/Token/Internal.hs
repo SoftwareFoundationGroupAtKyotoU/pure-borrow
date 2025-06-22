@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ExplicitNamespaces #-}
@@ -19,6 +20,7 @@ import Data.Coerce.Directed (type (<:) (..))
 import Data.Kind (Constraint)
 import Data.Unrestricted.Linear
 import GHC.Base (TYPE, UnliftedType)
+import GHC.Exts qualified as GHC
 import GHC.Stack (HasCallStack)
 
 type role Now nominal
@@ -30,6 +32,10 @@ type role End nominal
 data End (α :: Lifetime) = UnsafeEnd
 
 data Linearly = UnsafeLinearly
+
+linearly :: (Movable a) => (Linearly %1 -> a) %1 -> Ur a
+{-# NOINLINE linearly #-}
+linearly = GHC.noinline \f -> move (f UnsafeLinearly)
 
 newtype UnsafeLinearOnly# a = MkUnsafeLinearOnly# (# #)
 

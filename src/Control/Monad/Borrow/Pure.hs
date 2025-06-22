@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ImpredicativeTypes #-}
@@ -22,6 +23,7 @@ module Control.Monad.Borrow.Pure (
   Share (),
   Lend (),
   borrow,
+  sharing,
   share,
   reclaim,
   reborrow,
@@ -65,6 +67,7 @@ import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
 import Control.Monad.Borrow.Pure.Var
 import Control.Syntax.DataFlow qualified as DataFlow
+import Data.Coerce.Directed (upcast)
 import Data.Proxy (Proxy (..))
 import Prelude.Linear
 
@@ -93,3 +96,18 @@ srunBO bo lin =
 
 scope :: Linearly %1 -> (forall α. Proxy α -> BO (α /\ β) (End α -> a)) %1 -> BO β a
 scope = flip srunBO
+
+sharing ::
+  forall α a r.
+  Mut α a %1 ->
+  (forall β. (β <= α) => Share β a -> BO β r) %1 ->
+  BO α (r, Mut α a)
+{-# INLINE sharing #-}
+sharing v k = DataFlow.do
+  (lin, v) <- withLinearly v
+  scope lin \(Proxy :: Proxy β) ->
+    DataFlow.do
+      (v, lend) <- reborrow @(β /\ α) v
+      share v & \(Ur v) -> Control.do
+        v <- k @(β /\ α) v
+        Control.pure $ \end -> (v, reclaim (upcast end) lend)

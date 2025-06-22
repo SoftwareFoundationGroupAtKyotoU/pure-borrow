@@ -97,6 +97,9 @@ srunBO bo lin =
 scope :: Linearly %1 -> (forall α. Proxy α -> BO (α /\ β) (End α -> a)) %1 -> BO β a
 scope = flip srunBO
 
+{- | Executes an operation on 'Share'd reference in sub lifetime.
+You may need @-XImpredicativeTypes@ extension to use this function.
+-}
 sharing ::
   forall α a r.
   Mut α a %1 ->

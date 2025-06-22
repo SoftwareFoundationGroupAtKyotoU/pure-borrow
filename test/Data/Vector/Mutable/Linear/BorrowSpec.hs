@@ -28,67 +28,14 @@ import Test.Tasty.Falsify (testProperty)
 import Test.Tasty.HUnit
 import Prelude qualified as NonLinear
 
-qsort ::
-  forall a α.
-  (Ord a, Derefable a, Movable a) =>
-  Mut α (VL.Vector a) %1 -> BO α ()
-qsort = go
-  where
-    go :: forall β. Mut β (VL.Vector a) %1 -> BO β ()
-    go v = case VL.size v of
-      (Ur 0, v) -> Control.pure $ consume v
-      (Ur 1, v) -> Control.pure $ consume v
-      (Ur n, v) ->
-        let i = n `quot` 2
-         in Control.do
-              (pivot, v) <- sharing v \v ->
-                move . derefShare Control.<$> VL.unsafeGet i v
-              pivot & \(Ur pivot) -> Control.do
-                (lo, hi) <- divide pivot v 0 n
-                Control.void $ parIf (n > threshold) (go lo) (go hi)
-    threshold = 8
-
 qsortVec :: (Ord a, Movable a, Derefable a) => V.Vector a -> V.Vector a
 qsortVec v = unur $ unur $ linearly \lin -> DataFlow.do
   (l1, l2, l3) <- dup3 lin
   runBO l1
     $ borrow (VL.fromVector v l2) l3
     & \(v, lend) -> Control.do
-      qsort v
+      VL.qsort v
       Control.pure \end -> VL.toVector (reclaim end lend)
-
-divide ::
-  forall α a.
-  (Ord a, Derefable a) =>
-  a ->
-  Mut α (VL.Vector a) %1 ->
-  Int ->
-  Int ->
-  BO α (Mut α (VL.Vector a), Mut α (VL.Vector a))
-divide pivot = partUp
-  where
-    partUp
-      , partDown ::
-        Mut α (VL.Vector a) %1 ->
-        Int ->
-        Int ->
-        BO α (Mut α (VL.Vector a), Mut α (VL.Vector a))
-    partUp v l u
-      | l < u = Control.do
-          (e, v) <- sharing v $ Control.fmap derefShare . VL.unsafeGet l
-          if e < pivot
-            then partUp v (l + 1) u
-            else partDown v l (u - 1)
-      | otherwise = Control.pure $ VL.splitAtMut l v
-    partDown v l u
-      | l < u = Control.do
-          (e, v) <- sharing v $ Control.fmap derefShare . VL.unsafeGet u
-          if pivot < e
-            then partDown v l (u - 1)
-            else Control.do
-              v <- VL.unsafeSwap v l u
-              partUp v (l + 1) u
-      | otherwise = Control.pure $ VL.splitAtMut l v
 
 divideList :: [Int] -> (Int, [Int])
 divideList [] = (0, [])
@@ -101,22 +48,12 @@ divideList xs =
           $ borrow (VL.fromList xs l2) l3
           & \(v, lend) ->
             VL.size v & \(Ur len, v) -> Control.do
-              (lo, hi) <- divide pivot v 0 len
+              (lo, hi) <- VL.divide pivot v 0 len
               VL.size lo & \(Ur n, lo) -> DataFlow.do
                 consume lo
                 consume hi
                 Control.pure \end ->
                   (n, VL.toList $ reclaim end lend)
-
-parIf :: Bool %1 -> BO α a %1 -> BO α b %1 -> BO α (a, b)
-{-# INLINE parIf #-}
-parIf p =
-  if p
-    then parBO
-    else \l r -> Control.do
-      !l <- l
-      !r <- r
-      Control.pure (l, r)
 
 test_divideList :: TestTree
 test_divideList =

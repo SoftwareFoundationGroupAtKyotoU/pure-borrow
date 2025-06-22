@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE QualifiedDo #-}
@@ -21,11 +22,21 @@ module Data.Vector.Mutable.Linear.Borrow (
   get,
   unsafeSet,
   set,
+  unsafeHead,
+  head,
+  unsafeLast,
+  last,
   unsafeIndicesMut,
   indicesMut,
   splitAtMut,
   unsafeSwap,
   swap,
+
+  -- * An example algorithm implementations
+  qsort,
+
+  -- ** Internal functions
+  divide,
 ) where
 
 import Control.Functor.Linear qualified as Control
@@ -44,7 +55,7 @@ import Data.Vector.Mutable qualified as MV
 import GHC.Exts qualified as GHC
 import GHC.IO (unsafePerformIO)
 import GHC.Stack (HasCallStack)
-import Prelude.Linear
+import Prelude.Linear hiding (head, last)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
@@ -114,7 +125,7 @@ size =
     (move (MV.length v), unsafeWrapRef (Vector v))
 
 -- | Get without bounds check.
-unsafeGet :: (AccessibleRef ref) => Int -> ref (Vector a) %1 -> BO α (ref a)
+unsafeGet :: (AccessibleRefAt α ref) => Int -> ref (Vector a) %1 -> BO α (ref a)
 {-# INLINE unsafeGet #-}
 unsafeGet i =
   Unsafe.toLinear \v ->
@@ -123,6 +134,30 @@ unsafeGet i =
       NonLinear.& \(Vector v) ->
         unsafeWrapRef
           Control.<$> unsafeSystemIOToBO (MV.unsafeRead v i)
+
+head :: (HasCallStack, AccessibleRefAt α ref) => ref (Vector a) %1 -> BO α (ref a)
+{-# INLINE head #-}
+head = get 0
+
+unsafeHead :: (AccessibleRefAt α ref) => ref (Vector a) %1 -> BO α (ref a)
+{-# INLINE unsafeHead #-}
+unsafeHead = unsafeGet 0
+
+unsafeLast :: (AccessibleRefAt α ref) => ref (Vector a) %1 -> BO α (ref a)
+{-# INLINE unsafeLast #-}
+unsafeLast v = DataFlow.do
+  (len, v) <- size v
+  case len of
+    Ur len -> unsafeGet (len - 1) v
+
+last :: (HasCallStack, AccessibleRefAt α ref) => ref (Vector a) %1 -> BO α (ref a)
+{-# INLINE last #-}
+last v = DataFlow.do
+  (len, v) <- size v
+  case len of
+    Ur len
+      | len > 0 -> unsafeGet (len - 1) v
+      | otherwise -> error ("last: empty vector") v
 
 get ::
   ( HasCallStack
@@ -200,3 +235,74 @@ swap v i j = DataFlow.do
       if i < 0 || i >= len || j < 0 || j >= len
         then error ("swap: index out of bound: " <> show (i, j) <> " for length " <> show len) v
         else unsafeSwap v i j
+
+{- | A simple parallel implementation of quicksort.
+It uses a sequential divide-and-conquer when size <8,
+and parallel divide-and-conquer with 'parBO' otherwise.
+
+This is meant to be a demonstrative implementation and
+not practical - you need a genuine parallel scheduler
+to scale this up.
+-}
+qsort ::
+  forall a α.
+  (Ord a, Derefable a, Movable a) =>
+  Mut α (Vector a) %1 -> BO α ()
+qsort = go
+  where
+    go :: forall β. Mut β (Vector a) %1 -> BO β ()
+    go v = case size v of
+      (Ur 0, v) -> Control.pure $ consume v
+      (Ur 1, v) -> Control.pure $ consume v
+      (Ur n, v) ->
+        let i = n `quot` 2
+         in Control.do
+              (pivot, v) <- sharing v \v ->
+                move . derefShare Control.<$> unsafeGet i v
+              pivot & \(Ur pivot) -> Control.do
+                (lo, hi) <- divide pivot v 0 n
+                Control.void $ parIf (n > threshold) (go lo) (go hi)
+    threshold = 8
+
+parIf :: Bool %1 -> BO α a %1 -> BO α b %1 -> BO α (a, b)
+{-# INLINE parIf #-}
+parIf p =
+  if p
+    then parBO
+    else \l r -> Control.do
+      !l <- l
+      !r <- r
+      Control.pure (l, r)
+
+divide ::
+  forall α a.
+  (Ord a, Derefable a) =>
+  a ->
+  Mut α (Vector a) %1 ->
+  Int ->
+  Int ->
+  BO α (Mut α (Vector a), Mut α (Vector a))
+divide pivot = partUp
+  where
+    partUp
+      , partDown ::
+        Mut α (Vector a) %1 ->
+        Int ->
+        Int ->
+        BO α (Mut α (Vector a), Mut α (Vector a))
+    partUp v l u
+      | l < u = Control.do
+          (e, v) <- sharing v $ Control.fmap derefShare . unsafeGet l
+          if e < pivot
+            then partUp v (l + 1) u
+            else partDown v l (u - 1)
+      | otherwise = Control.pure $ splitAtMut l v
+    partDown v l u
+      | l < u = Control.do
+          (e, v) <- sharing v $ Control.fmap derefShare . unsafeGet u
+          if pivot < e
+            then partDown v l (u - 1)
+            else Control.do
+              v <- unsafeSwap v l u
+              partUp v (l + 1) u
+      | otherwise = Control.pure $ splitAtMut l v

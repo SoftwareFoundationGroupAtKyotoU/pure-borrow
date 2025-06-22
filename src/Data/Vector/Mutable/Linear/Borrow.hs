@@ -14,9 +14,11 @@ module Data.Vector.Mutable.Linear.Borrow (
   constant,
   fromList,
   fromVector,
+  unsafeFromVector,
+  fromMutable,
+  unsafeFromMutable,
   toVector,
   toList,
-  unsafeFromVector,
   size,
   unsafeGet,
   get,
@@ -95,6 +97,16 @@ fromVector v l =
       $! unsafePerformEvaluateUndupableBO
       $! unsafeSystemIOToBO
       $! V.thaw v
+
+fromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
+{-# NOINLINE fromMutable #-}
+fromMutable = Unsafe.toLinear \v l ->
+  l `lseq` GHC.noinline do
+    Vector (unsafePerformIO (MV.clone (Unsafe.coerce v)))
+
+unsafeFromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
+unsafeFromMutable v lin =
+  lin `lseq` Vector (Unsafe.coerce v)
 
 toVector :: Vector a %1 -> Ur (V.Vector a)
 {-# NOINLINE toVector #-}

@@ -6,13 +6,11 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
-module Data.MutVar.Linear (Var, new) where
+module Data.MutVar.Linear (Var, new, atomicModify, unVar) where
 
-import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
 import Data.MutVar.Linear.Unlifted
-import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
 
 data Var a = Var (Var# a)
@@ -28,3 +26,11 @@ instance LinearOnly (Var a) where
 
 instance Affable (Var a) where
   aff = Unsafe.toLinear UnsafeAff
+
+atomicModify :: Var a %1 -> (a %1 -> a) %1 -> Var a
+{-# INLINE atomicModify #-}
+atomicModify (Var v) f = Var (atomicModify# v f)
+
+unVar :: Var a %1 -> a
+{-# INLINE unVar #-}
+unVar (Var v) = unVar# v

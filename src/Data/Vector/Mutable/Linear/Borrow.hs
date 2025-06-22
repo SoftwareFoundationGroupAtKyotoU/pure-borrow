@@ -296,12 +296,6 @@ divide ::
   BO α (Mut α (Vector a), Mut α (Vector a))
 divide pivot = partUp
   where
-    partUp
-      , partDown ::
-        Mut α (Vector a) %1 ->
-        Int ->
-        Int ->
-        BO α (Mut α (Vector a), Mut α (Vector a))
     partUp v l u
       | l < u = Control.do
           (e, v) <- sharing v $ Control.fmap derefShare . unsafeGet l

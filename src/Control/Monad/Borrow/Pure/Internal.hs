@@ -124,6 +124,7 @@ dropState# :: State# a %1 -> ()
 {-# INLINE dropState# #-}
 dropState# = Unsafe.toLinear \_ -> ()
 
+-- | See also 'within'.
 sexecBO :: BO (α /\ β) a %1 -> Now α %1 -> BO β (Now α, a)
 {-# INLINE sexecBO #-}
 sexecBO f now = unsafeCastBO ((now,) PL.. Unsafe.toLinear (\ !a -> a) Control.<$> f)
@@ -183,6 +184,8 @@ type role Mut nominal nominal
 instance Affable (Mut α a) where
   aff = UnsafeAff
   {-# INLINE aff #-}
+
+deriving via AsAffable (Mut α a) instance Consumable (Mut α a)
 
 instance (β <= α, a <: b, b <: a) => Mut α a <: Mut β b where
   upcast (UnsafeMut a) = UnsafeMut (upcast a)

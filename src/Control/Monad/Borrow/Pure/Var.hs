@@ -17,6 +17,7 @@ module Control.Monad.Borrow.Pure.Var (
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Internal
 import Control.Monad.Borrow.Pure.Lifetime
+import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Var.Linear (Var)
 import Data.Var.Linear qualified as MutVar

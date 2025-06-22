@@ -1,6 +1,8 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE QualifiedDo #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module Control.Monad.Borrow.Pure (
@@ -8,7 +10,9 @@ module Control.Monad.Borrow.Pure (
   execBO,
   runBO,
   sexecBO,
+  scope_,
   srunBO,
+  scope,
 
   -- * Parallel computation
   parBO,
@@ -61,7 +65,8 @@ import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
 import Control.Monad.Borrow.Pure.Var
 import Control.Syntax.DataFlow qualified as DataFlow
-import Data.Unrestricted.Linear (Ur (..))
+import Data.Proxy (Proxy (..))
+import Prelude.Linear
 
 runBO :: (forall α. BO α (End α -> a)) %1 -> Linearly %1 -> a
 {-# INLINE runBO #-}
@@ -72,11 +77,19 @@ runBO bo lin =
       case endLifetime now of
         Ur end -> f end
 
-srunBO :: (forall α. BO (α /\ β) (End α -> a)) %1 -> Linearly %1 -> BO β a
+-- | Flipped version of 'sexecBO'.
+scope_ :: Now α %1 -> BO (α /\ β) a %1 -> BO β (Now α, a)
+{-# INLINE scope_ #-}
+scope_ = flip sexecBO
+
+srunBO :: (forall α. Proxy α -> BO (α /\ β) (End α -> a)) %1 -> Linearly %1 -> BO β a
 {-# INLINE srunBO #-}
 srunBO bo lin =
   case newLifetime lin of
     MkSomeNow now -> Control.do
-      (now, f) <- sexecBO bo now
+      (now, f) <- sexecBO (bo Proxy) now
       Ur end <- Control.pure (endLifetime now)
       Control.pure (f end)
+
+scope :: Linearly %1 -> (forall α. Proxy α -> BO (α /\ β) (End α -> a)) %1 -> BO β a
+scope = flip srunBO

@@ -26,6 +26,7 @@ module Data.Vector.Mutable.Linear.Borrow (
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Internal
+import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
 import Control.Monad.Borrow.Pure.Utils
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Function qualified as NonLinear
@@ -165,3 +166,7 @@ splitAtMut :: Mut α (Vector a) %1 -> Int %1 -> (Mut α (Vector a), Mut α (Vect
 splitAtMut = Unsafe.toLinear2 \(UnsafeMut (Vector v)) i ->
   let (v1, v2) = MV.splitAt i v
    in (UnsafeMut (Vector v1), UnsafeMut (Vector v2))
+
+instance LinearOnly (Vector a) where
+  unsafeWithLinear = unsafeLinearOnly
+  {-# INLINE unsafeWithLinear #-}

@@ -31,7 +31,7 @@ import Control.Monad qualified as NonLinear
 import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
-import Control.Monad.Borrow.Pure.Utils (coerceLin, coerceWithLin)
+import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Monad.ST.Strict (ST)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce (Coercible)
@@ -45,7 +45,6 @@ import Data.Ord qualified as Ord
 import Data.Semigroup qualified as Sem
 import Data.Tuple (Solo (..))
 import Data.Type.Coercion (Coercion (..))
-import Data.Type.Coercion qualified as Coerce
 import GHC.Base (TYPE)
 import GHC.Base qualified as GHC
 import GHC.Exts (State#, realWorld#)
@@ -253,18 +252,6 @@ unMutShr = coerceLin
 
 unShrShr :: Share α (Share β a) %1 -> Share β a
 unShrShr = coerceLin
-
-gsplitSumMut :: Mut α ((f :+: g) x) %1 -> ((Mut α :.: f) :+: (Mut α :.: g)) x
-{-# INLINE gsplitSumMut #-}
-gsplitSumMut = \case
-  UnsafeMut (L1 l) -> L1 (coerceLin l)
-  UnsafeMut (R1 r) -> R1 (coerceLin r)
-
-gsplitSumShare :: Share α ((f :+: g) x) %1 -> ((Share α :.: f) :+: (Share α :.: g)) x
-{-# INLINE gsplitSumShare #-}
-gsplitSumShare = \case
-  UnsafeShare (L1 l) -> L1 (coerceLin l)
-  UnsafeShare (R1 r) -> R1 (coerceLin r)
 
 type SplittableRef_ :: (Type -> Type) -> Constraint
 class

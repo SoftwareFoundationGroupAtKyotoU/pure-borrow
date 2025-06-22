@@ -208,6 +208,8 @@ jobs:
         run: |
           ls -R "${{ steps.download.outputs.download-path }}"
           tar xaf "${{ steps.download.outputs.download-path }}/${{env.artifact}}.tar.zst"
+      - name: Prepare results directory
+        run: mkdir -p bench-results
       - name: Run Tests
         shell: bash
         run: >

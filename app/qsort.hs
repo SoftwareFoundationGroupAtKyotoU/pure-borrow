@@ -26,7 +26,7 @@ import System.Mem (performGC)
 import System.Random
 import System.Random.Stateful (runStateGen_, uniformM)
 
-data Mode = Parallel | Sequential | IntroSort
+data Mode = Parallel Word | Sequential | IntroSort
   deriving (Show, Eq, Ord, Generic)
 
 data CLIOpts = CLIOpts {mode :: Mode, size :: Int, seed :: Maybe Int}
@@ -37,9 +37,9 @@ optionsP = Opts.info (p <**> Opts.helper) $ Opts.progDesc "Parallel quicksort wi
   where
     p = do
       mode <-
-        Opts.flag' Parallel (Opts.long "parallel" <> Opts.short 'p' <> Opts.help "Use parallel quicksort (default)")
+        Parallel <$> Opts.option Opts.auto (Opts.long "parallel" <> Opts.short 'p' <> Opts.help "Use parallel quicksort with specified capacity (default: 8)")
           <|> Opts.flag' Sequential (Opts.long "sequential" <> Opts.short 'S' <> Opts.help "Use sequential quicksort")
-          <|> Opts.flag Parallel IntroSort (Opts.long "intro" <> Opts.short 'i' <> Opts.help "Use intro sort")
+          <|> Opts.flag (Parallel 8) IntroSort (Opts.long "intro" <> Opts.short 'i' <> Opts.help "Use intro sort")
       size <-
         Opts.option
           Opts.auto
@@ -54,13 +54,13 @@ optionsP = Opts.info (p <**> Opts.helper) $ Opts.progDesc "Parallel quicksort wi
 
 qsortWith :: Mode -> V.Vector Int -> V.Vector Int
 qsortWith IntroSort v = V.modify AI.sort v
-qsortWith Parallel v =
+qsortWith (Parallel bud) v =
   unur PL.$ unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2, l3) <- dup3 lin
       runBO lin Control.do
         (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
-        VL.qsort 8 v
+        VL.qsort bud v
         Control.pure PL.$ \end -> VL.toVector (reclaim end lend)
 qsortWith Sequential v =
   unur PL.$ unur PL.$ linearly \lin ->

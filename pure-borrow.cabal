@@ -57,6 +57,7 @@ library
     Control.Monad.Borrow.Pure.Lifetime.Internal
     Control.Monad.Borrow.Pure.Lifetime.Token
     Control.Monad.Borrow.Pure.Lifetime.Token.Internal
+    Control.Monad.Borrow.Pure.Var
     Control.Syntax.DataFlow
     Data.Array.Mutable.Linear.Witness
     Data.Array.Mutable.Unlifted.Linear.Witness

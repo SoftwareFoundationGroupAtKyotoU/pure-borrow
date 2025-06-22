@@ -1,5 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE QualifiedDo #-}
@@ -22,6 +23,7 @@ import Control.Monad.Borrow.Pure.Lifetime.Token
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Monad.ST.Strict (ST)
 import Data.Coerce qualified
+import Data.Coerce.Directed
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
 import Data.Unrestricted.Linear (lseq)
@@ -145,6 +147,18 @@ type Mut :: Lifetime -> Type -> Type
 newtype Mut α a = UnsafeMut a
 
 type role Mut nominal nominal
+
+instance (β <= α, a <: b, b <: a) => Mut α a <: Mut β b where
+  upcast (UnsafeMut a) = UnsafeMut (upcast a)
+  {-# INLINE upcast #-}
+
+instance (β <= α, a <: b) => Share α a <: Share β b where
+  upcast (UnsafeShare a) = UnsafeShare (upcast a)
+  {-# INLINE upcast #-}
+
+instance (α <= β, a <: b) => Lend α a <: Lend β b where
+  upcast (UnsafeLend a) = UnsafeLend (upcast a)
+  {-# INLINE upcast #-}
 
 -- | Immutable shared reference to some resource 'a'
 type Share :: Lifetime -> Type -> Type

@@ -110,7 +110,7 @@ sharing v k = DataFlow.do
   (lin, v) <- withLinearly v
   scope lin \(Proxy :: Proxy β) ->
     DataFlow.do
-      (v, lend) <- reborrow @(β /\ α) v
+      (v, lend) <- reborrow v
       share v & \(Ur v) -> Control.do
-        v <- k @(β /\ α) v
+        v <- k v
         Control.pure $ \end -> (v, reclaim (upcast end) lend)

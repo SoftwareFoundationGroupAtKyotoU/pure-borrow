@@ -6,7 +6,15 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
-module Data.MutVar.Linear.Unlifted (Var#, newVar#, unVar#, atomicModify_#, atomicModify#) where
+module Data.Var.Linear.Unlifted (
+  Var#,
+  newVar#,
+  unVar#,
+  readVar#,
+  writeVar#,
+  atomicModify_#,
+  atomicModify#,
+) where
 
 import Control.Monad.Borrow.Pure.Lifetime.Token
 import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
@@ -27,6 +35,20 @@ newVar# = GHC.noinline $ Unsafe.toLinear $ \a lin ->
     `lseq#` GHC.runRW# \s ->
       case GHC.newMutVar# a s of
         (# _, !v #) -> Var# v
+
+readVar# :: Var# a %1 -> (# a, Var# a #)
+{-# INLINE readVar# #-}
+readVar# = GHC.noinline $ Unsafe.toLinear \(Var# mv) ->
+  runRW# \s ->
+    case GHC.readMutVar# mv s of
+      (# _, !a #) -> (# a, Var# mv #)
+
+writeVar# :: Var# a %1 -> a %1 -> Var# a
+{-# NOINLINE writeVar# #-}
+writeVar# = GHC.noinline $ Unsafe.toLinear2 \(Var# mv) !a ->
+  runRW# \s ->
+    case GHC.writeMutVar# mv a s of
+      _ -> Var# mv
 
 unVar# :: Var# a %1 -> a
 {-# NOINLINE unVar# #-}

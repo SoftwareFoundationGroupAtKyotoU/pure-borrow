@@ -19,6 +19,9 @@ module Control.Monad.Borrow.Pure (
   reclaim,
   reborrow,
 
+  -- * References
+  module Control.Monad.Borrow.Pure.Var,
+
   -- * Re-exports
   module Control.Monad.Borrow.Pure.Lifetime,
   module Control.Monad.Borrow.Pure.Lifetime.Token,
@@ -28,6 +31,7 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Internal
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
+import Control.Monad.Borrow.Pure.Var
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Unrestricted.Linear (Ur (..))
 

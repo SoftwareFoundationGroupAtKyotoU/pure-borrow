@@ -6,11 +6,19 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
-module Data.MutVar.Linear (Var, new, atomicModify, atomicModify_, unVar) where
+module Data.Var.Linear (
+  Var,
+  new,
+  unVar,
+  readVar,
+  writeVar,
+  atomicModify,
+  atomicModify_,
+) where
 
 import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
-import Data.MutVar.Linear.Unlifted
+import Data.Var.Linear.Unlifted
 import Unsafe.Linear qualified as Unsafe
 
 data Var a = Var (Var# a)
@@ -39,3 +47,12 @@ atomicModify (Var v) f = case atomicModify# v f of
 unVar :: Var a %1 -> a
 {-# INLINE unVar #-}
 unVar (Var v) = unVar# v
+
+readVar :: Var a %1 -> (a, Var a)
+{-# INLINE readVar #-}
+readVar (Var v) = case readVar# v of
+  (# a, v' #) -> (a, Var v')
+
+writeVar :: Var a %1 -> a %1 -> Var a
+{-# INLINE writeVar #-}
+writeVar (Var v) a = Var (writeVar# v a)

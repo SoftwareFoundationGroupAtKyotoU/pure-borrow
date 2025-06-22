@@ -59,12 +59,13 @@ library
     Control.Monad.Borrow.Pure.Lifetime.Token.Internal
     Control.Monad.Borrow.Pure.Var
     Control.Syntax.DataFlow
+    Data.Array.Mutable.Linear.Token
     Data.Array.Mutable.Linear.Witness
     Data.Array.Mutable.Unlifted.Linear.Witness
     Data.Coerce.Directed
     Data.Comonad.Linear
-    Data.MutVar.Linear
-    Data.MutVar.Linear.Unlifted
+    Data.Var.Linear
+    Data.Var.Linear.Unlifted
 
   -- cabal-gild: discover src --include src/**/Utils.hs
   other-modules: Control.Monad.Borrow.Pure.Utils

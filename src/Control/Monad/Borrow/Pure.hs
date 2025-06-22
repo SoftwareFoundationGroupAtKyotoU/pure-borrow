@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
@@ -19,6 +21,10 @@ module Control.Monad.Borrow.Pure (
   share,
   reclaim,
   reborrow,
+  Derefable (),
+  derefShare,
+  genericDerefShare,
+  GenericDerefable,
 
   -- ** Collapsing borrows
   unMutMut,

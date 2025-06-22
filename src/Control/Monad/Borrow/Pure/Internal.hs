@@ -35,23 +35,29 @@ import Control.Monad.Borrow.Pure.Lifetime.Token
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Monad.ST.Strict (ST)
 import Control.Syntax.DataFlow qualified as DataFlow
+import Data.Array.Mutable.Linear (Array)
 import Data.Coerce (Coercible)
 import Data.Coerce qualified
 import Data.Coerce.Directed
 import Data.Functor.Identity (Identity)
 import Data.Functor.Linear qualified as Data
+import Data.Int
 import Data.Kind (Constraint, Type)
 import Data.Monoid qualified as Mon
 import Data.Ord qualified as Ord
 import Data.Semigroup qualified as Sem
 import Data.Tuple (Solo (..))
 import Data.Type.Coercion (Coercion (..))
+import Data.Var.Linear (Var)
+import Data.Vector.Mutable.Linear (Vector)
+import Data.Word
 import GHC.Base (TYPE)
 import GHC.Base qualified as GHC
 import GHC.Exts (State#, realWorld#)
 import GHC.ST qualified as ST
 import GHC.TypeError (ErrorMessage (..))
 import Generics.Linear
+import Numeric.Natural (Natural)
 import Prelude.Linear
 import Prelude.Linear qualified as PL
 import Prelude.Linear.Unsatisfiable (Unsatisfiable, unsatisfiable)
@@ -434,3 +440,159 @@ instance
 instance GDistributeRef U1 where
   gdistributeRef = coerceLin . unsafeUnwrapRef
   {-# INLINE gdistributeRef #-}
+
+class Derefable a where
+  unsafeDeref :: Share α a %1 -> a
+
+instance
+  (Unsatisfiable (ShowType (Var a) :<>: Text " cannot be dereferenced!")) =>
+  Derefable (Var a)
+  where
+  unsafeDeref = unsatisfiable
+
+instance
+  (Unsatisfiable (ShowType (Array a) :<>: Text " cannot be dereferenced!")) =>
+  Derefable (Array a)
+  where
+  unsafeDeref = unsatisfiable
+
+instance
+  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be dereferenced!")) =>
+  Derefable (Vector a)
+  where
+  unsafeDeref = unsatisfiable
+
+derefShare :: (Derefable a) => Share α a %1 -> a
+{-# INLINE [1] derefShare #-}
+derefShare = unsafeDeref
+
+{-# RULES
+"derefShare/unsafeCoerce" [~1]
+  derefShare =
+    Unsafe.coerce
+  #-}
+
+newtype UnsafeAssumeNoVar a = UnsafeAssumeNoVar a
+
+instance Derefable (UnsafeAssumeNoVar a) where
+  unsafeDeref = coerceLin
+  {-# INLINE unsafeDeref #-}
+
+deriving via UnsafeAssumeNoVar Int instance Derefable Int
+
+deriving via UnsafeAssumeNoVar Int8 instance Derefable Int8
+
+deriving via UnsafeAssumeNoVar Int16 instance Derefable Int16
+
+deriving via UnsafeAssumeNoVar Int32 instance Derefable Int32
+
+deriving via UnsafeAssumeNoVar Int64 instance Derefable Int64
+
+deriving via UnsafeAssumeNoVar Word instance Derefable Word
+
+deriving via UnsafeAssumeNoVar Word8 instance Derefable Word8
+
+deriving via UnsafeAssumeNoVar Word16 instance Derefable Word16
+
+deriving via UnsafeAssumeNoVar Word32 instance Derefable Word32
+
+deriving via UnsafeAssumeNoVar Word64 instance Derefable Word64
+
+deriving via UnsafeAssumeNoVar Integer instance Derefable Integer
+
+deriving via UnsafeAssumeNoVar Natural instance Derefable Natural
+
+deriving via UnsafeAssumeNoVar Float instance Derefable Float
+
+deriving via UnsafeAssumeNoVar Double instance Derefable Double
+
+deriving via UnsafeAssumeNoVar Char instance Derefable Char
+
+deriving via UnsafeAssumeNoVar Bool instance Derefable Bool
+
+type GenericDerefable a = (Generic a, GDerefable (Rep a))
+
+genericDerefShare :: (GenericDerefable a) => Share α a %1 -> a
+{-# INLINE genericDerefShare #-}
+genericDerefShare (UnsafeShare x) = to (gderef (UnsafeShare (from x)))
+
+type GDerefable :: forall {k}. (k -> Type) -> Constraint
+class GDerefable f where
+  gderef :: Share α (f x) %1 -> f x
+
+instance (Derefable a) => GDerefable (K1 i a) where
+  gderef = coerceLin . unsafeUnwrapRef
+
+instance (GDerefable f, GDerefable g) => GDerefable (f :*: g) where
+  gderef (UnsafeShare (f :*: g)) =
+    gderef (UnsafeShare f) :*: gderef (UnsafeShare g)
+
+instance (GDerefable f) => GDerefable (M1 i c f) where
+  gderef = \case
+    UnsafeShare (M1 x) -> M1 (gderef (UnsafeShare x))
+
+instance (GDerefable f) => GDerefable (MP1 m f) where
+  gderef = \case
+    UnsafeShare (MP1 x) -> MP1 (gderef (UnsafeShare x))
+
+instance (GDerefable f, GDerefable g) => GDerefable (f :+: g) where
+  gderef = \case
+    UnsafeShare (L1 x) -> L1 (gderef (UnsafeShare x))
+    UnsafeShare (R1 x) -> R1 (gderef (UnsafeShare x))
+
+instance GDerefable U1 where
+  gderef = coerceLin . unsafeUnwrapRef
+
+instance GDerefable V1 where
+  gderef = \case {} . unsafeUnwrapRef
+
+instance (GenericDerefable a) => Derefable (Generically a) where
+  unsafeDeref = Generically . genericDerefShare . unsafeMapRef (\(Generically x) -> x)
+
+deriving via
+  Generically (Sum a)
+  instance
+    (Derefable a) => Derefable (Sum a)
+
+deriving via
+  Generically (Product a)
+  instance
+    (Derefable a) => Derefable (Product a)
+
+deriving via
+  Generically (Sem.Max a)
+  instance
+    (Derefable a) => Derefable (Sem.Max a)
+
+deriving via
+  Generically (Maybe a)
+  instance
+    (Derefable a) => Derefable (Maybe a)
+
+deriving via
+  Generically (Sem.Min a)
+  instance
+    (Derefable a) => Derefable (Sem.Min a)
+
+deriving via
+  Generically (a, b)
+  instance
+    (Derefable a, Derefable b) =>
+    Derefable (a, b)
+
+deriving via
+  Generically (a, b, c)
+  instance
+    (Derefable a, Derefable b, Derefable c) =>
+    Derefable (a, b, c)
+
+deriving via
+  Generically (a, b, c, d)
+  instance
+    (Derefable a, Derefable b, Derefable c, Derefable d) =>
+    Derefable (a, b, c, d)
+
+deriving via
+  Generically (Either a b)
+  instance
+    (Derefable a, Derefable b) => Derefable (Either a b)

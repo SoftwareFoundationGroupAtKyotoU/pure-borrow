@@ -1,0 +1,77 @@
+{-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE QualifiedDo #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
+
+module Main where
+
+import Control.Applicative ((<**>), (<|>))
+import Control.DeepSeq (force)
+import Control.Exception (evaluate)
+import Control.Functor.Linear (ask, asks, runReader, runReaderT)
+import qualified Control.Functor.Linear as Control
+import Control.Monad (void)
+import Control.Monad.Borrow.Pure
+import qualified Control.Syntax.DataFlow as DataFlow
+import qualified Data.Vector as V
+import qualified Data.Vector.Algorithms.Intro as AI
+import qualified Data.Vector.Mutable.Linear.Borrow as VL
+import GHC.Generics (Generic)
+import qualified Options.Applicative as Opts
+import Prelude.Linear hiding (Eq, Ord, Semigroup (..), ($), ($!))
+import qualified Prelude.Linear as PL hiding (($!))
+import System.Mem (performGC)
+import System.Random
+import System.Random.Stateful (StateGenM (..), UniformRange (uniformRM), randomRM, runStateGenST_, runStateGen_)
+
+data Mode = Parallel | IntroSort
+  deriving (Show, Eq, Ord, Generic)
+
+data CLIOpts = CLIOpts {mode :: Mode, size :: Int, seed :: Maybe Int}
+  deriving (Show, Eq, Ord, Generic)
+
+optionsP :: Opts.ParserInfo CLIOpts
+optionsP = Opts.info (p <**> Opts.helper) $ Opts.progDesc "Parallel quicksort with linear borrows"
+  where
+    p = do
+      mode <-
+        Opts.flag' Parallel (Opts.long "parallel" <> Opts.short 'p' <> Opts.help "Use parallel quicksort (default)")
+          <|> Opts.flag Parallel IntroSort (Opts.long "intro" <> Opts.short 'i' <> Opts.help "Use intro sort")
+      size <-
+        Opts.option
+          Opts.auto
+          ( Opts.long "size"
+              <> Opts.short 'n'
+              <> Opts.value 256
+              <> Opts.showDefault
+              <> Opts.help "Size of the vector to sort"
+          )
+      seed <- Opts.optional $ Opts.option Opts.auto (Opts.long "seed" <> Opts.short 's' <> Opts.help "Random seed for vector generation (default: random)")
+      pure CLIOpts {..}
+
+qsortWith :: Mode -> V.Vector Int -> V.Vector Int
+qsortWith IntroSort v = V.modify AI.sort v
+qsortWith Parallel v =
+  V.modify
+    ( \mv -> pure $
+        unur PL.$ linearly \lin -> DataFlow.do
+          (lin, l2, l3) <- dup3 lin
+          runBO_ lin Control.do
+            VL.qsort PL.$ borrow_ (VL.unsafeFromMutable mv l2) l3
+    )
+    v
+
+main :: IO ()
+main = do
+  CLIOpts {..} <- Opts.execParser optionsP
+  gen <- case seed of
+    Just s -> return $ mkStdGen s
+    Nothing -> newStdGen
+  let !vec =
+        runStateGen_ gen \g -> do
+          V.replicateM size (uniformRM (0 :: Int, 1000) g)
+  performGC
+  void $ evaluate $ force $ qsortWith mode vec

@@ -103,3 +103,65 @@ test-suite pure-borrow-test
     tasty-expected-failure,
     tasty-hunit,
     vector,
+
+benchmark qsort-bench
+  import: defaults
+  type: exitcode-stdio-1.0
+  main-is: qsort.hs
+  hs-source-dirs: bench
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wmissing-export-lists
+    -Wmissing-home-modules
+    -Wpartial-fields
+    -Wredundant-constraints
+    -threaded
+    -rtsopts
+    -O2
+    "-with-rtsopts=-N1 --nonmoving-gc"
+
+  build-depends:
+    base >=4.7 && <5,
+    deepseq,
+    pure-borrow,
+    random,
+    tasty,
+    tasty-bench,
+    vector,
+    vector-algorithms,
+
+  default-language: Haskell2010
+
+executable qsort
+  import: defaults
+  main-is: qsort.hs
+  hs-source-dirs: app
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wmissing-export-lists
+    -Wmissing-home-modules
+    -Wpartial-fields
+    -Wredundant-constraints
+    -threaded
+    -rtsopts
+    "-with-rtsopts=-N --nonmoving-gc"
+    -eventlog
+
+  build-depends:
+    base >=4.7 && <5,
+    deepseq,
+    optparse-applicative,
+    pure-borrow,
+    random,
+    vector,
+    vector-algorithms,
+
+  default-language: Haskell2010

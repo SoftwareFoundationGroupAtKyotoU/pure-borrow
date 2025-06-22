@@ -10,6 +10,8 @@ module Control.Monad.Borrow.Pure (
   BO (),
   execBO,
   runBO,
+  runBOLend,
+  runBO_,
   sexecBO,
   scope_,
   srunBO,
@@ -23,6 +25,7 @@ module Control.Monad.Borrow.Pure (
   Share (),
   Lend (),
   borrow,
+  borrow_,
   sharing,
   share,
   reclaim,
@@ -79,6 +82,14 @@ runBO lin bo =
       (now, f) <- execBO bo now
       case endLifetime now of
         Ur end -> f end
+
+runBOLend :: Linearly %1 -> (forall α. BO α (Lend α a)) %1 -> a
+{-# INLINE runBOLend #-}
+runBOLend lin bo = runBO lin (bo Control.<&> \lend end -> reclaim end lend)
+
+runBO_ :: Linearly %1 -> (forall α. BO α a) %1 -> a
+{-# INLINE runBO_ #-}
+runBO_ lin bo = runBO lin (const Control.<$> bo)
 
 -- | Flipped version of 'sexecBO'.
 scope_ :: Now α %1 -> BO (α /\ β) a %1 -> BO β (Now α, a)

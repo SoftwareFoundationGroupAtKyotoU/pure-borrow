@@ -238,10 +238,16 @@ instance (α <= β, a <: b) => Lend α a <: Lend β b where
   upcast (UnsafeLend a) = UnsafeLend (upcast a)
   {-# INLINE upcast #-}
 
--- | Borrow a resource linearly and obtain the mutable reference to it and 'Lend' witness to reclaim the resource to lend at the 'End' of the lifetime.
+-- | Borrow a resource linearly and obtain the mutable reference to it and 'Lend' witness to 'reclaim' the resource to lend at the 'End' of the lifetime.
 borrow :: a %1 -> Linearly %1 -> (Mut α a, Lend α a)
 borrow = Unsafe.toLinear \a lin ->
   lin `lseq` (UnsafeMut a, UnsafeLend a)
+
+-- | Analogous to 'borrow', but does not return the original 'Lend' to be reclaimed
+borrow_ :: a %1 -> Linearly %1 -> Mut α a
+{-# INLINE borrow_ #-}
+borrow_ = Unsafe.toLinear \(a :: a) lin ->
+  lin `lseq` UnsafeMut a
 
 -- | Shares a mutable reference, invalidating the original mutable reference.
 share :: Mut α a %1 -> Ur (Share α a)

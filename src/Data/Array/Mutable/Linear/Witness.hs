@@ -10,7 +10,9 @@ module Data.Array.Mutable.Linear.Witness (
   fromListL,
 ) where
 
-import Control.Monad.Borrow.Pure.Lifetime.Token
+import Control.Monad.Borrow.Pure.Lifetime.Token.Internal (
+  Linearly,
+ )
 import Data.Array.Mutable.Linear
 import Data.Array.Mutable.Linear.Internal
 import Data.Array.Mutable.Unlifted.Linear.Witness qualified as Unlifted

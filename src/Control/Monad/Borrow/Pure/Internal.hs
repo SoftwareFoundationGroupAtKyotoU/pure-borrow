@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UnliftedNewtypes #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
@@ -18,6 +19,8 @@ module Control.Monad.Borrow.Pure.Internal (
 
 import Control.Exception qualified as SystemIO
 import Control.Functor.Linear qualified as Control
+import Control.Monad qualified as NonLinear
+import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
@@ -26,11 +29,11 @@ import Data.Coerce qualified
 import Data.Coerce.Directed
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
-import Data.Unrestricted.Linear (lseq)
 import GHC.Base (TYPE)
 import GHC.Base qualified as GHC
 import GHC.Exts (State#, realWorld#)
 import GHC.ST qualified as ST
+import Prelude.Linear
 import Prelude.Linear qualified as PL
 import System.IO.Linear qualified as L
 import Unsafe.Linear qualified as Unsafe
@@ -148,16 +151,12 @@ newtype Mut α a = UnsafeMut a
 
 type role Mut nominal nominal
 
+instance Affable (Mut α a) where
+  aff = UnsafeAff
+  {-# INLINE aff #-}
+
 instance (β <= α, a <: b, b <: a) => Mut α a <: Mut β b where
   upcast (UnsafeMut a) = UnsafeMut (upcast a)
-  {-# INLINE upcast #-}
-
-instance (β <= α, a <: b) => Share α a <: Share β b where
-  upcast (UnsafeShare a) = UnsafeShare (upcast a)
-  {-# INLINE upcast #-}
-
-instance (α <= β, a <: b) => Lend α a <: Lend β b where
-  upcast (UnsafeLend a) = UnsafeLend (upcast a)
   {-# INLINE upcast #-}
 
 -- | Immutable shared reference to some resource 'a'
@@ -166,6 +165,24 @@ newtype Share α a = UnsafeShare a
 
 type role Share nominal representational
 
+instance Affable (Share α a) where
+  aff = UnsafeAff
+  {-# INLINE aff #-}
+
+deriving via AsAffable (Share α a) instance Consumable (Share α a)
+
+instance Dupable (Share α a) where
+  dup2 = Unsafe.toLinear $ NonLinear.join (,)
+  {-# INLINE dup2 #-}
+
+instance Movable (Share α a) where
+  move = Unsafe.toLinear Ur
+  {-# INLINE move #-}
+
+instance (β <= α, a <: b) => Share α a <: Share β b where
+  upcast (UnsafeShare a) = UnsafeShare (upcast a)
+  {-# INLINE upcast #-}
+
 {- | A (mutable) lent resource to 'a', which
 will only be available at the 'End' of the lifetime 'α'.
 -}
@@ -173,6 +190,10 @@ type Lend :: Lifetime -> Type -> Type
 newtype Lend α a = UnsafeLend a
 
 type role Lend nominal nominal
+
+instance (α <= β, a <: b) => Lend α a <: Lend β b where
+  upcast (UnsafeLend a) = UnsafeLend (upcast a)
+  {-# INLINE upcast #-}
 
 -- | Borrow a resource linearly and obtain the mutable reference to it and 'Lend' witness to reclaim the resource to lend at the 'End' of the lifetime.
 borrow :: a %1 -> Linearly %1 -> (Mut α a, Lend α a)

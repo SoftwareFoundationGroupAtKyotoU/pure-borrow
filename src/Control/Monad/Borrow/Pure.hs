@@ -16,8 +16,27 @@ module Control.Monad.Borrow.Pure (
   Share (),
   Lend (),
   borrow,
+  share,
   reclaim,
   reborrow,
+
+  -- ** Collapsing borrows
+  unMutMut,
+  unShrMut,
+  unMutShr,
+  unShrShr,
+
+  -- ** Case-splitting for borrows
+  SplittableRef,
+  DistributesRef (),
+  split,
+  GenericDistributesRef,
+  genericSplit,
+
+  -- *** Specialized case-splitting for variables
+  splitList,
+  splitPair,
+  splitEither,
 
   -- * References
   module Control.Monad.Borrow.Pure.Var,

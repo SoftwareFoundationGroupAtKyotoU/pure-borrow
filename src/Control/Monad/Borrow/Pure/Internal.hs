@@ -1,16 +1,24 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MagicHash #-}
+{-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE QualifiedDo #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RoleAnnotations #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnliftedNewtypes #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
+{-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Control.Monad.Borrow.Pure.Internal (
@@ -23,18 +31,30 @@ import Control.Monad qualified as NonLinear
 import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
-import Control.Monad.Borrow.Pure.Utils (coerceLin)
+import Control.Monad.Borrow.Pure.Utils (coerceLin, coerceWithLin)
 import Control.Monad.ST.Strict (ST)
+import Control.Syntax.DataFlow qualified as DataFlow
+import Data.Coerce (Coercible)
 import Data.Coerce qualified
 import Data.Coerce.Directed
+import Data.Functor.Identity (Identity)
 import Data.Functor.Linear qualified as Data
-import Data.Kind (Type)
+import Data.Kind (Constraint, Type)
+import Data.Monoid qualified as Mon
+import Data.Ord qualified as Ord
+import Data.Semigroup qualified as Sem
+import Data.Tuple (Solo (..))
+import Data.Type.Coercion (Coercion (..))
+import Data.Type.Coercion qualified as Coerce
 import GHC.Base (TYPE)
 import GHC.Base qualified as GHC
 import GHC.Exts (State#, realWorld#)
 import GHC.ST qualified as ST
+import GHC.TypeError (ErrorMessage (..))
+import Generics.Linear
 import Prelude.Linear
 import Prelude.Linear qualified as PL
+import Prelude.Linear.Unsatisfiable (Unsatisfiable, unsatisfiable)
 import System.IO.Linear qualified as L
 import Unsafe.Linear qualified as Unsafe
 
@@ -171,6 +191,14 @@ instance Affable (Share α a) where
 
 deriving via AsAffable (Share α a) instance Consumable (Share α a)
 
+unsafeWrapRef :: (SplittableRef_ ref) => a %1 -> ref a
+{-# INLINE unsafeWrapRef #-}
+unsafeWrapRef = coerceLin
+
+unsafeUnwrapRef :: (SplittableRef_ ref) => ref a %1 -> a
+{-# INLINE unsafeUnwrapRef #-}
+unsafeUnwrapRef = coerceLin
+
 instance Dupable (Share α a) where
   dup2 = Unsafe.toLinear $ NonLinear.join (,)
   {-# INLINE dup2 #-}
@@ -200,6 +228,11 @@ borrow :: a %1 -> Linearly %1 -> (Mut α a, Lend α a)
 borrow = Unsafe.toLinear \a lin ->
   lin `lseq` (UnsafeMut a, UnsafeLend a)
 
+-- | Shares a mutable reference, invalidating the original mutable reference.
+share :: Mut α a %1 -> Ur (Share α a)
+{-# INLINE share #-}
+share = Unsafe.toLinear \(UnsafeMut a) -> Ur (UnsafeShare a)
+
 -- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
 reclaim :: End α %1 -> Lend α a %1 -> a
 reclaim end = end `lseq` coerceLin
@@ -208,3 +241,208 @@ reclaim end = end `lseq` coerceLin
 reborrow :: (β <= α) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
 reborrow = Unsafe.toLinear \mutA ->
   (Data.Coerce.coerce mutA, Data.Coerce.coerce mutA)
+
+unMutMut :: (α <= β) => Mut α (Mut β a) %1 -> Mut α a
+unMutMut = coerceLin
+
+unShrMut :: (α <= β) => Share α (Mut β a) %1 -> Share α a
+unShrMut = coerceLin
+
+unMutShr :: Mut α (Share β a) %1 -> Share β a
+unMutShr = coerceLin
+
+unShrShr :: Share α (Share β a) %1 -> Share β a
+unShrShr = coerceLin
+
+gsplitSumMut :: Mut α ((f :+: g) x) %1 -> ((Mut α :.: f) :+: (Mut α :.: g)) x
+{-# INLINE gsplitSumMut #-}
+gsplitSumMut = \case
+  UnsafeMut (L1 l) -> L1 (coerceLin l)
+  UnsafeMut (R1 r) -> R1 (coerceLin r)
+
+gsplitSumShare :: Share α ((f :+: g) x) %1 -> ((Share α :.: f) :+: (Share α :.: g)) x
+{-# INLINE gsplitSumShare #-}
+gsplitSumShare = \case
+  UnsafeShare (L1 l) -> L1 (coerceLin l)
+  UnsafeShare (R1 r) -> R1 (coerceLin r)
+
+type SplittableRef_ :: (Type -> Type) -> Constraint
+class
+  (forall x. Coercible x (ref x)) =>
+  SplittableRef_ ref
+  where
+  coercionWit :: Coercion x (ref x)
+
+instance SplittableRef_ (Mut α) where
+  coercionWit = Coercion
+
+instance SplittableRef_ (Share α) where
+  coercionWit = Coercion
+
+instance SplittableRef_ (Lend α) where
+  coercionWit = Coercion
+
+-- | An abstraction over a type that can be
+class (SplittableRef_ ref) => SplittableRef ref
+
+instance (SplittableRef_ ref) => SplittableRef ref
+
+splitList :: (SplittableRef f) => f [x] %1 -> [f x]
+splitList = split
+
+splitPair :: (SplittableRef ref) => ref (a, b) %1 -> (ref a, ref b)
+{-# INLINE splitPair #-}
+splitPair = coerceLin . unsafeUnwrapRef
+
+splitEither :: (SplittableRef ref) => ref (Either a b) %1 -> Either (ref a) (ref b)
+{-# INLINE splitEither #-}
+splitEither = coerceLin . unsafeUnwrapRef
+
+-- | A dual to 'SplittableRef', which allows us to distribute a reference over a functor.
+class DistributesRef f where
+  split_ :: (SplittableRef ref) => ref (f x) %1 -> f (ref x)
+  default split_ ::
+    (GenericDistributesRef f, SplittableRef ref) =>
+    ref (f x) %1 -> f (ref x)
+  split_ = genericSplit
+
+split ::
+  forall ref f x.
+  ( DistributesRef f
+  , SplittableRef ref
+  ) =>
+  ref (f x) %1 -> f (ref x)
+{-# INLINE [1] split #-}
+split = split_
+
+instance DistributesRef Identity
+
+instance DistributesRef []
+
+instance DistributesRef Maybe
+
+instance DistributesRef Solo
+
+instance DistributesRef Ord.Down
+
+instance DistributesRef Sem.Dual
+
+instance DistributesRef Sem.Max
+
+instance DistributesRef Sem.Min
+
+instance DistributesRef Sem.First
+
+instance DistributesRef Sem.Last
+
+instance DistributesRef Mon.First
+
+instance DistributesRef Mon.Last
+
+instance (Unsatisfiable ('Text "Use splitEither directly!")) => DistributesRef (Either e) where
+  {-# INLINE split_ #-}
+  split_ = unsatisfiable
+
+instance (Unsatisfiable ('Text "Use splitPair instead!")) => DistributesRef ((,) a) where
+  {-# INLINE split_ #-}
+  split_ = unsatisfiable
+
+type GenericDistributesRef f = (Generic1 f, GDistributeRef (Rep1 f))
+
+genericSplit ::
+  forall ref f x.
+  ( GenericDistributesRef f
+  , SplittableRef ref
+  ) =>
+  ref (f x) %1 -> f (ref x)
+{-# INLINE genericSplit #-}
+genericSplit =
+  to1
+    . gdistributeRef @(Rep1 f) @ref
+    . unsafeMapRef from1
+
+unsafeMapRef :: (SplittableRef ref) => (a %1 -> b) -> ref a %1 -> ref b
+{-# INLINE unsafeMapRef #-}
+unsafeMapRef f = coerceLin f
+
+instance (GenericDistributesRef f) => DistributesRef (Generically1 f) where
+  {-# INLINE split_ #-}
+  split_ = Generically1 . genericSplit . unsafeMapRef \(Generically1 f) -> f
+
+class GDistributeRef f where
+  gdistributeRef :: (SplittableRef ref) => ref (f x) %1 -> f (ref x)
+
+instance
+  ( GDistributeRef f
+  , GDistributeRef g
+  ) =>
+  GDistributeRef (f :*: g)
+  where
+  {-# INLINE gdistributeRef #-}
+  gdistributeRef (ref :: ref a) =
+    case unsafeUnwrapRef ref of
+      f :*: g -> DataFlow.do
+        f <- gdistributeRef $ unsafeWrapRef f
+        g <- gdistributeRef $ unsafeWrapRef g
+        f :*: g
+
+instance
+  ( GDistributeRef f
+  , GDistributeRef g
+  ) =>
+  GDistributeRef (f :+: g)
+  where
+  {-# INLINE gdistributeRef #-}
+  gdistributeRef ref = case unsafeUnwrapRef ref of
+    L1 l -> L1 (gdistributeRef (unsafeWrapRef l))
+    R1 r -> R1 (gdistributeRef (unsafeWrapRef r))
+
+instance
+  (Unsatisfiable (Text "Nonlinear fields cannot distribute references!")) =>
+  GDistributeRef (MP1 GHC.Many f)
+  where
+  {-# INLINE gdistributeRef #-}
+  gdistributeRef = unsatisfiable
+
+instance (GDistributeRef f) => GDistributeRef (MP1 GHC.One f) where
+  {-# INLINE gdistributeRef #-}
+  gdistributeRef =
+    MP1 . gdistributeRef . unsafeWrapRef . unMP1 . unsafeUnwrapRef
+
+instance (GDistributeRef f) => GDistributeRef (M1 i c f) where
+  {-# INLINE gdistributeRef #-}
+  gdistributeRef = \x ->
+    case unsafeUnwrapRef x of
+      M1 x -> M1 $ gdistributeRef $ unsafeWrapRef x
+
+instance DistributesRef Par1 where
+  {-# INLINE split_ #-}
+  split_ = \x -> case unsafeUnwrapRef x of
+    Par1 a -> Par1 (unsafeWrapRef a)
+
+instance
+  ( DistributesRef f
+  , DistributesRef g
+  , Data.Functor f
+  ) =>
+  GDistributeRef (f :.: g)
+  where
+  {-# INLINE gdistributeRef #-}
+  gdistributeRef = \(x :: ref _) -> case unsafeUnwrapRef x of
+    Comp1 fg -> Comp1 $ Data.fmap split_ $ split_ $ unsafeWrapRef @ref fg
+
+instance GDistributeRef Par1 where
+  {-# INLINE gdistributeRef #-}
+  gdistributeRef = \x -> case unsafeUnwrapRef x of
+    Par1 a -> Par1 (unsafeWrapRef a)
+
+instance
+  (Unsatisfiable (Text "A type containing non-parametric field with type `" :<>: ShowType c :<>: Text "', which cannot be safely referenced!")) =>
+  GDistributeRef (K1 i c)
+  where
+  {-# INLINE gdistributeRef #-}
+  gdistributeRef = unsatisfiable
+
+instance GDistributeRef U1 where
+  gdistributeRef = coerceLin . unsafeUnwrapRef
+  {-# INLINE gdistributeRef #-}

@@ -161,6 +161,7 @@ test_qsort =
         F.collect "length" [ceiling @_ @Int (fromIntegral @_ @Double (V.length v) / 10) * 10]
         F.collect "min" [NonLinear.minimum v `quot` 10 * 10]
         F.collect "max" [NonLinear.maximum v `quot` 10 * 10]
+        F.collect "sorted" [V.and $ V.zipWith (NonLinear.<=) v (V.tail v)]
         F.info $ "input: " <> show xs
         F.assert
           $ P.expect (V.fromList $ List.sort xs)

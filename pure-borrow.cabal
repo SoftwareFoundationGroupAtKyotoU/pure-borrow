@@ -110,15 +110,6 @@ benchmark qsort-bench
   main-is: qsort.hs
   hs-source-dirs: bench
   ghc-options:
-    -Wall
-    -Wcompat
-    -Widentities
-    -Wincomplete-record-updates
-    -Wincomplete-uni-patterns
-    -Wmissing-export-lists
-    -Wmissing-home-modules
-    -Wpartial-fields
-    -Wredundant-constraints
     -threaded
     -rtsopts
     -O2
@@ -141,15 +132,6 @@ executable qsort
   main-is: qsort.hs
   hs-source-dirs: app
   ghc-options:
-    -Wall
-    -Wcompat
-    -Widentities
-    -Wincomplete-record-updates
-    -Wincomplete-uni-patterns
-    -Wmissing-export-lists
-    -Wmissing-home-modules
-    -Wpartial-fields
-    -Wredundant-constraints
     -threaded
     -rtsopts
     -with-rtsopts=-N
@@ -160,6 +142,31 @@ executable qsort
     optparse-applicative,
     pure-borrow,
     random,
+    vector,
+    vector-algorithms,
+
+  default-language: Haskell2010
+
+executable convert-qsort-bench-csv
+  import: defaults
+  main-is: convert-qsort-bench-csv.hs
+  hs-source-dirs: app
+  ghc-options:
+    -threaded
+    -rtsopts
+    -with-rtsopts=-N
+
+  build-depends:
+    base >=4.7 && <5,
+    bytestring,
+    cassava,
+    deepseq,
+    monoidal-containers,
+    optparse-applicative,
+    pure-borrow,
+    random,
+    text,
+    unordered-containers,
     vector,
     vector-algorithms,
 

@@ -5,7 +5,7 @@
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# OPTIONS_GHC -Wno-name-shadowing #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-} 
 
 module Data.Vector.Mutable.Linear.BorrowSpec (
   module Data.Vector.Mutable.Linear.BorrowSpec,

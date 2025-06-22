@@ -278,7 +278,7 @@ qsort = go
               pivot & \(Ur pivot) -> Control.do
                 (lo, hi) <- divide pivot v 0 n
                 let b' = budget `quot` 2
-                Control.void $ parIf (b' NonLinear.> 0) (go b' lo) (go b' hi)
+                Control.void $ parIf (b' NonLinear.> 0) (go b' lo) (go b' hi) 
 
 parIf :: Bool %1 -> BO α a %1 -> BO α b %1 -> BO α (a, b)
 {-# INLINE parIf #-}

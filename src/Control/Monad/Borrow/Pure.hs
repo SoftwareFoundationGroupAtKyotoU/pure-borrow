@@ -81,7 +81,7 @@ runBO lin bo =
     MkSomeNow now -> DataFlow.do
       (now, f) <- execBO bo now
       case endLifetime now of
-        Ur end -> f end
+        Ur end -> f end 
 
 runBOLend :: Linearly %1 -> (forall α. BO α (Lend α a)) %1 -> a
 {-# INLINE runBOLend #-}

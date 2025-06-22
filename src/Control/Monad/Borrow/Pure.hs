@@ -34,6 +34,9 @@ module Control.Monad.Borrow.Pure (
 
   -- ** Case-splitting for borrows
   SplittableRef,
+  SplittableRefAt,
+  AccessibleRef,
+  AccessibleRefAt,
   DistributesRef (),
   split,
   GenericDistributesRef,

@@ -13,6 +13,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeData #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnliftedNewtypes #-}
@@ -47,7 +48,9 @@ import Data.Monoid qualified as Mon
 import Data.Ord qualified as Ord
 import Data.Semigroup qualified as Sem
 import Data.Tuple (Solo (..))
+import Data.Type.Bool (type (||))
 import Data.Type.Coercion (Coercion (..))
+import Data.Type.Equality (type (==))
 import Data.Var.Linear (Var)
 import Data.Vector.Mutable.Linear (Vector)
 import Data.Word
@@ -265,21 +268,46 @@ class
   (forall x. Coercible x (ref x)) =>
   SplittableRef_ ref
   where
+  type RefLifetime ref :: Lifetime
   coercionWit :: Coercion x (ref x)
 
 instance SplittableRef_ (Mut α) where
+  type RefLifetime (Mut α) = α
   coercionWit = Coercion
 
 instance SplittableRef_ (Share α) where
+  type RefLifetime (Share α) = α
   coercionWit = Coercion
 
 instance SplittableRef_ (Lend α) where
+  type RefLifetime (Lend α) = α
   coercionWit = Coercion
 
 -- | An abstraction over a type that can be
 class (SplittableRef_ ref) => SplittableRef ref
 
 instance (SplittableRef_ ref) => SplittableRef ref
+
+type SplittableRefAt α ref = (SplittableRef ref, RefLifetime ref ~ α)
+
+data CaseRef ref where
+  IsMut :: CaseRef (Mut α)
+  IsShare :: CaseRef (Share α)
+
+-- | A constraint that requires @ref@ to be either a 'Share' or a 'Mut' reference, which is accessible in 'BO' regions.
+class (SplittableRef ref) => AccessibleRef ref where
+  caseRef :: CaseRef ref
+
+instance AccessibleRef (Mut α) where
+  caseRef = IsMut
+
+instance AccessibleRef (Share α) where
+  caseRef = IsShare
+
+type AccessibleRefAt α ref =
+  ( AccessibleRef ref
+  , RefLifetime ref ~ α
+  )
 
 splitList :: (SplittableRef f) => f [x] %1 -> [f x]
 splitList = split

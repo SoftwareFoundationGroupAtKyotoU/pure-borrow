@@ -23,3 +23,9 @@ lseq# a = case consume a of
 coerceWithLin :: Coercion a b %1 -> a %1 -> b
 {-# INLINE coerceWithLin #-}
 coerceWithLin = Unsafe.toLinear2 coerceWith
+
+infixr 1 >>>
+
+(>>>) :: (a %1 -> b) -> (b %1 -> c) -> a %1 -> c
+{-# INLINE (>>>) #-}
+(>>>) f g = \x -> g (f x)

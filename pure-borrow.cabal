@@ -43,8 +43,10 @@ common defaults
 library
   import: defaults
   build-depends:
+    containers,
     deepseq,
     linear-generics,
+    vector,
 
   hs-source-dirs: src
   -- cabal-gild: discover src --exclude src/**/Utils.hs
@@ -65,6 +67,7 @@ library
     Data.Comonad.Linear
     Data.Var.Linear
     Data.Var.Linear.Unlifted
+    Data.Vector.Mutable.Linear.Borrow
 
   -- cabal-gild: discover src --include src/**/Utils.hs
   other-modules: Control.Monad.Borrow.Pure.Utils

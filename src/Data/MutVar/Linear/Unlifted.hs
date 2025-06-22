@@ -6,7 +6,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
-module Data.MutVar.Linear.Unlifted (Var#, newVar#, unVar#, atomicModify#) where
+module Data.MutVar.Linear.Unlifted (Var#, newVar#, unVar#, atomicModify_#, atomicModify#) where
 
 import Control.Monad.Borrow.Pure.Lifetime.Token
 import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
@@ -38,9 +38,16 @@ unVar# = Unsafe.toLinear \(Var# a) ->
 instance LinearOnly (Var# a) where
   unsafeWithLinear = unsafeLinearOnly
 
-atomicModify# :: Var# a %1 -> (a %1 -> a) %1 -> Var# a
+atomicModify_# :: Var# a %1 -> (a %1 -> a) %1 -> Var# a
+{-# NOINLINE atomicModify_# #-}
+atomicModify_# = GHC.noinline $ Unsafe.toLinear2 \(Var# mv) f ->
+  runRW# \s ->
+    case GHC.atomicModifyMutVar2# mv (Unsafe.toLinear f) s of
+      (# _, !_, !_ #) -> Var# mv
+
+atomicModify# :: Var# a %1 -> (a %1 -> (a, b)) %1 -> (# Var# a, b #)
 {-# NOINLINE atomicModify# #-}
 atomicModify# = GHC.noinline $ Unsafe.toLinear2 \(Var# mv) f ->
   runRW# \s ->
-    case GHC.atomicModifyMutVar_# mv (Unsafe.toLinear f) s of
-      (# _, !_, !_ #) -> Var# mv
+    case GHC.atomicModifyMutVar2# mv (Unsafe.toLinear f) s of
+      (# _, !_, (!_, !b) #) -> (# Var# mv, b #)

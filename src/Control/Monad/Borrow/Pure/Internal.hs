@@ -1,6 +1,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MagicHash #-}
@@ -302,29 +303,29 @@ split ::
 {-# INLINE [1] split #-}
 split = split_
 
-instance DistributesRef Identity
+deriving anyclass instance DistributesRef Identity
 
-instance DistributesRef []
+deriving anyclass instance DistributesRef []
 
-instance DistributesRef Maybe
+deriving anyclass instance DistributesRef Maybe
 
-instance DistributesRef Solo
+deriving anyclass instance DistributesRef Solo
 
-instance DistributesRef Ord.Down
+deriving anyclass instance DistributesRef Ord.Down
 
-instance DistributesRef Sem.Dual
+deriving anyclass instance DistributesRef Sem.Dual
 
-instance DistributesRef Sem.Max
+deriving anyclass instance DistributesRef Sem.Max
 
-instance DistributesRef Sem.Min
+deriving anyclass instance DistributesRef Sem.Min
 
-instance DistributesRef Sem.First
+deriving anyclass instance DistributesRef Sem.First
 
-instance DistributesRef Sem.Last
+deriving anyclass instance DistributesRef Sem.Last
 
-instance DistributesRef Mon.First
+deriving anyclass instance DistributesRef Mon.First
 
-instance DistributesRef Mon.Last
+deriving anyclass instance DistributesRef Mon.Last
 
 instance (Unsatisfiable ('Text "Use splitEither directly!")) => DistributesRef (Either e) where
   {-# INLINE split_ #-}

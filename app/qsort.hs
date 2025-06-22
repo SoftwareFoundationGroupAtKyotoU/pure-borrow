@@ -6,16 +6,15 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
-module Main where
+module Main (main) where
 
 import Control.Applicative ((<**>), (<|>))
 import Control.DeepSeq (force)
 import Control.Exception (evaluate)
-import Control.Functor.Linear (ask, asks, runReader, runReaderT)
 import qualified Control.Functor.Linear as Control
-import Control.Monad (void)
 import Control.Monad.Borrow.Pure
 import qualified Control.Syntax.DataFlow as DataFlow
+import Data.Functor (void)
 import qualified Data.Vector as V
 import qualified Data.Vector.Algorithms.Intro as AI
 import qualified Data.Vector.Mutable.Linear.Borrow as VL
@@ -25,7 +24,7 @@ import Prelude.Linear hiding (Eq, Ord, Semigroup (..), ($), ($!))
 import qualified Prelude.Linear as PL hiding (($!))
 import System.Mem (performGC)
 import System.Random
-import System.Random.Stateful (StateGenM (..), UniformRange (uniformRM), randomRM, runStateGenST_, runStateGen_)
+import System.Random.Stateful (runStateGen_, uniformM)
 
 data Mode = Parallel | IntroSort
   deriving (Show, Eq, Ord, Generic)
@@ -55,23 +54,23 @@ optionsP = Opts.info (p <**> Opts.helper) $ Opts.progDesc "Parallel quicksort wi
 qsortWith :: Mode -> V.Vector Int -> V.Vector Int
 qsortWith IntroSort v = V.modify AI.sort v
 qsortWith Parallel v =
-  V.modify
-    ( \mv -> pure $
-        unur PL.$ linearly \lin -> DataFlow.do
-          (lin, l2, l3) <- dup3 lin
-          runBO_ lin Control.do
-            VL.qsort PL.$ borrow_ (VL.unsafeFromMutable mv l2) l3
-    )
-    v
+  unur PL.$ unur PL.$ linearly \lin ->
+    DataFlow.do
+      (lin, l2, l3) <- dup3 lin
+      runBO lin Control.do
+        (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
+        VL.qsort v
+        Control.pure PL.$ \end -> VL.toVector (reclaim end lend)
 
 main :: IO ()
 main = do
   CLIOpts {..} <- Opts.execParser optionsP
+  putStrLn $ "Sorting " <> show size <> " elements with mode: " <> show mode
   gen <- case seed of
     Just s -> return $ mkStdGen s
     Nothing -> newStdGen
   let !vec =
         runStateGen_ gen \g -> do
-          V.replicateM size (uniformRM (0 :: Int, 1000) g)
+          V.replicateM size (uniformM g)
   performGC
   void $ evaluate $ force $ qsortWith mode vec

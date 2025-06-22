@@ -160,10 +160,11 @@ unsafePerformEvaluateUndupableBO (BO f) = runBO# \s ->
 
 -- | Run two computations in parallel, returning their results as a tuple.
 parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
-{-# INLINE parBO #-}
-parBO a b =
+{-# NOINLINE parBO #-}
+parBO a b = GHC.noinline
   -- TODO: define explicit rules to when to invoke noDuplicate#
-  BO \s -> case Unsafe.toLinear GHC.noDuplicate# s of
+  BO
+  \s -> case Unsafe.toLinear GHC.noDuplicate# s of
     s -> case Unsafe.toLinear2 GHC.spark# (unsafePerformEvaluateUndupableBO a) s of
       (# s, a #) -> case Unsafe.toLinear2 GHC.spark# (unsafePerformEvaluateUndupableBO b) s of
         (# s, b #) -> case Unsafe.toLinear2 GHC.seq# a s of

@@ -109,3 +109,4 @@ cabal.project.local~
 .HTF/
 .ghc.environment.*
 *.eventlog
+/bench-results

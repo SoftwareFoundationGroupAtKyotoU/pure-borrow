@@ -176,6 +176,54 @@ jobs:
             exit 1
           fi
 
+  bench:
+    name: Benchmark (${{matrix.plan.name}})
+    needs: [ci-enumerate, build]
+    continue-on-error: ${{matrix.plan.is_head}}
+    strategy:
+      matrix:
+        plan: ${{ [fromJSON(needs.ci-enumerate.outputs.plan)[0]] }}
+      fail-fast: false
+    env:
+      cabal: 3.10.1.0
+      ghc: ${{matrix.plan.ghc}}
+      project-file: ${{matrix.plan.path}}
+      plan: ${{matrix.plan.name}}
+      artifact: artifact-${{matrix.plan.name}}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail when Corresponding Build didn't succeed
+        if: ${{needs.build.result != 'success' }}
+        run: echo "BUILD FAILED" >&2; exit 1
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{github.event.pull_request.head.sha || github.sha}}
+      - name: Download artifacts
+        id: download
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{env.artifact}}
+      - name: Decompress
+        run: |
+          ls -R "${{ steps.download.outputs.download-path }}"
+          tar xaf "${{ steps.download.outputs.download-path }}/${{env.artifact}}.tar.zst"
+      - name: Run Tests
+        shell: bash
+        run: >
+          ${{env.artifact}}/benchs/qsort-bench
+          --csv bench-results/qsort.csv
+          --svg bench-results/qsort.svg
+          -j1
+          --time-mode=wall
+          +RTS -N -s
+      - name: Compress results
+        run: tar caf bench-results.tar.gz bench-results
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results 
+          path: bench-results.tar.gz
+
   fourmolu:
     name: Fourmolu
     runs-on: ubuntu-latest

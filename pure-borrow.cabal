@@ -152,8 +152,7 @@ executable qsort
     -Wredundant-constraints
     -threaded
     -rtsopts
-    "-with-rtsopts=-N --nonmoving-gc"
-    -eventlog
+    -with-rtsopts=-N
 
   build-depends:
     base >=4.7 && <5,

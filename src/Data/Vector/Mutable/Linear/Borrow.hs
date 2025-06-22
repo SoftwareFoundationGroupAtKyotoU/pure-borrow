@@ -259,11 +259,15 @@ to scale this up.
 qsort ::
   forall a α.
   (Ord a, Derefable a, Movable a) =>
-  Mut α (Vector a) %1 -> BO α ()
+  {- | Cost for using parallelism. Halved after each recursive call,
+  and stops parallelizing when it reaches 1.
+  -}
+  Word ->
+  Mut α (Vector a) %1 ->
+  BO α ()
 qsort = go
   where
-    go :: forall β. Mut β (Vector a) %1 -> BO β ()
-    go v = case size v of
+    go budget v = case size v of
       (Ur 0, v) -> Control.pure $ consume v
       (Ur 1, v) -> Control.pure $ consume v
       (Ur n, v) ->
@@ -273,8 +277,8 @@ qsort = go
                 move . derefShare Control.<$> unsafeGet i v
               pivot & \(Ur pivot) -> Control.do
                 (lo, hi) <- divide pivot v 0 n
-                Control.void $ parIf (n > threshold) (go lo) (go hi)
-    threshold = 8
+                let b' = budget `quot` 2
+                Control.void $ parIf (b' NonLinear.> 0) (go b' lo) (go b' hi)
 
 parIf :: Bool %1 -> BO α a %1 -> BO α b %1 -> BO α (a, b)
 {-# INLINE parIf #-}

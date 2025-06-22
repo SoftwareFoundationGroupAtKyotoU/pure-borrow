@@ -34,7 +34,7 @@ qsortVec v = unur $ unur $ linearly \lin -> DataFlow.do
   runBO l1
     $ borrow (VL.fromVector v l2) l3
     & \(v, lend) -> Control.do
-      VL.qsort v
+      VL.qsort 8 v
       Control.pure \end -> VL.toVector (reclaim end lend)
 
 divideList :: [Int] -> (Int, [Int])

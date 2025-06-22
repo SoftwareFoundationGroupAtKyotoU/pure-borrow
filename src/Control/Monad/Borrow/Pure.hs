@@ -71,9 +71,9 @@ import Data.Coerce.Directed (upcast)
 import Data.Proxy (Proxy (..))
 import Prelude.Linear
 
-runBO :: (forall α. BO α (End α -> a)) %1 -> Linearly %1 -> a
+runBO :: Linearly %1 -> (forall α. BO α (End α -> a)) %1 -> a
 {-# INLINE runBO #-}
-runBO bo lin =
+runBO lin bo =
   case newLifetime lin of
     MkSomeNow now -> DataFlow.do
       (now, f) <- execBO bo now

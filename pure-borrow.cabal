@@ -74,7 +74,7 @@ library
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0
   build-depends:
 
-test-suite test
+test-suite pure-borrow-test
   import: defaults
   default-language: GHC2021
   type: exitcode-stdio-1.0
@@ -102,3 +102,4 @@ test-suite test
     tasty-discover,
     tasty-expected-failure,
     tasty-hunit,
+    vector,

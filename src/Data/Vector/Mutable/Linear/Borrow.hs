@@ -37,6 +37,7 @@ import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Function qualified as NonLinear
 import Data.Functor.Linear qualified as Data
 import Data.IntSet qualified as IntSet
+import Data.Unrestricted.Linear qualified as Ur
 import Data.Vector qualified as V
 import Data.Vector.Mutable (RealWorld)
 import Data.Vector.Mutable qualified as MV
@@ -84,14 +85,14 @@ fromVector v l =
       $! unsafeSystemIOToBO
       $! V.thaw v
 
-toVector :: Vector a %1 -> V.Vector a
+toVector :: Vector a %1 -> Ur (V.Vector a)
 {-# NOINLINE toVector #-}
 toVector = GHC.noinline
-  $ Unsafe.toLinear \(Vector v) -> unsafePerformIO $ V.unsafeFreeze v
+  $ Unsafe.toLinear \(Vector v) -> Ur (unsafePerformIO $ V.unsafeFreeze v)
 
-toList :: Vector a %1 -> [a]
+toList :: Vector a %1 -> Ur [a]
 {-# INLINE toList #-}
-toList = Unsafe.toLinear V.toList . toVector
+toList = Ur.lift V.toList . toVector
 
 {- | Unsafely thaws 'V.Vector' (from @vector@ package) to a 'Vector',
 reusing the same memory.

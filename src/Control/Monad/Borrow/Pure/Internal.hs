@@ -249,7 +249,7 @@ share = Unsafe.toLinear \(UnsafeMut a) -> Ur (UnsafeShare a)
 
 -- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
 reclaim :: End α %1 -> Lend α a %1 -> a
-reclaim end = end `lseq` coerceLin
+reclaim end = end `lseq` \(UnsafeLend !a) -> a
 
 -- | Reborrow a mutable reference from sublifetime
 reborrow :: (β <= α) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))

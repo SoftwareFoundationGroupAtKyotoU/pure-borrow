@@ -94,12 +94,15 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
         Control.do
           q <- MQ.writeMQueue q $ Divide ini rootSink
           chs <- concurrentMap lin'' worker qs
-          r <- case conquer of
-            NoOp -> Control.do
-              Once.take rootSource
-              MQ.closeMQueue q
-              Control.void $ Data.traverse wait chs
-              Control.pure ()
+          r <-
+            ( case conquer of
+                NoOp -> Control.do
+                  Once.take rootSource
+                  MQ.closeMQueue q
+                  Control.void $ Data.traverse wait chs
+                  Control.pure ()
+            ) ::
+              BO γ r
           {-
             -- NOTE: To handle conquer correctly, we need to be more careful
             -- with the dependency between tasks and easily deadlocks / starvation.

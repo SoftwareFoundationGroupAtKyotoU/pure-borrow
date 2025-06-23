@@ -146,18 +146,18 @@ sharing v k = DataFlow.do
 
 reborrowing ::
   Mut α a %1 ->
-  (forall β. (β <= α) => Mut β a -> BO β (End β -> r)) %1 ->
+  (forall β. (β <= α) => Mut β a %1 -> BO β (End β -> r)) %1 ->
   BO α (r, Mut α a)
-reborrowing mutα k =
-  withLinearly mutα & \(lin, v) ->
-    scope lin \(Proxy :: Proxy β) ->
-      reborrow v & \(v, lend) ->
-        Control.do
-          v <- k v
-          Control.pure $ \end -> (v (upcast end), reclaim (upcast end) lend)
+reborrowing mutα k = DataFlow.do
+  (lin, v) <- withLinearly mutα
+  scope lin \(Proxy :: Proxy β) -> DataFlow.do
+    (v, lend) <- reborrow v
+    Control.do
+      v <- k v
+      Control.pure $ \end -> (v (upcast end), reclaim (upcast end) lend)
 
 reborrowing_ ::
   Mut α a %1 ->
-  (forall β. (β <= α) => Mut β a -> BO β r) %1 ->
+  (forall β. (β <= α) => Mut β a %1 -> BO β r) %1 ->
   BO α (r, Mut α a)
 reborrowing_ mutα k = reborrowing mutα (\mut -> k mut Control.<&> \a _ -> a)

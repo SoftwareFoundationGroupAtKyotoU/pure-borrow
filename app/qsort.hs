@@ -9,6 +9,8 @@
 module Main (main) where
 
 import Control.Applicative ((<**>), (<|>))
+import Control.Concurrent (getNumCapabilities)
+import Control.Concurrent.DivideConquer.Linear (divideAndConquer, qsortDC)
 import Control.DeepSeq (force)
 import Control.Exception (evaluate)
 import qualified Control.Functor.Linear as Control
@@ -26,19 +28,20 @@ import System.Mem (performGC)
 import System.Random
 import System.Random.Stateful (runStateGen_, uniformM)
 
-data Mode = Parallel Word | Sequential | IntroSort
+data Mode = Parallel Word | Worksteal Int Int | Sequential | IntroSort
   deriving (Show, Eq, Ord, Generic)
 
 data CLIOpts = CLIOpts {mode :: Mode, size :: Int, seed :: Maybe Int}
   deriving (Show, Eq, Ord, Generic)
 
-optionsP :: Opts.ParserInfo CLIOpts
-optionsP = Opts.info (p <**> Opts.helper) $ Opts.progDesc "Parallel quicksort with linear borrows"
+optionsP :: Int -> Opts.ParserInfo CLIOpts
+optionsP numCap = Opts.info (p <**> Opts.helper) $ Opts.progDesc "Parallel quicksort with linear borrows"
   where
     p = do
       mode <-
         Parallel <$> Opts.option Opts.auto (Opts.long "parallel" <> Opts.short 'p' <> Opts.help "Use parallel quicksort with specified capacity (default: 8)")
           <|> Opts.flag' Sequential (Opts.long "sequential" <> Opts.short 'S' <> Opts.help "Use sequential quicksort")
+          <|> Opts.flag' (Worksteal numCap 4) (Opts.long "worksteal" <> Opts.short 'w' <> Opts.help "Use work-stealing quicksort")
           <|> Opts.flag (Parallel 8) IntroSort (Opts.long "intro" <> Opts.short 'i' <> Opts.help "Use intro sort")
       size <-
         Opts.option
@@ -70,10 +73,19 @@ qsortWith Sequential v =
         (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
         VL.qsort 0 v
         Control.pure PL.$ \end -> VL.toVector (reclaim end lend)
+qsortWith (Worksteal workers thresh) v =
+  unur PL.$ unur PL.$ linearly \lin ->
+    DataFlow.do
+      (lin, l2, l3) <- dup3 lin
+      runBO lin Control.do
+        (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
+        Control.void PL.$ divideAndConquer workers (qsortDC thresh) v
+        Control.pure PL.$ \end -> VL.toVector (reclaim end lend)
 
 main :: IO ()
 main = do
-  CLIOpts {..} <- Opts.execParser optionsP
+  numCap <- getNumCapabilities
+  CLIOpts {..} <- Opts.execParser $ optionsP numCap
   putStrLn $ "Sorting " <> show size <> " elements with mode: " <> show mode
   gen <- case seed of
     Just s -> return $ mkStdGen s

@@ -110,3 +110,4 @@ cabal.project.local~
 .ghc.environment.*
 *.eventlog
 /bench-results
+*.png

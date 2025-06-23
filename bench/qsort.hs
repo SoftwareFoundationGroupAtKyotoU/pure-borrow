@@ -5,6 +5,8 @@
 
 module Main (main) where
 
+import Control.Concurrent (getNumCapabilities)
+import Control.Concurrent.DivideConquer.Linear (divideAndConquer, qsortDC)
 import qualified Control.Functor.Linear as Control
 import Control.Monad.Borrow.Pure
 import qualified Control.Syntax.DataFlow as DataFlow
@@ -17,7 +19,7 @@ import qualified Prelude.Linear as PL
 import System.Random.Stateful
 import Test.Tasty.Bench
 
-data Mode = Parallel Word | Sequential | IntroSort
+data Mode = Parallel Word | Worksteal Int | Sequential | IntroSort
   deriving (Show, Eq, Ord)
 
 qsortWith :: Mode -> V.Vector Int -> V.Vector Int
@@ -38,9 +40,18 @@ qsortWith Sequential v =
         (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
         VL.qsort 0 v
         Control.pure PL.$ \end -> VL.toVector (reclaim end lend)
+qsortWith (Worksteal p) v =
+  unur PL.$ unur PL.$ linearly \lin ->
+    DataFlow.do
+      (lin, l2, l3) <- dup3 lin
+      runBO lin Control.do
+        (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
+        Control.void PL.$ divideAndConquer p (qsortDC 16) v
+        Control.pure PL.$ \end -> VL.toVector (reclaim end lend)
 
 main :: IO ()
-main =
+main = do
+  numCap <- getNumCapabilities
   defaultMain
     [ bgroup
         "qsort"
@@ -54,8 +65,13 @@ main =
                 ( [ bench "intro" $ nf (qsortWith IntroSort) vec
                   , bench "sequential" $ nf (qsortWith Sequential) vec
                   ]
-                    ++ [ bench ("parallel (budget = " <> show n <> ")") $ nf (qsortWith $ Parallel n) vec
-                       | n <- [4, 8 .. 32]
+                    ++ [ bench ("parallel (budget = " <> show n <> ")") $
+                           nf (qsortWith $ Parallel n) vec
+                       | n <- [4, 8, 16, 32]
+                       ]
+                    ++ [ bench ("worksteal (workers = " <> show n <> ")") $
+                           nf (qsortWith $ Worksteal n) vec
+                       | n <- [2, 4 .. numCap]
                        ]
                 )
         | i <- [0 .. 32]

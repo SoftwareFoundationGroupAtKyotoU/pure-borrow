@@ -92,7 +92,7 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
         (rootSink, rootSource) <- Once.new lin'
         qs <- MQ.unsafeCloneN @n q'
         Control.do
-          q <- MQ.writeMQueueMany q [Divide ini rootSink]
+          q <- MQ.writeMQueue q $ Divide ini rootSink
           chs <- concurrentMap lin'' worker qs
           r <- case conquer of
             NoOp -> Control.do
@@ -129,8 +129,7 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
                     Control.StateT \q ->
                       ((),) Control.<$> MQ.writeMQueue q (Divide work sink)
                     Control.pure source
-              q <- MQ.writeMQueue q (Unite sources sink)
-              Control.pure q
+              MQ.writeMQueue q (Unite sources sink)
         Unite sources sink -> Control.do
           case conquer of
             NoOp -> Control.do

@@ -20,22 +20,22 @@
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 
 {- | NOTE: This is only for internal use, and is not meant to be used by end users.
-This is because multiple existence of @'Mut' α 'BMQueue'@ breaks purity!
+This is because multiple existence of @'Mut' α 'MQueue'@ breaks purity!
 -}
-module Control.Concurrent.DivideConquer.Utils.BMQueue.Linear (
-  BMQueue,
-  newBMQueue,
+module Control.Concurrent.DivideConquer.Utils.MQueue.Linear (
+  MQueue,
+  newMQueue,
   unsafeClone,
   unsafeCloneN,
-  writeBMQueue,
-  writeBMQueueMany,
-  readBMQueue,
-  closeBMQueue,
+  writeMQueue,
+  writeMQueueMany,
+  readMQueue,
+  closeMQueue,
 ) where
 
 import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TBMQueue (TBMQueue)
-import Control.Concurrent.STM.TBMQueue qualified as TBMQ
+import Control.Concurrent.STM.TMQueue (TMQueue)
+import Control.Concurrent.STM.TMQueue qualified as TMQ
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Internal
@@ -53,53 +53,52 @@ import Prelude.Linear.Unsatisfiable
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
--- | A bounded closable queue
-newtype BMQueue a = MkBMQ (TBMQueue a)
+-- | A closable queue
+newtype MQueue a = MkMQ (TMQueue a)
 
-newBMQueue ::
+newMQueue ::
   forall α a.
-  Int ->
   Linearly %1 ->
-  BO α (Mut α (BMQueue a), Lend α (BMQueue a))
-newBMQueue n lin = Control.do
-  q <- unsafeSystemIOToBO $ MkBMQ NonLinear.<$> TBMQ.newTBMQueueIO n
+  BO α (Mut α (MQueue a), Lend α (MQueue a))
+newMQueue lin = Control.do
+  q <- unsafeSystemIOToBO $ MkMQ NonLinear.<$> TMQ.newTMQueueIO
   Control.pure $ borrow q lin
 
 instance
-  (Unsatisfiable (ShowType (BMQueue a) :<>: Text " cannot be dereferenced!")) =>
-  Derefable (BMQueue a)
+  (Unsatisfiable (ShowType (MQueue a) :<>: Text " cannot be dereferenced!")) =>
+  Derefable (MQueue a)
   where
   unsafeDeref = unsatisfiable
 
 -- | NOTE: unconditional use of this function MAY BREAK PURITY!
-unsafeClone :: Mut α (BMQueue a) %1 -> (Mut α (BMQueue a), Mut α (BMQueue a))
+unsafeClone :: Mut α (MQueue a) %1 -> (Mut α (MQueue a), Mut α (MQueue a))
 unsafeClone = Unsafe.toLinear \mut -> (mut, mut)
 
 -- | NOTE: unconditional use of this function MAY BREAK PURITY!
-unsafeCloneN :: forall n α a. (KnownNat n) => Mut α (BMQueue a) %1 -> V n (Mut α (BMQueue a))
+unsafeCloneN :: forall n α a. (KnownNat n) => Mut α (MQueue a) %1 -> V n (Mut α (MQueue a))
 unsafeCloneN = Unsafe.toLinear \q ->
   V.fromReplicator (Data.pure q)
 
-writeBMQueue ::
-  Mut α (BMQueue a) %1 ->
+writeMQueue ::
+  Mut α (MQueue a) %1 ->
   a %1 ->
-  BO α (Mut α (BMQueue a))
-writeBMQueue = Unsafe.toLinear2 \q a -> Control.do
-  unsafeSystemIOToBO $ q NonLinear.<$ atomically (TBMQ.writeTBMQueue (NonLinear.coerce q) a)
+  BO α (Mut α (MQueue a))
+writeMQueue = Unsafe.toLinear2 \q a -> Control.do
+  unsafeSystemIOToBO $ q NonLinear.<$ atomically (TMQ.writeTMQueue (NonLinear.coerce q) a)
 
-writeBMQueueMany ::
+writeMQueueMany ::
   (Data.Traversable t, Consumable (t ())) =>
-  Mut α (BMQueue a) %1 ->
+  Mut α (MQueue a) %1 ->
   t a %1 ->
-  BO α (Mut α (BMQueue a))
-writeBMQueueMany = Unsafe.toLinear2 \q as ->
+  BO α (Mut α (MQueue a))
+writeMQueueMany = Unsafe.toLinear2 \q as ->
   Control.fmap (`lseq` q)
     $ unsafeAtomically
-    $ Data.traverse (unsafeSTMToBO . Unsafe.toLinear (TBMQ.writeTBMQueue (NonLinear.coerce q))) as
+    $ Data.traverse (unsafeSTMToBO . Unsafe.toLinear (TMQ.writeTMQueue (NonLinear.coerce q))) as
 
-readBMQueue :: Mut α (BMQueue a) %1 -> BO α (Maybe (a, Mut α (BMQueue a)))
-readBMQueue = Unsafe.toLinear \mutq@(UnsafeMut (MkBMQ q)) ->
-  unsafeSystemIOToBO (atomically $ TBMQ.readTBMQueue q) Control.<&> \case
+readMQueue :: Mut α (MQueue a) %1 -> BO α (Maybe (a, Mut α (MQueue a)))
+readMQueue = Unsafe.toLinear \mutq@(UnsafeMut (MkMQ q)) ->
+  unsafeSystemIOToBO (atomically $ TMQ.readTMQueue q) Control.<&> \case
     Nothing -> mutq `lseq` Nothing
     Just a -> Just (a, mutq)
 
@@ -109,12 +108,12 @@ unsafeSTMToBO (GHC.STM f) = BO (Unsafe.coerce f)
 unsafeAtomically :: BO α a %1 -> BO α a
 unsafeAtomically = Unsafe.toLinear \(BO f) -> unsafeSystemIOToBO (atomically (GHC.STM (Unsafe.coerce f)))
 
-closeBMQueue :: Mut α (BMQueue a) %1 -> BO α ()
-closeBMQueue = Unsafe.toLinear \(UnsafeMut (MkBMQ q)) ->
-  unsafeSystemIOToBO $ atomically $ TBMQ.closeTBMQueue q
+closeMQueue :: Mut α (MQueue a) %1 -> BO α ()
+closeMQueue = Unsafe.toLinear \(UnsafeMut (MkMQ q)) ->
+  unsafeSystemIOToBO $ atomically $ TMQ.closeTMQueue q
 
-instance Consumable (BMQueue a) where
+instance Consumable (MQueue a) where
   {-# NOINLINE consume #-}
-  consume = GHC.noinline $ Unsafe.toLinear \(MkBMQ q) -> do
-    case GHC.runRW# (GHC.unIO (atomically $ TBMQ.closeTBMQueue q)) of
+  consume = GHC.noinline $ Unsafe.toLinear \(MkMQ q) -> do
+    case GHC.runRW# (GHC.unIO (atomically $ TMQ.closeTMQueue q)) of
       (# _, () #) -> ()

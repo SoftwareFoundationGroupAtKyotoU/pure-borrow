@@ -76,7 +76,7 @@ library
 
   -- cabal-gild: discover src --include src/**/Utils.hs --include src/**/Utils/**/*.hs
   other-modules:
-    Control.Concurrent.DivideConquer.Utils.BMQueue.Linear
+    Control.Concurrent.DivideConquer.Utils.MQueue.Linear
     Control.Monad.Borrow.Pure.Utils
 
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0

@@ -151,8 +151,7 @@ reborrowing ::
 reborrowing mutα k = DataFlow.do
   (lin, v) <- withLinearly mutα
   scope lin \(Proxy :: Proxy β) ->
-    DataFlow.do
-      (v, lend) <- reborrow v
+    reborrow v & \(v, lend) ->
       Control.do
         v <- k v
         Control.pure $ \end -> (v (upcast end), reclaim (upcast end) lend)

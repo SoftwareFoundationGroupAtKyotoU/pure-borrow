@@ -90,6 +90,7 @@ test-suite pure-borrow-test
   main-is: Main.hs
   -- cabal-gild: discover test --exclude=test/Main.hs
   other-modules:
+    Control.Concurrent.DivideConquer.LinearSpec
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
     Data.Vector.Mutable.Linear.BorrowSpec

@@ -62,25 +62,25 @@ divideAndConquer ::
   -- | The # of workers
   Int ->
   DivideConquer α t a r ->
-  Linearly %1 ->
   Mut α a %1 ->
   BO α (r, Mut α a)
-divideAndConquer n DivideConquer {..} lin ini =
-  dup2 lin & \(lin, lin') ->
-    reborrowing ini \(ini :: Mut γ a) ->
-      someNatVal (fromIntegral n) & \(SomeNat (_ :: Proxy n)) -> Control.do
-        (q, lend) <- newBMQueue 128 lin
-        DataFlow.do
-          (q, q') <- BMQ.unsafeClone q
-          (rootSink, rootSource) <- Once.new lin'
-          qs <- BMQ.unsafeCloneN @n q'
-          Control.do
-            q <- BMQ.writeBMQueueMany q [Divide ini rootSink]
-            chs <- concurrentMap worker qs
-            !r <- Once.take rootSource
-            BMQ.closeBMQueue q
-            Control.void $ forkBO $ Control.void $ Data.traverse killThreadBO chs
-            Control.pure (\end -> reclaim end lend `lseq` r)
+divideAndConquer n DivideConquer {..} ini = DataFlow.do
+  (lin, ini) <- withLinearly ini
+  (lin, lin') <- dup2 lin
+  reborrowing ini \(ini :: Mut γ a) ->
+    someNatVal (fromIntegral n) & \(SomeNat (_ :: Proxy n)) -> Control.do
+      (q, lend) <- newBMQueue 128 lin
+      DataFlow.do
+        (q, q') <- BMQ.unsafeClone q
+        (rootSink, rootSource) <- Once.new lin'
+        qs <- BMQ.unsafeCloneN @n q'
+        Control.do
+          q <- BMQ.writeBMQueueMany q [Divide ini rootSink]
+          chs <- concurrentMap worker qs
+          !r <- Once.take rootSource
+          BMQ.closeBMQueue q
+          Control.void $ forkBO $ Control.void $ Data.traverse killThreadBO chs
+          Control.pure (\end -> reclaim end lend `lseq` r)
   where
     worker :: (β <= α) => Mut β (BMQ.BMQueue (Work β a t r)) %1 -> BO β ()
     worker q =

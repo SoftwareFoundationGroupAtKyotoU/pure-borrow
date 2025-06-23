@@ -42,7 +42,6 @@ import Control.Monad.Borrow.Pure.Internal
 import Control.Monad.STM (STM)
 import Data.Coerce qualified as NonLinear
 import Data.Functor.Linear qualified as Data
-import Data.Unrestricted.Linear (UrT (..), runUrT)
 import Data.V.Linear (V)
 import Data.V.Linear qualified as V
 import GHC.Conc qualified as GHC

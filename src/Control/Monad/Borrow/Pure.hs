@@ -27,6 +27,9 @@ module Control.Monad.Borrow.Pure (
   borrow,
   borrow_,
   sharing,
+  sharing_,
+  reborrowing,
+  reborrowing_,
   share,
   reclaim,
   reborrow,
@@ -81,7 +84,7 @@ runBO lin bo =
     MkSomeNow now -> DataFlow.do
       (now, f) <- execBO bo now
       case endLifetime now of
-        Ur end -> f end 
+        Ur end -> f end
 
 runBOLend :: Linearly %1 -> (forall α. BO α (Lend α a)) %1 -> a
 {-# INLINE runBOLend #-}
@@ -110,11 +113,26 @@ scope = flip srunBO
 
 {- | Executes an operation on 'Share'd reference in sub lifetime.
 You may need @-XImpredicativeTypes@ extension to use this function.
+
+See also: 'sharing'.
+-}
+sharing_ ::
+  forall α a r.
+  Mut α a %1 ->
+  (forall β. (β <= α) => Share β a -> BO β r) %1 ->
+  BO α (r, Mut α a)
+{-# INLINE sharing_ #-}
+sharing_ v k = sharing v (\mut -> k mut Control.<&> \a _ -> a)
+
+{- | Executes an operation on 'Share'd reference in sub lifetime.
+You may need @-XImpredicativeTypes@ extension to use this function.
+
+See also: 'sharing_'.
 -}
 sharing ::
   forall α a r.
   Mut α a %1 ->
-  (forall β. (β <= α) => Share β a -> BO β r) %1 ->
+  (forall β. (β <= α) => Share β a -> BO β (End β -> r)) %1 ->
   BO α (r, Mut α a)
 {-# INLINE sharing #-}
 sharing v k = DataFlow.do
@@ -124,4 +142,22 @@ sharing v k = DataFlow.do
       (v, lend) <- reborrow v
       share v & \(Ur v) -> Control.do
         v <- k v
-        Control.pure $ \end -> (v, reclaim (upcast end) lend)
+        Control.pure $ \end -> (v (upcast end), reclaim (upcast end) lend)
+
+reborrowing ::
+  Mut α a %1 ->
+  (forall β. (β <= α) => Mut β a %1 -> BO β (End β -> r)) %1 ->
+  BO α (r, Mut α a)
+reborrowing mutα k = DataFlow.do
+  (lin, v) <- withLinearly mutα
+  scope lin \(Proxy :: Proxy β) -> DataFlow.do
+    (v, lend) <- reborrow v
+    Control.do
+      v <- k v
+      Control.pure $ \end -> (v (upcast end), reclaim (upcast end) lend)
+
+reborrowing_ ::
+  Mut α a %1 ->
+  (forall β. (β <= α) => Mut β a %1 -> BO β r) %1 ->
+  BO α (r, Mut α a)
+reborrowing_ mutα k = reborrowing mutα (\mut -> k mut Control.<&> \a _ -> a)

@@ -273,12 +273,12 @@ qsort = go
       (Ur n, v) ->
         let i = n `quot` 2
          in Control.do
-              (pivot, v) <- sharing v \v ->
+              (pivot, v) <- sharing_ v \v ->
                 move . derefShare Control.<$> unsafeGet i v
               pivot & \(Ur pivot) -> Control.do
                 (lo, hi) <- divide pivot v 0 n
                 let b' = budget `quot` 2
-                Control.void $ parIf (b' NonLinear.> 0) (go b' lo) (go b' hi) 
+                Control.void $ parIf (b' NonLinear.> 0) (go b' lo) (go b' hi)
 
 parIf :: Bool %1 -> BO α a %1 -> BO α b %1 -> BO α (a, b)
 {-# INLINE parIf #-}
@@ -302,14 +302,14 @@ divide pivot = partUp
   where
     partUp v l u
       | l < u = Control.do
-          (e, v) <- sharing v $ Control.fmap derefShare . unsafeGet l
+          (e, v) <- sharing_ v $ Control.fmap derefShare . unsafeGet l
           if e < pivot
             then partUp v (l + 1) u
             else partDown v l (u - 1)
       | otherwise = Control.pure $ splitAtMut l v
     partDown v l u
       | l < u = Control.do
-          (e, v) <- sharing v $ Control.fmap derefShare . unsafeGet u
+          (e, v) <- sharing_ v $ Control.fmap derefShare . unsafeGet u
           if pivot < e
             then partDown v l (u - 1)
             else Control.do

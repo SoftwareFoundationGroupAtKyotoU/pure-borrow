@@ -46,11 +46,14 @@ library
     containers,
     deepseq,
     linear-generics,
+    stm,
+    stm-chans,
     vector,
 
   hs-source-dirs: src
-  -- cabal-gild: discover src --exclude src/**/Utils.hs
+  -- cabal-gild: discover src --exclude src/**/Utils.hs --exclude src/**/Utils/**/*.hs
   exposed-modules:
+    Control.Concurrent.DivideConquer.Linear
     Control.Monad.Borrow.Pure
     Control.Monad.Borrow.Pure.Affine
     Control.Monad.Borrow.Pure.Affine.Internal
@@ -65,12 +68,17 @@ library
     Data.Array.Mutable.Unlifted.Linear.Witness
     Data.Coerce.Directed
     Data.Comonad.Linear
+    Data.OnceChan.Linear
+    Data.OnceChan.Linear.Unlifted
     Data.Var.Linear
     Data.Var.Linear.Unlifted
     Data.Vector.Mutable.Linear.Borrow
 
-  -- cabal-gild: discover src --include src/**/Utils.hs
-  other-modules: Control.Monad.Borrow.Pure.Utils
+  -- cabal-gild: discover src --include src/**/Utils.hs --include src/**/Utils/**/*.hs
+  other-modules:
+    Control.Concurrent.DivideConquer.Utils.MQueue.Linear
+    Control.Monad.Borrow.Pure.Utils
+
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0
   build-depends:
 
@@ -82,6 +90,7 @@ test-suite pure-borrow-test
   main-is: Main.hs
   -- cabal-gild: discover test --exclude=test/Main.hs
   other-modules:
+    Control.Concurrent.DivideConquer.LinearSpec
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
     Data.Vector.Mutable.Linear.BorrowSpec

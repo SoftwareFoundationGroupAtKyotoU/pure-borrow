@@ -171,6 +171,9 @@ deriving via (Maybe a) instance (Affable a) => Affable (Mon.Last a)
 
 -- * Generics
 
+{- | We need this instead of 'Generically' becuase
+it gives a different 'Consumable' instance.
+-}
 newtype GenericallyAffable a = GenericallyAffable a
 
 unGenericallyAffable :: GenericallyAffable a %1 -> a

@@ -33,8 +33,8 @@ module Control.Monad.Borrow.Pure (
   share,
   reclaim,
   reborrow,
-  Derefable (),
-  derefShare,
+  Deborrowable (),
+  deborrow,
   genericDerefShare,
   GenericDerefable,
 
@@ -45,11 +45,11 @@ module Control.Monad.Borrow.Pure (
   unShrShr,
 
   -- ** Case-splitting for borrows
-  SplittableRef,
+  SplittableBorrow,
   SplittableRefAt,
   AccessibleRef,
   AccessibleRefAt,
-  DistributesRef (),
+  DistributesBorrow (),
   split,
   GenericDistributesRef,
   genericSplit,
@@ -60,7 +60,7 @@ module Control.Monad.Borrow.Pure (
   splitEither,
 
   -- * References
-  module Control.Monad.Borrow.Pure.Var,
+  module Control.Monad.Borrow.Pure.Ref,
 
   -- * Re-exports
   module Control.Monad.Borrow.Pure.Lifetime,
@@ -71,7 +71,7 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Internal
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
-import Control.Monad.Borrow.Pure.Var
+import Control.Monad.Borrow.Pure.Ref
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce.Directed (upcast)
 import Data.Proxy (Proxy (..))
@@ -111,7 +111,7 @@ srunBO bo lin =
 scope :: Linearly %1 -> (forall α. Proxy α -> BO (α /\ β) (End α -> a)) %1 -> BO β a
 scope = flip srunBO
 
-{- | Executes an operation on 'Share'd reference in sub lifetime.
+{- | Executes an operation on 'Share'd borrow in sub lifetime.
 You may need @-XImpredicativeTypes@ extension to use this function.
 
 See also: 'sharing'.
@@ -124,7 +124,7 @@ sharing_ ::
 {-# INLINE sharing_ #-}
 sharing_ v k = sharing v (\mut -> k mut Control.<&> \a _ -> a)
 
-{- | Executes an operation on 'Share'd reference in sub lifetime.
+{- | Executes an operation on 'Share'd borrow in sub lifetime.
 You may need @-XImpredicativeTypes@ extension to use this function.
 
 See also: 'sharing_'.

@@ -5,7 +5,7 @@
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# OPTIONS_GHC -Wno-name-shadowing #-} 
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module Data.Vector.Mutable.Linear.BorrowSpec (
   module Data.Vector.Mutable.Linear.BorrowSpec,
@@ -28,7 +28,7 @@ import Test.Tasty.Falsify (testProperty)
 import Test.Tasty.HUnit
 import Prelude qualified as NonLinear
 
-qsortVec :: (Ord a, Movable a, Derefable a) => V.Vector a -> V.Vector a
+qsortVec :: (Ord a, Movable a, Deborrowable a) => V.Vector a -> V.Vector a
 qsortVec v = unur $ unur $ linearly \lin -> DataFlow.do
   (l1, l2, l3) <- dup3 lin
   runBO l1

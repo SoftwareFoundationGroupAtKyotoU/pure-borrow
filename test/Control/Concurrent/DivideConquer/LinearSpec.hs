@@ -49,7 +49,7 @@ test_qsort =
           P..$ ("output", sorted)
     ]
 
-qsortDCVec :: (Ord a, Movable a, Derefable a) => V.Vector a -> V.Vector a
+qsortDCVec :: (Ord a, Movable a, Deborrowable a) => V.Vector a -> V.Vector a
 qsortDCVec v = unur $ unur $ linearly \lin -> DataFlow.do
   (l1, l2, l3) <- dup3 lin
   runBO l1

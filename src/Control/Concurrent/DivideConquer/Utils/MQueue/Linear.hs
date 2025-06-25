@@ -65,10 +65,10 @@ newMQueue lin = Control.do
   Control.pure $ borrow q lin
 
 instance
-  (Unsatisfiable (ShowType (MQueue a) :<>: Text " cannot be dereferenced!")) =>
-  Derefable (MQueue a)
+  (Unsatisfiable (ShowType (MQueue a) :<>: Text " cannot be deborrowed!")) =>
+  Deborrowable (MQueue a)
   where
-  unsafeDeref = unsatisfiable
+  unsafeDeborrow = unsatisfiable
 
 -- | NOTE: unconditional use of this function MAY BREAK PURITY!
 unsafeClone :: Mut α (MQueue a) %1 -> (Mut α (MQueue a), Mut α (MQueue a))

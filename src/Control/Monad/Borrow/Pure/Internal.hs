@@ -47,10 +47,10 @@ import Data.Int
 import Data.Kind (Constraint, Type)
 import Data.Monoid qualified as Mon
 import Data.Ord qualified as Ord
+import Data.Ref.Linear (Ref)
 import Data.Semigroup qualified as Sem
 import Data.Tuple (Solo (..))
 import Data.Type.Coercion (Coercion (..))
-import Data.Var.Linear (Var)
 import Data.Vector.Mutable.Linear (Vector)
 import Data.Word
 import GHC.Base (TYPE)
@@ -123,7 +123,7 @@ dropState# :: State# a %1 -> ()
 {-# INLINE dropState# #-}
 dropState# = Unsafe.toLinear \_ -> ()
 
--- | See also 'within'.
+-- | See also 'scope'.
 sexecBO :: BO (α /\ β) a %1 -> Now α %1 -> BO β (Now α, a)
 {-# INLINE sexecBO #-}
 sexecBO f now = unsafeCastBO ((now,) PL.. Unsafe.toLinear (\ !a -> a) Control.<$> f)
@@ -175,7 +175,7 @@ evaluate :: a %1 -> BO α a
 {-# INLINE evaluate #-}
 evaluate a = unsafeSystemIOToBO (Unsafe.toLinear SystemIO.evaluate a)
 
--- | Mutable reference to some resource 'a'
+-- | Mutable borrow to some resource 'a'
 type Mut :: Lifetime -> Type -> Type
 newtype Mut α a = UnsafeMut a
 
@@ -194,7 +194,7 @@ instance (β <= α, a <: b, b <: a) => Mut α a <: Mut β b where
   upcast (UnsafeMut a) = UnsafeMut (upcast a)
   {-# INLINE upcast #-}
 
--- | Immutable shared reference to some resource 'a'
+-- | Immutable shared borrow to some resource 'a'
 type Share :: Lifetime -> Type -> Type
 newtype Share α a = UnsafeShare a
 
@@ -238,7 +238,7 @@ instance (α <= β, a <: b) => Lend α a <: Lend β b where
   upcast (UnsafeLend a) = UnsafeLend (upcast a)
   {-# INLINE upcast #-}
 
--- | Borrow a resource linearly and obtain the mutable reference to it and 'Lend' witness to 'reclaim' the resource to lend at the 'End' of the lifetime.
+-- | Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim' the resource to lend at the 'End' of the lifetime.
 borrow :: a %1 -> Linearly %1 -> (Mut α a, Lend α a)
 borrow = Unsafe.toLinear \a lin ->
   lin `lseq` (UnsafeMut a, UnsafeLend a)
@@ -249,7 +249,7 @@ borrow_ :: a %1 -> Linearly %1 -> Mut α a
 borrow_ = Unsafe.toLinear \(a :: a) lin ->
   lin `lseq` UnsafeMut a
 
--- | Shares a mutable reference, invalidating the original mutable reference.
+-- | Shares a mutable borrow, invalidating the original one.
 share :: Mut α a %1 -> Ur (Share α a)
 {-# INLINE share #-}
 share = Unsafe.toLinear \(UnsafeMut a) -> Ur (UnsafeShare a)
@@ -258,7 +258,7 @@ share = Unsafe.toLinear \(UnsafeMut a) -> Ur (UnsafeShare a)
 reclaim :: End α %1 -> Lend α a %1 -> a
 reclaim end = end `lseq` \(UnsafeLend !a) -> a
 
--- | Reborrow a mutable reference from sublifetime
+-- | Reborrow a mutable borrow into a sublifetime
 reborrow :: (β <= α) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
 reborrow = Unsafe.toLinear \mutA ->
   (Data.Coerce.coerce mutA, Data.Coerce.coerce mutA)
@@ -296,18 +296,18 @@ instance SplittableRef_ (Lend α) where
   coercionWit = Coercion
 
 -- | An abstraction over a type that can be
-class (SplittableRef_ ref) => SplittableRef ref
+class (SplittableRef_ ref) => SplittableBorrow ref
 
-instance (SplittableRef_ ref) => SplittableRef ref
+instance (SplittableRef_ ref) => SplittableBorrow ref
 
-type SplittableRefAt α ref = (SplittableRef ref, RefLifetime ref ~ α)
+type SplittableRefAt α ref = (SplittableBorrow ref, RefLifetime ref ~ α)
 
 data CaseRef ref where
   IsMut :: CaseRef (Mut α)
   IsShare :: CaseRef (Share α)
 
--- | A constraint that requires @ref@ to be either a 'Share' or a 'Mut' reference, which is accessible in 'BO' regions.
-class (SplittableRef ref) => AccessibleRef ref where
+-- | A constraint that requires @ref@ to be either a 'Share' or a 'Mut' borrow, which is accessible in 'BO' regions.
+class (SplittableBorrow ref) => AccessibleRef ref where
   caseRef :: CaseRef ref
 
 instance AccessibleRef (Mut α) where
@@ -321,63 +321,63 @@ type AccessibleRefAt α ref =
   , RefLifetime ref ~ α
   )
 
-splitList :: (SplittableRef f) => f [x] %1 -> [f x]
+splitList :: (SplittableBorrow f) => f [x] %1 -> [f x]
 splitList = split
 
-splitPair :: (SplittableRef ref) => ref (a, b) %1 -> (ref a, ref b)
+splitPair :: (SplittableBorrow ref) => ref (a, b) %1 -> (ref a, ref b)
 {-# INLINE splitPair #-}
 splitPair = coerceLin . unsafeUnwrapRef
 
-splitEither :: (SplittableRef ref) => ref (Either a b) %1 -> Either (ref a) (ref b)
+splitEither :: (SplittableBorrow ref) => ref (Either a b) %1 -> Either (ref a) (ref b)
 {-# INLINE splitEither #-}
 splitEither = coerceLin . unsafeUnwrapRef
 
--- | A dual to 'SplittableRef', which allows us to distribute a reference over a functor.
-class DistributesRef f where
-  split_ :: (SplittableRef ref) => ref (f x) %1 -> f (ref x)
+-- | A dual to 'SplittableRef', which allows us to distribute a borrow over a functor.
+class DistributesBorrow f where
+  split_ :: (SplittableBorrow ref) => ref (f x) %1 -> f (ref x)
   default split_ ::
-    (GenericDistributesRef f, SplittableRef ref) =>
+    (GenericDistributesRef f, SplittableBorrow ref) =>
     ref (f x) %1 -> f (ref x)
   split_ = genericSplit
 
 split ::
   forall ref f x.
-  ( DistributesRef f
-  , SplittableRef ref
+  ( DistributesBorrow f
+  , SplittableBorrow ref
   ) =>
   ref (f x) %1 -> f (ref x)
 {-# INLINE [1] split #-}
 split = split_
 
-deriving anyclass instance DistributesRef Identity
+deriving anyclass instance DistributesBorrow Identity
 
-deriving anyclass instance DistributesRef []
+deriving anyclass instance DistributesBorrow []
 
-deriving anyclass instance DistributesRef Maybe
+deriving anyclass instance DistributesBorrow Maybe
 
-deriving anyclass instance DistributesRef Solo
+deriving anyclass instance DistributesBorrow Solo
 
-deriving anyclass instance DistributesRef Ord.Down
+deriving anyclass instance DistributesBorrow Ord.Down
 
-deriving anyclass instance DistributesRef Sem.Dual
+deriving anyclass instance DistributesBorrow Sem.Dual
 
-deriving anyclass instance DistributesRef Sem.Max
+deriving anyclass instance DistributesBorrow Sem.Max
 
-deriving anyclass instance DistributesRef Sem.Min
+deriving anyclass instance DistributesBorrow Sem.Min
 
-deriving anyclass instance DistributesRef Sem.First
+deriving anyclass instance DistributesBorrow Sem.First
 
-deriving anyclass instance DistributesRef Sem.Last
+deriving anyclass instance DistributesBorrow Sem.Last
 
-deriving anyclass instance DistributesRef Mon.First
+deriving anyclass instance DistributesBorrow Mon.First
 
-deriving anyclass instance DistributesRef Mon.Last
+deriving anyclass instance DistributesBorrow Mon.Last
 
-instance (Unsatisfiable ('Text "Use splitEither directly!")) => DistributesRef (Either e) where
+instance (Unsatisfiable ('Text "Use splitEither directly!")) => DistributesBorrow (Either e) where
   {-# INLINE split_ #-}
   split_ = unsatisfiable
 
-instance (Unsatisfiable ('Text "Use splitPair instead!")) => DistributesRef ((,) a) where
+instance (Unsatisfiable ('Text "Use splitPair instead!")) => DistributesBorrow ((,) a) where
   {-# INLINE split_ #-}
   split_ = unsatisfiable
 
@@ -386,7 +386,7 @@ type GenericDistributesRef f = (Generic1 f, GDistributeRef (Rep1 f))
 genericSplit ::
   forall ref f x.
   ( GenericDistributesRef f
-  , SplittableRef ref
+  , SplittableBorrow ref
   ) =>
   ref (f x) %1 -> f (ref x)
 {-# INLINE genericSplit #-}
@@ -395,16 +395,16 @@ genericSplit =
     . gdistributeRef @(Rep1 f) @ref
     . unsafeMapRef from1
 
-unsafeMapRef :: (SplittableRef ref) => (a %1 -> b) -> ref a %1 -> ref b
+unsafeMapRef :: (SplittableBorrow ref) => (a %1 -> b) -> ref a %1 -> ref b
 {-# INLINE unsafeMapRef #-}
 unsafeMapRef f = coerceLin f
 
-instance (GenericDistributesRef f) => DistributesRef (Generically1 f) where
+instance (GenericDistributesRef f) => DistributesBorrow (Generically1 f) where
   {-# INLINE split_ #-}
   split_ = Generically1 . genericSplit . unsafeMapRef \(Generically1 f) -> f
 
 class GDistributeRef f where
-  gdistributeRef :: (SplittableRef ref) => ref (f x) %1 -> f (ref x)
+  gdistributeRef :: (SplittableBorrow ref) => ref (f x) %1 -> f (ref x)
 
 instance
   ( GDistributeRef f
@@ -432,7 +432,7 @@ instance
     R1 r -> R1 (gdistributeRef (unsafeWrapRef r))
 
 instance
-  (Unsatisfiable (Text "Nonlinear fields cannot distribute references!")) =>
+  (Unsatisfiable (Text "Nonlinear fields cannot distribute borrows!")) =>
   GDistributeRef (MP1 GHC.Many f)
   where
   {-# INLINE gdistributeRef #-}
@@ -449,14 +449,14 @@ instance (GDistributeRef f) => GDistributeRef (M1 i c f) where
     case unsafeUnwrapRef x of
       M1 x -> M1 $ gdistributeRef $ unsafeWrapRef x
 
-instance DistributesRef Par1 where
+instance DistributesBorrow Par1 where
   {-# INLINE split_ #-}
   split_ = \x -> case unsafeUnwrapRef x of
     Par1 a -> Par1 (unsafeWrapRef a)
 
 instance
-  ( DistributesRef f
-  , DistributesRef g
+  ( DistributesBorrow f
+  , DistributesBorrow g
   , Data.Functor f
   ) =>
   GDistributeRef (f :.: g)
@@ -471,7 +471,7 @@ instance GDistributeRef Par1 where
     Par1 a -> Par1 (unsafeWrapRef a)
 
 instance
-  (Unsatisfiable (Text "A type containing non-parametric field with type `" :<>: ShowType c :<>: Text "', which cannot be safely referenced!")) =>
+  (Unsatisfiable (Text "A type containing non-parametric field with type `" :<>: ShowType c :<>: Text "', which cannot be safely splitted!")) =>
   GDistributeRef (K1 i c)
   where
   {-# INLINE gdistributeRef #-}
@@ -481,74 +481,74 @@ instance GDistributeRef U1 where
   gdistributeRef = coerceLin . unsafeUnwrapRef
   {-# INLINE gdistributeRef #-}
 
-class Derefable a where
-  unsafeDeref :: Share α a %1 -> a
+class Deborrowable a where
+  unsafeDeborrow :: Share α a %1 -> a
 
 instance
-  (Unsatisfiable (ShowType (Var a) :<>: Text " cannot be dereferenced!")) =>
-  Derefable (Var a)
+  (Unsatisfiable (ShowType (Ref a) :<>: Text " cannot be deborrowed!")) =>
+  Deborrowable (Ref a)
   where
-  unsafeDeref = unsatisfiable
+  unsafeDeborrow = unsatisfiable
 
 instance
-  (Unsatisfiable (ShowType (Array a) :<>: Text " cannot be dereferenced!")) =>
-  Derefable (Array a)
+  (Unsatisfiable (ShowType (Array a) :<>: Text " cannot be deborrowed!")) =>
+  Deborrowable (Array a)
   where
-  unsafeDeref = unsatisfiable
+  unsafeDeborrow = unsatisfiable
 
 instance
-  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be dereferenced!")) =>
-  Derefable (Vector a)
+  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be deborrowed!")) =>
+  Deborrowable (Vector a)
   where
-  unsafeDeref = unsatisfiable
+  unsafeDeborrow = unsatisfiable
 
-derefShare :: (Derefable a) => Share α a %1 -> a
-{-# INLINE [1] derefShare #-}
-derefShare = unsafeDeref
+deborrow :: (Deborrowable a) => Share α a %1 -> a
+{-# INLINE [1] deborrow #-}
+deborrow = unsafeDeborrow
 
 {-# RULES
-"derefShare/unsafeCoerce" [~1]
-  derefShare =
+"deborrow/unsafeCoerce" [~1]
+  deborrow =
     Unsafe.coerce
   #-}
 
 newtype UnsafeAssumeNoVar a = UnsafeAssumeNoVar a
 
-instance Derefable (UnsafeAssumeNoVar a) where
-  unsafeDeref = coerceLin
-  {-# INLINE unsafeDeref #-}
+instance Deborrowable (UnsafeAssumeNoVar a) where
+  unsafeDeborrow = coerceLin
+  {-# INLINE unsafeDeborrow #-}
 
-deriving via UnsafeAssumeNoVar Int instance Derefable Int
+deriving via UnsafeAssumeNoVar Int instance Deborrowable Int
 
-deriving via UnsafeAssumeNoVar Int8 instance Derefable Int8
+deriving via UnsafeAssumeNoVar Int8 instance Deborrowable Int8
 
-deriving via UnsafeAssumeNoVar Int16 instance Derefable Int16
+deriving via UnsafeAssumeNoVar Int16 instance Deborrowable Int16
 
-deriving via UnsafeAssumeNoVar Int32 instance Derefable Int32
+deriving via UnsafeAssumeNoVar Int32 instance Deborrowable Int32
 
-deriving via UnsafeAssumeNoVar Int64 instance Derefable Int64
+deriving via UnsafeAssumeNoVar Int64 instance Deborrowable Int64
 
-deriving via UnsafeAssumeNoVar Word instance Derefable Word
+deriving via UnsafeAssumeNoVar Word instance Deborrowable Word
 
-deriving via UnsafeAssumeNoVar Word8 instance Derefable Word8
+deriving via UnsafeAssumeNoVar Word8 instance Deborrowable Word8
 
-deriving via UnsafeAssumeNoVar Word16 instance Derefable Word16
+deriving via UnsafeAssumeNoVar Word16 instance Deborrowable Word16
 
-deriving via UnsafeAssumeNoVar Word32 instance Derefable Word32
+deriving via UnsafeAssumeNoVar Word32 instance Deborrowable Word32
 
-deriving via UnsafeAssumeNoVar Word64 instance Derefable Word64
+deriving via UnsafeAssumeNoVar Word64 instance Deborrowable Word64
 
-deriving via UnsafeAssumeNoVar Integer instance Derefable Integer
+deriving via UnsafeAssumeNoVar Integer instance Deborrowable Integer
 
-deriving via UnsafeAssumeNoVar Natural instance Derefable Natural
+deriving via UnsafeAssumeNoVar Natural instance Deborrowable Natural
 
-deriving via UnsafeAssumeNoVar Float instance Derefable Float
+deriving via UnsafeAssumeNoVar Float instance Deborrowable Float
 
-deriving via UnsafeAssumeNoVar Double instance Derefable Double
+deriving via UnsafeAssumeNoVar Double instance Deborrowable Double
 
-deriving via UnsafeAssumeNoVar Char instance Derefable Char
+deriving via UnsafeAssumeNoVar Char instance Deborrowable Char
 
-deriving via UnsafeAssumeNoVar Bool instance Derefable Bool
+deriving via UnsafeAssumeNoVar Bool instance Deborrowable Bool
 
 type GenericDerefable a = (Generic a, GDerefable (Rep a))
 
@@ -560,7 +560,7 @@ type GDerefable :: forall {k}. (k -> Type) -> Constraint
 class GDerefable f where
   gderef :: Share α (f x) %1 -> f x
 
-instance (Derefable a) => GDerefable (K1 i a) where
+instance (Deborrowable a) => GDerefable (K1 i a) where
   gderef = coerceLin . unsafeUnwrapRef
 
 instance (GDerefable f, GDerefable g) => GDerefable (f :*: g) where
@@ -586,53 +586,53 @@ instance GDerefable U1 where
 instance GDerefable V1 where
   gderef = \case {} . unsafeUnwrapRef
 
-instance (GenericDerefable a) => Derefable (Generically a) where
-  unsafeDeref = Generically . genericDerefShare . unsafeMapRef (\(Generically x) -> x)
+instance (GenericDerefable a) => Deborrowable (Generically a) where
+  unsafeDeborrow = Generically . genericDerefShare . unsafeMapRef (\(Generically x) -> x)
 
 deriving via
   Generically (Sum a)
   instance
-    (Derefable a) => Derefable (Sum a)
+    (Deborrowable a) => Deborrowable (Sum a)
 
 deriving via
   Generically (Product a)
   instance
-    (Derefable a) => Derefable (Product a)
+    (Deborrowable a) => Deborrowable (Product a)
 
 deriving via
   Generically (Sem.Max a)
   instance
-    (Derefable a) => Derefable (Sem.Max a)
+    (Deborrowable a) => Deborrowable (Sem.Max a)
 
 deriving via
   Generically (Maybe a)
   instance
-    (Derefable a) => Derefable (Maybe a)
+    (Deborrowable a) => Deborrowable (Maybe a)
 
 deriving via
   Generically (Sem.Min a)
   instance
-    (Derefable a) => Derefable (Sem.Min a)
+    (Deborrowable a) => Deborrowable (Sem.Min a)
 
 deriving via
   Generically (a, b)
   instance
-    (Derefable a, Derefable b) =>
-    Derefable (a, b)
+    (Deborrowable a, Deborrowable b) =>
+    Deborrowable (a, b)
 
 deriving via
   Generically (a, b, c)
   instance
-    (Derefable a, Derefable b, Derefable c) =>
-    Derefable (a, b, c)
+    (Deborrowable a, Deborrowable b, Deborrowable c) =>
+    Deborrowable (a, b, c)
 
 deriving via
   Generically (a, b, c, d)
   instance
-    (Derefable a, Derefable b, Derefable c, Derefable d) =>
-    Derefable (a, b, c, d)
+    (Deborrowable a, Deborrowable b, Deborrowable c, Deborrowable d) =>
+    Deborrowable (a, b, c, d)
 
 deriving via
   Generically (Either a b)
   instance
-    (Derefable a, Derefable b) => Derefable (Either a b)
+    (Deborrowable a, Deborrowable b) => Deborrowable (Either a b)

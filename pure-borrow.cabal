@@ -62,14 +62,15 @@ library
     Control.Monad.Borrow.Pure.Lifetime.Internal
     Control.Monad.Borrow.Pure.Lifetime.Token
     Control.Monad.Borrow.Pure.Lifetime.Token.Internal
-    Control.Monad.Borrow.Pure.Var
+    Control.Monad.Borrow.Pure.Ref
     Control.Syntax.DataFlow
     Data.Coerce.Directed
     Data.Comonad.Linear
     Data.OnceChan.Linear
     Data.OnceChan.Linear.Unlifted
-    Data.Var.Linear
-    Data.Var.Linear.Unlifted
+    Data.Ref.Linear
+    Data.Ref.Linear.Unlifted
+    Data.Unique.Linear
     Data.Vector.Mutable.Linear.Borrow
 
   -- cabal-gild: discover src --include src/**/Utils.hs --include src/**/Utils/**/*.hs

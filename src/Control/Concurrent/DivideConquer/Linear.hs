@@ -36,6 +36,7 @@ import Control.Monad.Borrow.Pure.Affine (Affable, GenericallyAffable (..))
 import Control.Monad.Borrow.Pure.Internal
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce qualified as NonLinear
+import Data.Coerce.Directed
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
 import Data.OnceChan.Linear (Sink, Source)
@@ -113,7 +114,7 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
               MQ.closeMQueue q
               Control.void $ forkBO $ Control.void $ Data.traverse killThreadBO chs
           -}
-          Control.pure (\end -> reclaim end lend `lseq` r)
+          Control.pure (\end -> reclaim (upcast end) lend `lseq` r)
   where
     worker :: (β <= α) => Mut β (MQ.MQueue (Work β a t r)) %1 -> BO β ()
     worker q =

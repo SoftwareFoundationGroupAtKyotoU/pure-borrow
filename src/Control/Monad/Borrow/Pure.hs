@@ -119,7 +119,7 @@ See also: 'sharing'.
 sharing_ ::
   forall α a r.
   Mut α a %1 ->
-  (forall β. (β <= α) => Share β a -> BO β r) %1 ->
+  (forall β. Share (β /\ α) a -> BO (β /\ α) r) %1 ->
   BO α (r, Mut α a)
 {-# INLINE sharing_ #-}
 sharing_ v k = sharing v (\mut -> k mut Control.<&> \a _ -> a)
@@ -132,7 +132,7 @@ See also: 'sharing_'.
 sharing ::
   forall α a r.
   Mut α a %1 ->
-  (forall β. (β <= α) => Share β a -> BO β (End β -> r)) %1 ->
+  (forall β. Share (β /\ α) a -> BO (β /\ α) (End β -> r)) %1 ->
   BO α (r, Mut α a)
 {-# INLINE sharing #-}
 sharing v k = DataFlow.do
@@ -146,7 +146,7 @@ sharing v k = DataFlow.do
 
 reborrowing ::
   Mut α a %1 ->
-  (forall β. (β <= α) => Mut β a %1 -> BO β (End β -> r)) %1 ->
+  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α) (End β -> r)) %1 ->
   BO α (r, Mut α a)
 reborrowing mutα k = DataFlow.do
   (lin, v) <- withLinearly mutα
@@ -158,6 +158,6 @@ reborrowing mutα k = DataFlow.do
 
 reborrowing_ ::
   Mut α a %1 ->
-  (forall β. (β <= α) => Mut β a %1 -> BO β r) %1 ->
+  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α) r) %1 ->
   BO α (r, Mut α a)
 reborrowing_ mutα k = reborrowing mutα (\mut -> k mut Control.<&> \a _ -> a)

@@ -102,11 +102,10 @@ scope_ = flip sexecBO
 srunBO :: (forall α. Proxy α -> BO (α /\ β) (End α -> a)) %1 -> Linearly %1 -> BO β a
 {-# INLINE srunBO #-}
 srunBO bo lin =
-  case newLifetime lin of
-    MkSomeNow now -> Control.do
-      (now, f) <- sexecBO (bo Proxy) now
-      Ur end <- Control.pure (endLifetime now)
-      Control.pure (f end)
+  newLifetime' lin \now -> Control.do
+    (now, f) <- sexecBO (bo Proxy) now
+    Ur end <- Control.pure (endLifetime now)
+    Control.pure (f end)
 
 scope :: Linearly %1 -> (forall α. Proxy α -> BO (α /\ β) (End α -> a)) %1 -> BO β a
 scope = flip srunBO
@@ -130,19 +129,17 @@ You may need @-XImpredicativeTypes@ extension to use this function.
 See also: 'sharing_'.
 -}
 sharing ::
-  forall α a r.
   Mut α a %1 ->
   (forall β. Share (β /\ α) a -> BO (β /\ α) (End β -> r)) %1 ->
   BO α (r, Mut α a)
 {-# INLINE sharing #-}
 sharing v k = DataFlow.do
   (lin, v) <- withLinearly v
-  scope lin \(Proxy :: Proxy β) ->
+  scope lin \_ ->
     DataFlow.do
       (v, lend) <- reborrow v
       share v & \(Ur v) -> Control.do
-        v <- k v
-        Control.pure $ \end -> (v (upcast end), reclaim (upcast end) lend)
+        k v Control.<&> \v end -> (v (upcast end), reclaim (upcast end) lend)
 
 reborrowing ::
   Mut α a %1 ->

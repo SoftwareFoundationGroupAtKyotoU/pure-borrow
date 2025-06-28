@@ -14,6 +14,7 @@ module Control.Monad.Borrow.Pure.Lifetime.Token (
   endLifetime,
   SomeNow (..),
   newLifetime,
+  newLifetime',
   nowStatic,
   neverEnds,
   alreadyEnded,

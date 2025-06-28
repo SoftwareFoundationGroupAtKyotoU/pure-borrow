@@ -114,6 +114,11 @@ instance (β <= α) => End α <: End β where
 newLifetime :: Linearly %1 -> SomeNow
 newLifetime UnsafeLinearly = MkSomeNow UnsafeNow
 
+newLifetime' :: Linearly %1 -> (forall ι. Now (Al ι) %1 -> a) %1 -> a
+newLifetime' lin k =
+  case newLifetime lin of
+    MkSomeNow now -> k now
+
 -- | Static Lifetime is always available
 nowStatic :: Now Static
 nowStatic = UnsafeNow

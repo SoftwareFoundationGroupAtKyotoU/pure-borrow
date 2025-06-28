@@ -257,7 +257,6 @@ not practical - you need a genuine parallel scheduler
 to scale this up.
 -}
 qsort ::
-  forall a α.
   (Ord a, Deborrowable a, Movable a) =>
   {- | Cost for using parallelism. Halved after each recursive call,
   and stops parallelizing when it reaches 1.
@@ -291,7 +290,6 @@ parIf p =
       Control.pure (l, r)
 
 divide ::
-  forall α a.
   (Ord a, Deborrowable a) =>
   a ->
   Mut α (Vector a) %1 ->

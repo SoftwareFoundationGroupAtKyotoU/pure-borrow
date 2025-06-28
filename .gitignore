@@ -111,3 +111,4 @@ cabal.project.local~
 *.eventlog
 /bench-results
 *.png
+*.local.json

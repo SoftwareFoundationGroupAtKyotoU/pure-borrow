@@ -44,9 +44,9 @@ data UniqueSource where
 
 instance Consumable UniqueSource where
   consume (UniqueSource seed multiplier constant) =
-    seed
-      `lseq` multiplier
-      `lseq` consume constant
+    seed `lseq`
+      multiplier `lseq`
+        consume constant
   {-# INLINE consume #-}
 
 new :: Linearly %1 -> UniqueSource

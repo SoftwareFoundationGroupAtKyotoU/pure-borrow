@@ -73,30 +73,30 @@ constant :: Int -> a -> Linearly %1 -> Vector a
 {-# NOINLINE constant #-}
 constant n a l =
   l `lseq` GHC.noinline do
-    Vector
-      $! unsafePerformEvaluateUndupableBO
-      $! unsafeSystemIOToBO
-      $! MV.replicate n a
+    Vector $!
+      unsafePerformEvaluateUndupableBO $!
+        unsafeSystemIOToBO $!
+          MV.replicate n a
 
 fromList :: [a] -> Linearly %1 -> Vector a
 {-# NOINLINE fromList #-}
 fromList as l =
   l `lseq` GHC.noinline do
-    Vector
-      $! unsafePerformEvaluateUndupableBO
-      $! unsafeSystemIOToBO
-      $! V.unsafeThaw
-      $! V.fromList as
+    Vector $!
+      unsafePerformEvaluateUndupableBO $!
+        unsafeSystemIOToBO $!
+          V.unsafeThaw $!
+            V.fromList as
 
 -- | Convert a 'V.Vector' (from @vector@ package) to a 'Vector'
 fromVector :: V.Vector a -> Linearly %1 -> Vector a
 {-# NOINLINE fromVector #-}
 fromVector v l =
   l `lseq` GHC.noinline do
-    Vector
-      $! unsafePerformEvaluateUndupableBO
-      $! unsafeSystemIOToBO
-      $! V.thaw v
+    Vector $!
+      unsafePerformEvaluateUndupableBO $!
+        unsafeSystemIOToBO $!
+          V.thaw v
 
 fromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
 {-# NOINLINE fromMutable #-}
@@ -110,8 +110,8 @@ unsafeFromMutable v lin =
 
 toVector :: Vector a %1 -> Ur (V.Vector a)
 {-# NOINLINE toVector #-}
-toVector = GHC.noinline
-  $ Unsafe.toLinear \(Vector v) -> Ur (unsafePerformIO $ V.unsafeFreeze v)
+toVector = GHC.noinline $
+  Unsafe.toLinear \(Vector v) -> Ur (unsafePerformIO $ V.unsafeFreeze v)
 
 toList :: Vector a %1 -> Ur [a]
 {-# INLINE toList #-}
@@ -125,10 +125,10 @@ unsafeFromVector :: V.Vector a %1 -> Linearly %1 -> Vector a
 {-# NOINLINE unsafeFromVector #-}
 unsafeFromVector = Unsafe.toLinear \v l ->
   l `lseq` GHC.noinline do
-    Vector
-      $! unsafePerformEvaluateUndupableBO
-      $! unsafeSystemIOToBO
-      $! V.unsafeThaw v
+    Vector $!
+      unsafePerformEvaluateUndupableBO $!
+        unsafeSystemIOToBO $!
+          V.unsafeThaw v
 
 size :: (AccessibleRef ref) => ref (Vector a) %1 -> (Ur Int, ref (Vector a))
 {-# INLINE size #-}
@@ -141,11 +141,11 @@ unsafeGet :: (AccessibleRefAt α ref) => Int -> ref (Vector a) %1 -> BO α (ref 
 {-# INLINE unsafeGet #-}
 unsafeGet i =
   Unsafe.toLinear \v ->
-    GHC.noinline
-      $ unsafeUnwrapRef v
-      NonLinear.& \(Vector v) ->
-        unsafeWrapRef
-          Control.<$> unsafeSystemIOToBO (MV.unsafeRead v i)
+    GHC.noinline $
+      unsafeUnwrapRef v
+        NonLinear.& \(Vector v) ->
+          unsafeWrapRef
+            Control.<$> unsafeSystemIOToBO (MV.unsafeRead v i)
 
 head :: (HasCallStack, AccessibleRefAt α ref) => ref (Vector a) %1 -> BO α (ref a)
 {-# INLINE head #-}

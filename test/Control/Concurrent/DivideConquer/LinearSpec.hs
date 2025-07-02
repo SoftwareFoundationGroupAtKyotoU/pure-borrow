@@ -44,16 +44,16 @@ test_qsort =
         F.collect "max" [NonLinear.maximum v `quot` 10 * 10]
         F.collect "sorted" [V.and $ V.zipWith (NonLinear.<=) v (V.tail v)]
         F.info $ "input: " <> show xs
-        F.assert
-          $ P.expect (V.fromList $ List.sort xs)
-          P..$ ("output", sorted)
+        F.assert $
+          P.expect (V.fromList $ List.sort xs)
+            P..$ ("output", sorted)
     ]
 
 qsortDCVec :: (Ord a, Movable a, Deborrowable a) => V.Vector a -> V.Vector a
 qsortDCVec v = unur $ unur $ linearly \lin -> DataFlow.do
   (l1, l2, l3) <- dup3 lin
-  runBO l1
-    $ borrow (VL.fromVector v l2) l3
-    & \(v, lend) -> Control.do
-      Control.void $ divideAndConquer 10 (qsortDC 16) v
-      Control.pure \end -> VL.toVector (reclaim end lend)
+  runBO l1 $
+    borrow (VL.fromVector v l2) l3
+      & \(v, lend) -> Control.do
+        Control.void $ divideAndConquer 10 (qsortDC 16) v
+        Control.pure \end -> VL.toVector (reclaim end lend)

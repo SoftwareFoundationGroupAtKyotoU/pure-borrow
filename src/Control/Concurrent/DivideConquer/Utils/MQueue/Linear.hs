@@ -92,9 +92,9 @@ writeMQueueMany ::
   t a %1 ->
   BO α (Mut α (MQueue a))
 writeMQueueMany = Unsafe.toLinear2 \q as ->
-  Control.fmap (`lseq` q)
-    $ unsafeAtomically
-    $ Data.traverse (unsafeSTMToBO . Unsafe.toLinear (TMQ.writeTMQueue (NonLinear.coerce q))) as
+  Control.fmap (`lseq` q) $
+    unsafeAtomically $
+      Data.traverse (unsafeSTMToBO . Unsafe.toLinear (TMQ.writeTMQueue (NonLinear.coerce q))) as
 
 readMQueue :: Mut α (MQueue a) %1 -> BO α (Maybe (a, Mut α (MQueue a)))
 readMQueue = Unsafe.toLinear \mutq@(UnsafeMut (MkMQ q)) ->

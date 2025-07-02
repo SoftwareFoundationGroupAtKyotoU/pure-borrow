@@ -31,11 +31,11 @@ import Prelude qualified as NonLinear
 qsortVec :: (Ord a, Movable a, Deborrowable a) => V.Vector a -> V.Vector a
 qsortVec v = unur $ unur $ linearly \lin -> DataFlow.do
   (l1, l2, l3) <- dup3 lin
-  runBO l1
-    $ borrow (VL.fromVector v l2) l3
-    & \(v, lend) -> Control.do
-      VL.qsort 8 v
-      Control.pure \end -> VL.toVector (reclaim end lend)
+  runBO l1 $
+    borrow (VL.fromVector v l2) l3
+      & \(v, lend) -> Control.do
+        VL.qsort 8 v
+        Control.pure \end -> VL.toVector (reclaim end lend)
 
 divideList :: [Int] -> (Int, [Int])
 divideList [] = (0, [])
@@ -44,16 +44,16 @@ divideList xs =
       pivot = v0 V.! (V.length v0 `quot` 2)
    in Bi.second unur $ unur $ linearly \lin -> DataFlow.do
         (l1, l2, l3) <- dup3 lin
-        runBO l1
-          $ borrow (VL.fromList xs l2) l3
-          & \(v, lend) ->
-            VL.size v & \(Ur len, v) -> Control.do
-              (lo, hi) <- VL.divide pivot v 0 len
-              VL.size lo & \(Ur n, lo) -> DataFlow.do
-                consume lo
-                consume hi
-                Control.pure \end ->
-                  (n, VL.toList $ reclaim end lend)
+        runBO l1 $
+          borrow (VL.fromList xs l2) l3
+            & \(v, lend) ->
+              VL.size v & \(Ur len, v) -> Control.do
+                (lo, hi) <- VL.divide pivot v 0 len
+                VL.size lo & \(Ur n, lo) -> DataFlow.do
+                  consume lo
+                  consume hi
+                  Control.pure \end ->
+                    (n, VL.toList $ reclaim end lend)
 
 test_divideList :: TestTree
 test_divideList =
@@ -63,9 +63,9 @@ test_divideList =
         divideList [] @?= (0, [])
     , testProperty "singleton" do
         x <- F.gen $ G.int $ G.between (-100, 100)
-        F.assert
-          $ P.expect (0, [x])
-          P..$ ("answer", divideList [x])
+        F.assert $
+          P.expect (0, [x])
+            P..$ ("answer", divideList [x])
     , testProperty "non-empty" do
         xs <- F.gen $ G.list (G.between (1, 100)) $ G.int $ G.between (0, 100)
         let v = V.fromList xs
@@ -77,12 +77,12 @@ test_divideList =
         F.collect "min" [NonLinear.minimum v `quot` 10 * 10]
         F.collect "max" [NonLinear.maximum v `quot` 10 * 10]
         F.info $ "pivot: " <> show pivot
-        F.assert
-          $ P.satisfies ("lo <= " <> show pivot, V.all (NonLinear.<= pivot))
-          P..$ ("lo", lo)
-        F.assert
-          $ P.satisfies ("hi >= " <> show pivot, V.all (NonLinear.>= pivot))
-          P..$ ("hi", hi)
+        F.assert $
+          P.satisfies ("lo <= " <> show pivot, V.all (NonLinear.<= pivot))
+            P..$ ("lo", lo)
+        F.assert $
+          P.satisfies ("hi >= " <> show pivot, V.all (NonLinear.>= pivot))
+            P..$ ("hi", hi)
     ]
 
 test_qsort :: TestTree
@@ -100,7 +100,7 @@ test_qsort =
         F.collect "max" [NonLinear.maximum v `quot` 10 * 10]
         F.collect "sorted" [V.and $ V.zipWith (NonLinear.<=) v (V.tail v)]
         F.info $ "input: " <> show xs
-        F.assert
-          $ P.expect (V.fromList $ List.sort xs)
-          P..$ ("output", sorted)
+        F.assert $
+          P.expect (V.fromList $ List.sort xs)
+            P..$ ("output", sorted)
     ]

@@ -33,16 +33,11 @@ module Control.Monad.Borrow.Pure (
   share,
   reclaim,
   reborrow,
+  joinMut,
   Deborrowable (),
   deborrow,
   genericDerefShare,
   GenericDerefable,
-
-  -- ** Collapsing borrows
-  unMutMut,
-  unShrMut,
-  unMutShr,
-  unShrShr,
 
   -- ** Case-splitting for borrows
   SplittableBorrow,

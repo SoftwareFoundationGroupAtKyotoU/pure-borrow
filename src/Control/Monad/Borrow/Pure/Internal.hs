@@ -263,17 +263,9 @@ reborrow :: (β <= α) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
 reborrow = Unsafe.toLinear \mutA ->
   (Data.Coerce.coerce mutA, Data.Coerce.coerce mutA)
 
-unMutMut :: (α <= β) => Mut α (Mut β a) %1 -> Mut α a
-unMutMut = coerceLin
-
-unShrMut :: (α <= β) => Share α (Mut β a) %1 -> Share α a
-unShrMut = coerceLin
-
-unMutShr :: Mut α (Share β a) %1 -> Share β a
-unMutShr = coerceLin
-
-unShrShr :: Share α (Share β a) %1 -> Share β a
-unShrShr = coerceLin
+-- | Collapse a nested mutable borrow
+joinMut :: Mut α (Mut β a) %1 -> Mut (α /\ β) a
+joinMut = coerceLin
 
 type SplittableRef_ :: (Type -> Type) -> Constraint
 class

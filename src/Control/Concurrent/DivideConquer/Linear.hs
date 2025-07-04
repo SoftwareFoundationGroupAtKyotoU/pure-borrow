@@ -206,11 +206,11 @@ divideAndConquerLocalQueues n DivideConquer {..} ini
                     Control.pure (Divide work sink, source)
               Pool.prependFront q $ F.Pair works (MkSolo (Unite sources sink))
       Unite sources sink -> Control.do
-        pieces <- Data.mapM Once.take sources
+        -- pieces <- Data.mapM Once.take sources
         case conquer of
           NoOp -> Control.do
             Once.put sink ()
-            Control.pure $ pieces `lseq` q
+            Control.pure $ Unsafe.toLinear (\_ -> ()) sources `lseq` q
 
 newtype ThreadId_ = ThreadId_ ThreadId
   deriving stock (GHC.Generic)

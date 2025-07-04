@@ -9,7 +9,7 @@
 module Data.Ref.Linear.Unlifted (
   Ref#,
   newRef#,
-  unRef#,
+  freeRef#,
   readRef#,
   writeRef#,
   atomicModify_#,
@@ -50,9 +50,9 @@ writeRef# = GHC.noinline $ Unsafe.toLinear2 \(Ref# mv) !a ->
     case GHC.writeMutVar# mv a s of
       _ -> Ref# mv
 
-unRef# :: Ref# a %1 -> a
-{-# NOINLINE unRef# #-}
-unRef# = Unsafe.toLinear \(Ref# a) ->
+freeRef# :: Ref# a %1 -> a
+{-# NOINLINE freeRef# #-}
+freeRef# = Unsafe.toLinear \(Ref# a) ->
   runRW# \s ->
     case GHC.readMutVar# a s of
       (# _, !a #) -> a

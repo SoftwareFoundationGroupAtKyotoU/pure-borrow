@@ -9,7 +9,7 @@
 module Data.Ref.Linear (
   Ref,
   new,
-  unRef,
+  freeRef,
   readRef,
   writeRef,
   atomicModify,
@@ -44,9 +44,9 @@ atomicModify :: Ref a %1 -> (a %1 -> (a, b)) %1 -> (Ref a, b)
 atomicModify (Ref v) f = case atomicModify# v f of
   (# v', b #) -> (Ref v', b)
 
-unRef :: Ref a %1 -> a
-{-# INLINE unRef #-}
-unRef (Ref v) = unRef# v
+freeRef :: Ref a %1 -> a
+{-# INLINE freeRef #-}
+freeRef (Ref v) = freeRef# v
 
 readRef :: Ref a %1 -> (a, Ref a)
 {-# INLINE readRef #-}

@@ -29,16 +29,36 @@ import Test.Tasty.Falsify qualified as F
 import Test.Tasty.HUnit (testCase, (@?=))
 import Prelude qualified as NonLinear
 
-test_qsort :: TestTree
-test_qsort =
+test_qsortDC :: TestTree
+test_qsortDC =
   testGroup
-    "qsort"
+    "qsortDC"
     [ testCase "empty" do
         qsortDCVec (V.empty @Int) @?= V.empty
     , testProperty "coincides with Data.List.sort on Ints" do
         xs <- F.gen $ G.list (G.between (1, 100)) $ G.int $ G.between (-100, 100)
         let v = V.fromList xs
             sorted = qsortDCVec v
+        F.collect "length" [ceiling @_ @Int (fromIntegral @_ @Double (V.length v) / 10) * 10]
+        F.collect "min" [NonLinear.minimum v `quot` 10 * 10]
+        F.collect "max" [NonLinear.maximum v `quot` 10 * 10]
+        F.collect "sorted" [V.and $ V.zipWith (NonLinear.<=) v (V.tail v)]
+        F.info $ "input: " <> show xs
+        F.assert
+          $ P.expect (V.fromList $ List.sort xs)
+          P..$ ("output", sorted)
+    ]
+
+test_qsortDCLQ :: TestTree
+test_qsortDCLQ =
+  testGroup
+    "qsortDCLQ"
+    [ testCase "empty" do
+        qsortDCVecLQ (V.empty @Int) @?= V.empty
+    , testProperty "coincides with Data.List.sort on Ints" do
+        xs <- F.gen $ G.list (G.between (1, 100)) $ G.int $ G.between (-100, 100)
+        let v = V.fromList xs
+            sorted = qsortDCVecLQ v
         F.collect "length" [ceiling @_ @Int (fromIntegral @_ @Double (V.length v) / 10) * 10]
         F.collect "min" [NonLinear.minimum v `quot` 10 * 10]
         F.collect "max" [NonLinear.maximum v `quot` 10 * 10]
@@ -56,4 +76,13 @@ qsortDCVec v = unur $ unur $ linearly \lin -> DataFlow.do
     $ borrow (VL.fromVector v l2) l3
     & \(v, lend) -> Control.do
       Control.void $ divideAndConquer 10 (qsortDC 16) v
+      Control.pure \end -> VL.toVector (reclaim end lend)
+
+qsortDCVecLQ :: (Ord a, Movable a, Deborrowable a) => V.Vector a -> V.Vector a
+qsortDCVecLQ v = unur $ unur $ linearly \lin -> DataFlow.do
+  (l1, l2, l3) <- dup3 lin
+  runBO l1
+    $ borrow (VL.fromVector v l2) l3
+    & \(v, lend) -> Control.do
+      Control.void $ divideAndConquerLocalQueues 5 (qsortDC 16) v
       Control.pure \end -> VL.toVector (reclaim end lend)

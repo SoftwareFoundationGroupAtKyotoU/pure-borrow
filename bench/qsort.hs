@@ -6,7 +6,7 @@
 module Main (main) where
 
 import Control.Concurrent (getNumCapabilities)
-import Control.Concurrent.DivideConquer.Linear (divideAndConquer, qsortDC)
+import Control.Concurrent.DivideConquer.Linear (divideAndConquer, divideAndConquerLocalQueues, qsortDC)
 import qualified Control.Functor.Linear as Control
 import Control.Monad.Borrow.Pure
 import qualified Control.Syntax.DataFlow as DataFlow
@@ -19,7 +19,7 @@ import qualified Prelude.Linear as PL
 import System.Random.Stateful
 import Test.Tasty.Bench
 
-data Mode = Parallel Word | Worksteal Int | Sequential | IntroSort
+data Mode = Parallel Word | Worksteal Int | WorkstealPost Int | Sequential | IntroSort
   deriving (Show, Eq, Ord)
 
 qsortWith :: Mode -> V.Vector Int -> V.Vector Int
@@ -48,6 +48,14 @@ qsortWith (Worksteal p) v =
         (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
         Control.void PL.$ divideAndConquer p (qsortDC 16) v
         Control.pure PL.$ \end -> VL.toVector (reclaim end lend)
+qsortWith (WorkstealPost p) v =
+  unur PL.$ unur PL.$ linearly \lin ->
+    DataFlow.do
+      (lin, l2, l3) <- dup3 lin
+      runBO lin Control.do
+        (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
+        Control.void PL.$ divideAndConquerLocalQueues p (qsortDC 16) v
+        Control.pure PL.$ \end -> VL.toVector (reclaim end lend)
 
 main :: IO ()
 main = do
@@ -67,11 +75,15 @@ main = do
                   ]
                     ++ [ bench ("parallel (budget = " <> show n <> ")") $
                            nf (qsortWith $ Parallel n) vec
-                       | n <- [4, 8, 16, 32]
+                       | n <- [4, 16, 32]
                        ]
                     ++ [ bench ("worksteal (workers = " <> show n <> ")") $
                            nf (qsortWith $ Worksteal n) vec
-                       | n <- [2, 4 .. numCap]
+                       | n <- [4, 8, numCap]
+                       ]
+                    ++ [ bench ("worksteal-local-queues (workers = " <> show n <> ")") $
+                           nf (qsortWith $ WorkstealPost n) vec
+                       | n <- [4, 8, numCap]
                        ]
                 )
         | i <- [0 .. 32]

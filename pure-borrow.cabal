@@ -54,6 +54,7 @@ library
   -- cabal-gild: discover src --exclude src/**/Utils.hs --exclude src/**/Utils/**/*.hs
   exposed-modules:
     Control.Concurrent.DivideConquer.Linear
+    Control.Functor.Linear.Extra
     Control.Monad.Borrow.Pure
     Control.Monad.Borrow.Pure.Affine
     Control.Monad.Borrow.Pure.Affine.Internal
@@ -66,6 +67,7 @@ library
     Control.Syntax.DataFlow
     Data.Coerce.Directed
     Data.Comonad.Linear
+    Data.Functor.Linear.Extra
     Data.OnceChan.Linear
     Data.OnceChan.Linear.Unlifted
     Data.Ref.Linear
@@ -76,6 +78,7 @@ library
   -- cabal-gild: discover src --include src/**/Utils.hs --include src/**/Utils/**/*.hs
   other-modules:
     Control.Concurrent.DivideConquer.Utils.MQueue.Linear
+    Control.Concurrent.DivideConquer.Utils.Unsafe.QueuePool.Linear
     Control.Monad.Borrow.Pure.Utils
 
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0

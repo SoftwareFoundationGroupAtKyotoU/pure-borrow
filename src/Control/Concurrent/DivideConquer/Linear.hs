@@ -19,6 +19,7 @@
 
 module Control.Concurrent.DivideConquer.Linear (
   divideAndConquer,
+  divideAndConquerLocalQueues,
   DivideConquer (..),
 
   -- *  Examples
@@ -29,6 +30,8 @@ import Control.Concurrent (ThreadId, forkIO)
 import Control.Concurrent qualified as Conc
 import Control.Concurrent.DivideConquer.Utils.MQueue.Linear (newMQueue)
 import Control.Concurrent.DivideConquer.Utils.MQueue.Linear qualified as MQ
+import Control.Concurrent.DivideConquer.Utils.Unsafe.QueuePool.Linear (QueuePool, newQueuePool)
+import Control.Concurrent.DivideConquer.Utils.Unsafe.QueuePool.Linear qualified as Pool
 import Control.Functor.Linear (runStateT)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
@@ -38,10 +41,14 @@ import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce qualified as NonLinear
 import Data.Coerce.Directed
 import Data.Functor.Linear qualified as Data
+import Data.Functor.Linear.Extra
+import Data.Functor.Linear.Extra qualified as Data
+import Data.Functor.Product qualified as F
 import Data.Kind (Type)
 import Data.OnceChan.Linear (Sink, Source)
 import Data.OnceChan.Linear qualified as Once
 import Data.Proxy (Proxy (..))
+import Data.Tuple (Solo (..))
 import Data.Unrestricted.Linear (AsMovable (..))
 import Data.Vector.Mutable.Linear.Borrow qualified as LV
 import GHC.Generics qualified as GHC
@@ -100,7 +107,7 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
                 NoOp -> Control.do
                   Once.take rootSource
                   MQ.closeMQueue q
-                  Control.void $ Data.traverse wait chs
+                  Control.void $ Data.traverse killThreadBO chs
                   Control.pure ()
             ) ::
               BO γ r
@@ -151,6 +158,59 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
               Once.put sink res
               Control.pure q
   -}
+
+divideAndConquerLocalQueues ::
+  forall α t a r.
+  (Data.Traversable t, Data.Unzip t, Consumable (t ())) =>
+  -- | The # of workers
+  Int ->
+  DivideConquer α t a r ->
+  Mut α a %1 ->
+  BO α (r, Mut α a)
+divideAndConquerLocalQueues n DivideConquer {..} ini
+  | n <= 0 = error ("divideAndConquerLocalQueus: # of workers must be positive, but got" <> show n) ini
+  | otherwise = case someNatVal (fromIntegral n) of
+      SomeNat (Proxy :: Proxy n) -> DataFlow.do
+        (lin, ini) <- withLinearly ini
+        (lin, lin', lin'') <- dup3 lin
+        reborrowing ini \(ini :: Mut γ a) -> DataFlow.do
+          (rootSink, rootSource) <- Once.new lin'
+          Control.do
+            (pools, lend) <- newQueuePool @n (Divide ini rootSink) lin
+            chs <- concurrentMap lin'' worker pools
+            r <-
+              ( case conquer of
+                  NoOp -> Control.do
+                    Once.take rootSource
+                    Control.void $ Data.traverse killThreadBO chs
+                    Control.pure ()
+              ) ::
+                BO γ r
+            Control.pure (\end -> reclaim (upcast end) lend `lseq` r)
+  where
+    worker :: (β <= α) => Mut β (QueuePool (Work β a t r)) %1 -> BO β ()
+    worker q = whileJust_ q Pool.popFront \q -> \case
+      Divide !inp !sink -> Control.do
+        resl <- divide inp
+        case resl of
+          Done !r -> Control.do
+            Once.put sink r
+            Control.pure q
+          Continue ts ->
+            withLinearly q & \(lin, q) -> Control.do
+              (works, sources) <-
+                Data.unzip Control.<$> flip Control.runReaderT lin Control.do
+                  Data.for ts \work -> Control.do
+                    lin <- Control.ask
+                    (sink, source) <- Control.pure $ Once.new lin
+                    Control.pure (Divide work sink, source)
+              Pool.prependFront q $ F.Pair works (MkSolo (Unite sources sink))
+      Unite sources sink -> Control.do
+        pieces <- Data.mapM Once.take sources
+        case conquer of
+          NoOp -> Control.do
+            Once.put sink ()
+            Control.pure $ pieces `lseq` q
 
 newtype ThreadId_ = ThreadId_ ThreadId
   deriving stock (GHC.Generic)
@@ -216,6 +276,10 @@ data Pair a where
   deriving (GHC.Generic, GHC.Generic1)
 
 deriveGenericAnd1 ''Pair
+
+instance Data.Unzip Pair where
+  unzip (Pair (a1, b1) (a2, b2)) = (Pair a1 a2, Pair b1 b2)
+  {-# INLINE unzip #-}
 
 deriving via Generically1 Pair instance Data.Functor Pair
 

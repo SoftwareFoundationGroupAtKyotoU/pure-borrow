@@ -54,6 +54,7 @@ library
   -- cabal-gild: discover src --exclude src/**/Utils.hs --exclude src/**/Utils/**/*.hs
   exposed-modules:
     Control.Concurrent.DivideConquer.Linear
+    Control.Concurrent.DivideConquer.Linear.Types
     Control.Functor.Linear.Extra
     Control.Monad.Borrow.Pure
     Control.Monad.Borrow.Pure.Affine

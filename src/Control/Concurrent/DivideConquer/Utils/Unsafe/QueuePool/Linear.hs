@@ -27,6 +27,7 @@ module Control.Concurrent.DivideConquer.Utils.Unsafe.QueuePool.Linear (
   prependFront,
   pushBack,
   appendBack,
+  release,
 ) where
 
 import Control.Concurrent.STM (atomically)
@@ -60,6 +61,8 @@ data QueuePool a = MkQueuePool
   , others :: [TMQueue a]
   }
 
+data ReleaseQueuePool a = ReleaseQueuePool [TMQueue a]
+
 instance Consumable (QueuePool a) where
   {-# NOINLINE consume #-}
   consume = GHC.noinline $ Unsafe.toLinear \qs -> do
@@ -71,7 +74,7 @@ newQueuePool ::
   (KnownNat n) =>
   a %1 ->
   Linearly %1 ->
-  BO α (V n (Mut α (QueuePool a)), Lend α (V n (QueuePool a)))
+  BO α (V n (Mut α (QueuePool a)), Mut α (ReleaseQueuePool a), Lend α (V n (QueuePool a)))
 newQueuePool = Unsafe.toLinear \a lin ->
   lin `lseq` unsafeSystemIOToBO do
     let n = fromIntegral @_ @Int $ natVal @n Proxy
@@ -79,7 +82,11 @@ newQueuePool = Unsafe.toLinear \a lin ->
     atomically NL.$ writeTMQueue (NE.head $ NE.fromList qs) a
     let pools = NL.map (UnsafeMut NL.. (`MkQueuePool` qs)) qs
     let vns = V.V NL.$ Data.Vector.fromList pools
-    NL.pure (vns, NL.coerce vns)
+    NL.pure (vns, UnsafeMut $ ReleaseQueuePool qs, NL.coerce vns)
+
+release :: Mut α (ReleaseQueuePool a) %1 -> BO α ()
+release = Unsafe.toLinear \(UnsafeMut (ReleaseQueuePool qs)) -> unsafeSystemIOToBO do
+  atomically NL.$ NL.mapM_ closeTMQueue qs
 
 tryWrite :: (Affable a) => (TMQueue a -> a -> STM ()) -> Mut α (QueuePool a) %1 -> a %1 -> BO α (Mut α (QueuePool a))
 tryWrite put = Unsafe.toLinear2 \(UnsafeMut pool) a -> unsafeSystemIOToBO do

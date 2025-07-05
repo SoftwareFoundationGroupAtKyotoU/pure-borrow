@@ -26,8 +26,9 @@ module Control.Concurrent.DivideConquer.Linear (
   qsortDC,
 ) where
 
-import Control.Concurrent (ThreadId, forkIO)
+import Control.Concurrent (forkIO)
 import Control.Concurrent qualified as Conc
+import Control.Concurrent.DivideConquer.Linear.Types
 import Control.Concurrent.DivideConquer.Utils.MQueue.Linear (newMQueue)
 import Control.Concurrent.DivideConquer.Utils.MQueue.Linear qualified as MQ
 import Control.Concurrent.DivideConquer.Utils.Unsafe.QueuePool.Linear (QueuePool, newQueuePool)
@@ -35,13 +36,11 @@ import Control.Concurrent.DivideConquer.Utils.Unsafe.QueuePool.Linear qualified 
 import Control.Functor.Linear (runStateT)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Affine (Affable, GenericallyAffable (..))
 import Control.Monad.Borrow.Pure.Internal
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce qualified as NonLinear
 import Data.Coerce.Directed
 import Data.Functor.Linear qualified as Data
-import Data.Functor.Linear.Extra
 import Data.Functor.Linear.Extra qualified as Data
 import Data.Functor.Product qualified as F
 import Data.Kind (Type)
@@ -49,13 +48,10 @@ import Data.OnceChan.Linear (Sink, Source)
 import Data.OnceChan.Linear qualified as Once
 import Data.Proxy (Proxy (..))
 import Data.Tuple (Solo (..))
-import Data.Unrestricted.Linear (AsMovable (..))
+import Data.Unrestricted.Linear (dup4)
 import Data.Vector.Mutable.Linear.Borrow qualified as LV
-import GHC.Generics qualified as GHC
 import GHC.TypeNats (SomeNat (..), someNatVal)
-import Generics.Linear.TH (deriveGeneric, deriveGenericAnd1)
 import Prelude.Linear
-import Prelude.Linear.Generically (Generically, Generically1)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
@@ -102,25 +98,7 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
         Control.do
           q <- MQ.writeMQueue q $ Divide ini rootSink
           chs <- concurrentMap lin'' worker qs
-          r <-
-            ( case conquer of
-                NoOp -> Control.do
-                  Once.take rootSource
-                  MQ.closeMQueue q
-                  Control.void $ Data.traverse killThreadBO chs
-                  Control.pure ()
-            ) ::
-              BO γ r
-          {-
-            -- NOTE: To handle conquer correctly, we need to be more careful
-            -- with the dependency between tasks and easily deadlocks / starvation.
-            --
-            -- Meanwhile, qsort requires no postprocesses so we just handle No-Op.
-            Conquer -> Control.do
-              !r <- Once.take rootSource
-              MQ.closeMQueue q
-              Control.void $ forkBO $ Control.void $ Data.traverse killThreadBO chs
-          -}
+          r <- Once.take rootSource <* (chs `lseq` MQ.closeMQueue q)
           Control.pure (\end -> reclaim (upcast end) lend `lseq` r)
   where
     worker :: (β <= α) => Mut β (MQ.MQueue (Work β a t r)) %1 -> BO β ()
@@ -147,18 +125,6 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
               Once.put sink ()
               Control.pure $ Unsafe.toLinear (\_ -> ()) sources `lseq` q
 
-{-
-            -- NOTE: To handle conquer correctly, we need to be more careful
-            -- with the dependency between tasks and easily deadlocks / starvation.
-            --
-            -- Meanwhile, qsort requires no postprocesses so we just handle No-Op.
-            Conquer k ->
-              pieces <- Data.traverse Once.take sources
-              !res <- k pieces
-              Once.put sink res
-              Control.pure q
-  -}
-
 divideAndConquerLocalQueues ::
   forall α t a r.
   (Data.Traversable t, Data.Unzip t, Consumable (t ())) =>
@@ -176,16 +142,9 @@ divideAndConquerLocalQueues n DivideConquer {..} ini
         reborrowing ini \(ini :: Mut γ a) -> DataFlow.do
           (rootSink, rootSource) <- Once.new lin'
           Control.do
-            (pools, lend) <- newQueuePool @n (Divide ini rootSink) lin
+            (pools, releaser, lend) <- newQueuePool @n (Divide ini rootSink) lin
             chs <- concurrentMap lin'' worker pools
-            r <-
-              ( case conquer of
-                  NoOp -> Control.do
-                    Once.take rootSource
-                    Control.void $ Data.traverse killThreadBO chs
-                    Control.pure ()
-              ) ::
-                BO γ r
+            r <- Once.take rootSource <* (chs `lseq` Pool.release releaser)
             Control.pure (\end -> reclaim (upcast end) lend `lseq` r)
   where
     worker :: (β <= α) => Mut β (QueuePool (Work β a t r)) %1 -> BO β ()
@@ -211,19 +170,6 @@ divideAndConquerLocalQueues n DivideConquer {..} ini
           NoOp -> Control.do
             Once.put sink ()
             Control.pure $ Unsafe.toLinear (\_ -> ()) sources `lseq` q
-
-newtype ThreadId_ = ThreadId_ ThreadId
-  deriving stock (GHC.Generic)
-  deriving (Consumable, Dupable) via AsMovable ThreadId_
-
-instance Movable ThreadId_ where
-  move = Unsafe.toLinear Ur
-
-wait :: Thread %1 -> BO α ()
-wait (Thread tid source) = tid `lseq` Once.take source
-
-data Thread = Thread !ThreadId_ !(Source ())
-  deriving stock (GHC.Generic)
 
 killThreadBO :: Thread %1 -> BO α ()
 killThreadBO = Unsafe.toLinear \(Thread tid _) ->
@@ -266,46 +212,6 @@ whileJust_ ini next action = loop ini
         Just (!x, !cur) -> Control.do
           cur <- action cur x
           loop cur
-
-deriveGeneric ''Thread
-
-deriving via Generically Thread instance Consumable Thread
-
-data Pair a where
-  Pair :: !a %1 -> !a %1 -> Pair a
-  deriving (GHC.Generic, GHC.Generic1)
-
-deriveGenericAnd1 ''Pair
-
-instance Data.Unzip Pair where
-  unzip (Pair (a1, b1) (a2, b2)) = (Pair a1 a2, Pair b1 b2)
-  {-# INLINE unzip #-}
-
-deriving via Generically1 Pair instance Data.Functor Pair
-
-deriving via
-  Generically (Pair a)
-  instance
-    (Consumable a) => Consumable (Pair a)
-
-deriving via
-  Generically (Pair a)
-  instance
-    (Dupable a) => Dupable (Pair a)
-
-deriving via
-  GenericallyAffable (Pair a)
-  instance
-    (Affable a) => Affable (Pair a)
-
-deriving via
-  Generically (Pair a)
-  instance
-    (Movable a) => Movable (Pair a)
-
-instance Data.Traversable Pair where
-  traverse = Data.genericTraverse
-  {-# INLINE traverse #-}
 
 qsortDC ::
   (Ord a, Movable a, Deborrowable a) =>

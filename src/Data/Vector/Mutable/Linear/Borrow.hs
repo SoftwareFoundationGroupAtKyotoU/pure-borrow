@@ -130,39 +130,39 @@ unsafeFromVector = Unsafe.toLinear \v l ->
         unsafeSystemIOToBO $!
           V.unsafeThaw v
 
-size :: (AccessibleRef ref) => ref (Vector a) %1 -> (Ur Int, ref (Vector a))
+size :: (Borrow bor) => bor (Vector a) %1 -> (Ur Int, bor (Vector a))
 {-# INLINE size #-}
 size =
-  unsafeUnwrapRef >>> Unsafe.toLinear \(Vector v) ->
-    (move (MV.length v), unsafeWrapRef (Vector v))
+  unsafeUnwrapView >>> Unsafe.toLinear \(Vector v) ->
+    (move (MV.length v), unsafeWrapView (Vector v))
 
 -- | Get without bounds check.
-unsafeGet :: (AccessibleRefAt α ref) => Int -> ref (Vector a) %1 -> BO α (ref a)
+unsafeGet :: (BorrowAt α bor) => Int -> bor (Vector a) %1 -> BO α (bor a)
 {-# INLINE unsafeGet #-}
 unsafeGet i =
   Unsafe.toLinear \v ->
     GHC.noinline $
-      unsafeUnwrapRef v
+      unsafeUnwrapView v
         NonLinear.& \(Vector v) ->
-          unsafeWrapRef
+          unsafeWrapView
             Control.<$> unsafeSystemIOToBO (MV.unsafeRead v i)
 
-head :: (HasCallStack, AccessibleRefAt α ref) => ref (Vector a) %1 -> BO α (ref a)
+head :: (HasCallStack, BorrowAt α bor) => bor (Vector a) %1 -> BO α (bor a)
 {-# INLINE head #-}
 head = get 0
 
-unsafeHead :: (AccessibleRefAt α ref) => ref (Vector a) %1 -> BO α (ref a)
+unsafeHead :: (BorrowAt α bor) => bor (Vector a) %1 -> BO α (bor a)
 {-# INLINE unsafeHead #-}
 unsafeHead = unsafeGet 0
 
-unsafeLast :: (AccessibleRefAt α ref) => ref (Vector a) %1 -> BO α (ref a)
+unsafeLast :: (BorrowAt α bor) => bor (Vector a) %1 -> BO α (bor a)
 {-# INLINE unsafeLast #-}
 unsafeLast v = DataFlow.do
   (len, v) <- size v
   case len of
     Ur len -> unsafeGet (len - 1) v
 
-last :: (HasCallStack, AccessibleRefAt α ref) => ref (Vector a) %1 -> BO α (ref a)
+last :: (HasCallStack, BorrowAt α bor) => bor (Vector a) %1 -> BO α (bor a)
 {-# INLINE last #-}
 last v = DataFlow.do
   (len, v) <- size v
@@ -173,9 +173,9 @@ last v = DataFlow.do
 
 get ::
   ( HasCallStack
-  , AccessibleRefAt α ref
+  , BorrowAt α bor
   ) =>
-  Int -> ref (Vector a) %1 -> BO α (ref a)
+  Int -> bor (Vector a) %1 -> BO α (bor a)
 {-# INLINE get #-}
 get i v = DataFlow.do
   (len, v) <- size v

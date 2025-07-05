@@ -206,13 +206,13 @@ instance Affable (Share α a) where
 
 deriving via AsAffable (Share α a) instance Consumable (Share α a)
 
-unsafeWrapRef :: (SplittableRef_ ref) => a %1 -> ref a
-{-# INLINE unsafeWrapRef #-}
-unsafeWrapRef = coerceLin
+unsafeWrapView :: (View_ view) => a %1 -> view a
+{-# INLINE unsafeWrapView #-}
+unsafeWrapView = coerceLin
 
-unsafeUnwrapRef :: (SplittableRef_ ref) => ref a %1 -> a
-{-# INLINE unsafeUnwrapRef #-}
-unsafeUnwrapRef = coerceLin
+unsafeUnwrapView :: (View_ view) => view a %1 -> a
+{-# INLINE unsafeUnwrapView #-}
+unsafeUnwrapView = coerceLin
 
 instance Dupable (Share α a) where
   dup2 = Unsafe.toLinear $ NonLinear.join (,)
@@ -267,211 +267,211 @@ reborrow = Unsafe.toLinear \mutA ->
 joinMut :: Mut α (Mut β a) %1 -> Mut (α /\ β) a
 joinMut = coerceLin
 
-type SplittableRef_ :: (Type -> Type) -> Constraint
+type View_ :: (Type -> Type) -> Constraint
 class
-  (forall x. Coercible x (ref x)) =>
-  SplittableRef_ ref
+  (forall x. Coercible x (view x)) =>
+  View_ view
   where
-  type RefLifetime ref :: Lifetime
-  coercionWit :: Coercion x (ref x)
+  type ViewLifetime view :: Lifetime
+  coercionWit :: Coercion x (view x)
 
-instance SplittableRef_ (Mut α) where
-  type RefLifetime (Mut α) = α
+instance View_ (Mut α) where
+  type ViewLifetime (Mut α) = α
   coercionWit = Coercion
 
-instance SplittableRef_ (Share α) where
-  type RefLifetime (Share α) = α
+instance View_ (Share α) where
+  type ViewLifetime (Share α) = α
   coercionWit = Coercion
 
-instance SplittableRef_ (Lend α) where
-  type RefLifetime (Lend α) = α
+instance View_ (Lend α) where
+  type ViewLifetime (Lend α) = α
   coercionWit = Coercion
 
 -- | An abstraction over a type that can be
-class (SplittableRef_ ref) => SplittableBorrow ref
+class (View_ view) => View view
 
-instance (SplittableRef_ ref) => SplittableBorrow ref
+instance (View_ view) => View view
 
-type SplittableRefAt α ref = (SplittableBorrow ref, RefLifetime ref ~ α)
+type ViewAt α view = (View view, ViewLifetime view ~ α)
 
-data CaseRef ref where
-  IsMut :: CaseRef (Mut α)
-  IsShare :: CaseRef (Share α)
+data CaseBorrow view where
+  IsMut :: CaseBorrow (Mut α)
+  IsShare :: CaseBorrow (Share α)
 
--- | A constraint that requires @ref@ to be either a 'Share' or a 'Mut' borrow, which is accessible in 'BO' regions.
-class (SplittableBorrow ref) => AccessibleRef ref where
-  caseRef :: CaseRef ref
+-- | A constraint that requires @view@ to be either a 'Share' or a 'Mut' borrow, which is accessible in 'BO' regions.
+class (View view) => Borrow view where
+  caseBorrow :: CaseBorrow view
 
-instance AccessibleRef (Mut α) where
-  caseRef = IsMut
+instance Borrow (Mut α) where
+  caseBorrow = IsMut
 
-instance AccessibleRef (Share α) where
-  caseRef = IsShare
+instance Borrow (Share α) where
+  caseBorrow = IsShare
 
-type AccessibleRefAt α ref =
-  ( AccessibleRef ref
-  , RefLifetime ref ~ α
+type BorrowAt α view =
+  ( Borrow view
+  , ViewLifetime view ~ α
   )
 
-splitList :: (SplittableBorrow f) => f [x] %1 -> [f x]
+splitList :: (View f) => f [x] %1 -> [f x]
 splitList = split
 
-splitPair :: (SplittableBorrow ref) => ref (a, b) %1 -> (ref a, ref b)
+splitPair :: (View view) => view (a, b) %1 -> (view a, view b)
 {-# INLINE splitPair #-}
-splitPair = coerceLin . unsafeUnwrapRef
+splitPair = coerceLin . unsafeUnwrapView
 
-splitEither :: (SplittableBorrow ref) => ref (Either a b) %1 -> Either (ref a) (ref b)
+splitEither :: (View view) => view (Either a b) %1 -> Either (view a) (view b)
 {-# INLINE splitEither #-}
-splitEither = coerceLin . unsafeUnwrapRef
+splitEither = coerceLin . unsafeUnwrapView
 
--- | A dual to 'SplittableRef', which allows us to distribute a borrow over a functor.
-class DistributesBorrow f where
-  split_ :: (SplittableBorrow ref) => ref (f x) %1 -> f (ref x)
+-- | A dual to 'View', which allows us to distribute a borrow over a functor.
+class DistributesView f where
+  split_ :: (View view) => view (f x) %1 -> f (view x)
   default split_ ::
-    (GenericDistributesRef f, SplittableBorrow ref) =>
-    ref (f x) %1 -> f (ref x)
+    (GenericDistributesView f, View view) =>
+    view (f x) %1 -> f (view x)
   split_ = genericSplit
 
 split ::
-  forall ref f x.
-  ( DistributesBorrow f
-  , SplittableBorrow ref
+  forall view f x.
+  ( DistributesView f
+  , View view
   ) =>
-  ref (f x) %1 -> f (ref x)
+  view (f x) %1 -> f (view x)
 {-# INLINE [1] split #-}
 split = split_
 
-deriving anyclass instance DistributesBorrow Identity
+deriving anyclass instance DistributesView Identity
 
-deriving anyclass instance DistributesBorrow []
+deriving anyclass instance DistributesView []
 
-deriving anyclass instance DistributesBorrow Maybe
+deriving anyclass instance DistributesView Maybe
 
-deriving anyclass instance DistributesBorrow Solo
+deriving anyclass instance DistributesView Solo
 
-deriving anyclass instance DistributesBorrow Ord.Down
+deriving anyclass instance DistributesView Ord.Down
 
-deriving anyclass instance DistributesBorrow Sem.Dual
+deriving anyclass instance DistributesView Sem.Dual
 
-deriving anyclass instance DistributesBorrow Sem.Max
+deriving anyclass instance DistributesView Sem.Max
 
-deriving anyclass instance DistributesBorrow Sem.Min
+deriving anyclass instance DistributesView Sem.Min
 
-deriving anyclass instance DistributesBorrow Sem.First
+deriving anyclass instance DistributesView Sem.First
 
-deriving anyclass instance DistributesBorrow Sem.Last
+deriving anyclass instance DistributesView Sem.Last
 
-deriving anyclass instance DistributesBorrow Mon.First
+deriving anyclass instance DistributesView Mon.First
 
-deriving anyclass instance DistributesBorrow Mon.Last
+deriving anyclass instance DistributesView Mon.Last
 
-instance (Unsatisfiable ('Text "Use splitEither directly!")) => DistributesBorrow (Either e) where
+instance (Unsatisfiable ('Text "Use splitEither directly!")) => DistributesView (Either e) where
   {-# INLINE split_ #-}
   split_ = unsatisfiable
 
-instance (Unsatisfiable ('Text "Use splitPair instead!")) => DistributesBorrow ((,) a) where
+instance (Unsatisfiable ('Text "Use splitPair instead!")) => DistributesView ((,) a) where
   {-# INLINE split_ #-}
   split_ = unsatisfiable
 
-type GenericDistributesRef f = (Generic1 f, GDistributeRef (Rep1 f))
+type GenericDistributesView f = (Generic1 f, GDistributeView (Rep1 f))
 
 genericSplit ::
-  forall ref f x.
-  ( GenericDistributesRef f
-  , SplittableBorrow ref
+  forall view f x.
+  ( GenericDistributesView f
+  , View view
   ) =>
-  ref (f x) %1 -> f (ref x)
+  view (f x) %1 -> f (view x)
 {-# INLINE genericSplit #-}
 genericSplit =
   to1
-    . gdistributeRef @(Rep1 f) @ref
-    . unsafeMapRef from1
+    . gdistributeView @(Rep1 f) @view
+    . unsafeMapView from1
 
-unsafeMapRef :: (SplittableBorrow ref) => (a %1 -> b) -> ref a %1 -> ref b
-{-# INLINE unsafeMapRef #-}
-unsafeMapRef f = coerceLin f
+unsafeMapView :: (View view) => (a %1 -> b) -> view a %1 -> view b
+{-# INLINE unsafeMapView #-}
+unsafeMapView f = coerceLin f
 
-instance (GenericDistributesRef f) => DistributesBorrow (Generically1 f) where
+instance (GenericDistributesView f) => DistributesView (Generically1 f) where
   {-# INLINE split_ #-}
-  split_ = Generically1 . genericSplit . unsafeMapRef \(Generically1 f) -> f
+  split_ = Generically1 . genericSplit . unsafeMapView \(Generically1 f) -> f
 
-class GDistributeRef f where
-  gdistributeRef :: (SplittableBorrow ref) => ref (f x) %1 -> f (ref x)
+class GDistributeView f where
+  gdistributeView :: (View view) => view (f x) %1 -> f (view x)
 
 instance
-  ( GDistributeRef f
-  , GDistributeRef g
+  ( GDistributeView f
+  , GDistributeView g
   ) =>
-  GDistributeRef (f :*: g)
+  GDistributeView (f :*: g)
   where
-  {-# INLINE gdistributeRef #-}
-  gdistributeRef (ref :: ref a) =
-    case unsafeUnwrapRef ref of
+  {-# INLINE gdistributeView #-}
+  gdistributeView (view :: view a) =
+    case unsafeUnwrapView view of
       f :*: g -> DataFlow.do
-        f <- gdistributeRef $ unsafeWrapRef f
-        g <- gdistributeRef $ unsafeWrapRef g
+        f <- gdistributeView $ unsafeWrapView f
+        g <- gdistributeView $ unsafeWrapView g
         f :*: g
 
 instance
-  ( GDistributeRef f
-  , GDistributeRef g
+  ( GDistributeView f
+  , GDistributeView g
   ) =>
-  GDistributeRef (f :+: g)
+  GDistributeView (f :+: g)
   where
-  {-# INLINE gdistributeRef #-}
-  gdistributeRef ref = case unsafeUnwrapRef ref of
-    L1 l -> L1 (gdistributeRef (unsafeWrapRef l))
-    R1 r -> R1 (gdistributeRef (unsafeWrapRef r))
+  {-# INLINE gdistributeView #-}
+  gdistributeView view = case unsafeUnwrapView view of
+    L1 l -> L1 (gdistributeView (unsafeWrapView l))
+    R1 r -> R1 (gdistributeView (unsafeWrapView r))
 
 instance
   (Unsatisfiable (Text "Nonlinear fields cannot distribute borrows!")) =>
-  GDistributeRef (MP1 GHC.Many f)
+  GDistributeView (MP1 GHC.Many f)
   where
-  {-# INLINE gdistributeRef #-}
-  gdistributeRef = unsatisfiable
+  {-# INLINE gdistributeView #-}
+  gdistributeView = unsatisfiable
 
-instance (GDistributeRef f) => GDistributeRef (MP1 GHC.One f) where
-  {-# INLINE gdistributeRef #-}
-  gdistributeRef =
-    MP1 . gdistributeRef . unsafeWrapRef . unMP1 . unsafeUnwrapRef
+instance (GDistributeView f) => GDistributeView (MP1 GHC.One f) where
+  {-# INLINE gdistributeView #-}
+  gdistributeView =
+    MP1 . gdistributeView . unsafeWrapView . unMP1 . unsafeUnwrapView
 
-instance (GDistributeRef f) => GDistributeRef (M1 i c f) where
-  {-# INLINE gdistributeRef #-}
-  gdistributeRef = \x ->
-    case unsafeUnwrapRef x of
-      M1 x -> M1 $ gdistributeRef $ unsafeWrapRef x
+instance (GDistributeView f) => GDistributeView (M1 i c f) where
+  {-# INLINE gdistributeView #-}
+  gdistributeView = \x ->
+    case unsafeUnwrapView x of
+      M1 x -> M1 $ gdistributeView $ unsafeWrapView x
 
-instance DistributesBorrow Par1 where
+instance DistributesView Par1 where
   {-# INLINE split_ #-}
-  split_ = \x -> case unsafeUnwrapRef x of
-    Par1 a -> Par1 (unsafeWrapRef a)
+  split_ = \x -> case unsafeUnwrapView x of
+    Par1 a -> Par1 (unsafeWrapView a)
 
 instance
-  ( DistributesBorrow f
-  , DistributesBorrow g
+  ( DistributesView f
+  , DistributesView g
   , Data.Functor f
   ) =>
-  GDistributeRef (f :.: g)
+  GDistributeView (f :.: g)
   where
-  {-# INLINE gdistributeRef #-}
-  gdistributeRef = \(x :: ref _) -> case unsafeUnwrapRef x of
-    Comp1 fg -> Comp1 $ Data.fmap split_ $ split_ $ unsafeWrapRef @ref fg
+  {-# INLINE gdistributeView #-}
+  gdistributeView = \(x :: view _) -> case unsafeUnwrapView x of
+    Comp1 fg -> Comp1 $ Data.fmap split_ $ split_ $ unsafeWrapView @view fg
 
-instance GDistributeRef Par1 where
-  {-# INLINE gdistributeRef #-}
-  gdistributeRef = \x -> case unsafeUnwrapRef x of
-    Par1 a -> Par1 (unsafeWrapRef a)
+instance GDistributeView Par1 where
+  {-# INLINE gdistributeView #-}
+  gdistributeView = \x -> case unsafeUnwrapView x of
+    Par1 a -> Par1 (unsafeWrapView a)
 
 instance
   (Unsatisfiable (Text "A type containing non-parametric field with type `" :<>: ShowType c :<>: Text "', which cannot be safely splitted!")) =>
-  GDistributeRef (K1 i c)
+  GDistributeView (K1 i c)
   where
-  {-# INLINE gdistributeRef #-}
-  gdistributeRef = unsatisfiable
+  {-# INLINE gdistributeView #-}
+  gdistributeView = unsatisfiable
 
-instance GDistributeRef U1 where
-  gdistributeRef = coerceLin . unsafeUnwrapRef
-  {-# INLINE gdistributeRef #-}
+instance GDistributeView U1 where
+  gdistributeView = coerceLin . unsafeUnwrapView
+  {-# INLINE gdistributeView #-}
 
 class Deborrowable a where
   unsafeDeborrow :: Share α a %1 -> a
@@ -542,44 +542,44 @@ deriving via UnsafeAssumeNoVar Char instance Deborrowable Char
 
 deriving via UnsafeAssumeNoVar Bool instance Deborrowable Bool
 
-type GenericDerefable a = (Generic a, GDerefable (Rep a))
+type GenericDeborrowable a = (Generic a, GDeborrowable (Rep a))
 
-genericDerefShare :: (GenericDerefable a) => Share α a %1 -> a
-{-# INLINE genericDerefShare #-}
-genericDerefShare (UnsafeShare x) = to (gderef (UnsafeShare (from x)))
+genericDeborrowShare :: (GenericDeborrowable a) => Share α a %1 -> a
+{-# INLINE genericDeborrowShare #-}
+genericDeborrowShare (UnsafeShare x) = to (gdeborrow (UnsafeShare (from x)))
 
-type GDerefable :: forall {k}. (k -> Type) -> Constraint
-class GDerefable f where
-  gderef :: Share α (f x) %1 -> f x
+type GDeborrowable :: forall {k}. (k -> Type) -> Constraint
+class GDeborrowable f where
+  gdeborrow :: Share α (f x) %1 -> f x
 
-instance (Deborrowable a) => GDerefable (K1 i a) where
-  gderef = coerceLin . unsafeUnwrapRef
+instance (Deborrowable a) => GDeborrowable (K1 i a) where
+  gdeborrow = coerceLin . unsafeUnwrapView
 
-instance (GDerefable f, GDerefable g) => GDerefable (f :*: g) where
-  gderef (UnsafeShare (f :*: g)) =
-    gderef (UnsafeShare f) :*: gderef (UnsafeShare g)
+instance (GDeborrowable f, GDeborrowable g) => GDeborrowable (f :*: g) where
+  gdeborrow (UnsafeShare (f :*: g)) =
+    gdeborrow (UnsafeShare f) :*: gdeborrow (UnsafeShare g)
 
-instance (GDerefable f) => GDerefable (M1 i c f) where
-  gderef = \case
-    UnsafeShare (M1 x) -> M1 (gderef (UnsafeShare x))
+instance (GDeborrowable f) => GDeborrowable (M1 i c f) where
+  gdeborrow = \case
+    UnsafeShare (M1 x) -> M1 (gdeborrow (UnsafeShare x))
 
-instance (GDerefable f) => GDerefable (MP1 m f) where
-  gderef = \case
-    UnsafeShare (MP1 x) -> MP1 (gderef (UnsafeShare x))
+instance (GDeborrowable f) => GDeborrowable (MP1 m f) where
+  gdeborrow = \case
+    UnsafeShare (MP1 x) -> MP1 (gdeborrow (UnsafeShare x))
 
-instance (GDerefable f, GDerefable g) => GDerefable (f :+: g) where
-  gderef = \case
-    UnsafeShare (L1 x) -> L1 (gderef (UnsafeShare x))
-    UnsafeShare (R1 x) -> R1 (gderef (UnsafeShare x))
+instance (GDeborrowable f, GDeborrowable g) => GDeborrowable (f :+: g) where
+  gdeborrow = \case
+    UnsafeShare (L1 x) -> L1 (gdeborrow (UnsafeShare x))
+    UnsafeShare (R1 x) -> R1 (gdeborrow (UnsafeShare x))
 
-instance GDerefable U1 where
-  gderef = coerceLin . unsafeUnwrapRef
+instance GDeborrowable U1 where
+  gdeborrow = coerceLin . unsafeUnwrapView
 
-instance GDerefable V1 where
-  gderef = \case {} . unsafeUnwrapRef
+instance GDeborrowable V1 where
+  gdeborrow = \case {} . unsafeUnwrapView
 
-instance (GenericDerefable a) => Deborrowable (Generically a) where
-  unsafeDeborrow = Generically . genericDerefShare . unsafeMapRef (\(Generically x) -> x)
+instance (GenericDeborrowable a) => Deborrowable (Generically a) where
+  unsafeDeborrow = Generically . genericDeborrowShare . unsafeMapView (\(Generically x) -> x)
 
 deriving via
   Generically (Sum a)

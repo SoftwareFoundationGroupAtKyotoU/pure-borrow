@@ -36,17 +36,17 @@ module Control.Monad.Borrow.Pure (
   joinMut,
   Deborrowable (),
   deborrow,
-  genericDerefShare,
-  GenericDerefable,
+  genericDeborrowShare,
+  GenericDeborrowable,
 
   -- ** Case-splitting for borrows
-  SplittableBorrow,
-  SplittableRefAt,
-  AccessibleRef,
-  AccessibleRefAt,
-  DistributesBorrow (),
+  View,
+  ViewAt,
+  Borrow,
+  BorrowAt,
+  DistributesView (),
   split,
-  GenericDistributesRef,
+  GenericDistributesView,
   genericSplit,
 
   -- *** Specialized case-splitting for variables

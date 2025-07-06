@@ -267,6 +267,10 @@ reborrow = Unsafe.toLinear \mutA ->
 joinMut :: Mut α (Mut β a) %1 -> Mut (α /\ β) a
 joinMut = coerceLin
 
+-- | Collapse a shared borrow over a mutable borrow
+joinShareMut :: Share α (Mut β a) %1 -> Share (α /\ β) a
+joinShareMut = coerceLin
+
 type View_ :: (Type -> Type) -> Constraint
 class
   (forall x. Coercible x (view x)) =>

@@ -34,6 +34,7 @@ module Control.Monad.Borrow.Pure (
   reclaim,
   reborrow,
   joinMut,
+  joinShareMut,
   Deborrowable (),
   deborrow,
   genericDeborrowShare,

@@ -502,6 +502,9 @@ deborrow :: (Deborrowable a) => Share α a %1 -> a
 {-# INLINE [1] deborrow #-}
 deborrow = unsafeDeborrow
 
+deborrowMut :: (Deborrowable a) => Mut α a %1 -> a
+deborrowMut mut = let !(Ur shr) = share mut in deborrow shr
+
 {-# RULES
 "deborrow/unsafeCoerce" [~1]
   deborrow =

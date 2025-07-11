@@ -113,10 +113,10 @@ You may need @-XImpredicativeTypes@ extension to use this function.
 See also: 'sharing'.
 -}
 sharing_ ::
-  forall α a r.
+  forall α α' a r.
   Mut α a %1 ->
-  (forall β. Share (β /\ α) a -> BO (β /\ α) r) %1 ->
-  BO α (r, Mut α a)
+  (forall β. Share (β /\ α) a -> BO (β /\ α') r) %1 ->
+  BO α' (r, Mut α a)
 {-# INLINE sharing_ #-}
 sharing_ v k = sharing v (\mut -> k mut Control.<&> \a _ -> a)
 
@@ -127,8 +127,8 @@ See also: 'sharing_'.
 -}
 sharing ::
   Mut α a %1 ->
-  (forall β. Share (β /\ α) a -> BO (β /\ α) (End β -> r)) %1 ->
-  BO α (r, Mut α a)
+  (forall β. Share (β /\ α) a -> BO (β /\ α') (End β -> r)) %1 ->
+  BO α' (r, Mut α a)
 {-# INLINE sharing #-}
 sharing v k = DataFlow.do
   (lin, v) <- withLinearly v
@@ -140,8 +140,8 @@ sharing v k = DataFlow.do
 
 reborrowing ::
   Mut α a %1 ->
-  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α) (End β -> r)) %1 ->
-  BO α (r, Mut α a)
+  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') (End β -> r)) %1 ->
+  BO α' (r, Mut α a)
 reborrowing mutα k = DataFlow.do
   (lin, v) <- withLinearly mutα
   scope lin \(Proxy :: Proxy β) -> DataFlow.do
@@ -152,6 +152,6 @@ reborrowing mutα k = DataFlow.do
 
 reborrowing_ ::
   Mut α a %1 ->
-  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α) r) %1 ->
-  BO α (r, Mut α a)
+  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
+  BO α' (r, Mut α a)
 reborrowing_ mutα k = reborrowing mutα (\mut -> k mut Control.<&> \a _ -> a)

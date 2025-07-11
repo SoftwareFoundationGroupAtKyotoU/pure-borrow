@@ -78,9 +78,9 @@ constant n a l =
         unsafeSystemIOToBO $!
           MV.replicate n a
 
-fromList :: [a] -> Linearly %1 -> Vector a
+fromList :: [a] %1 -> Linearly %1 -> Vector a
 {-# NOINLINE fromList #-}
-fromList as l =
+fromList = Unsafe.toLinear \as l ->
   l `lseq` GHC.noinline do
     Vector $!
       unsafePerformEvaluateUndupableBO $!

@@ -244,7 +244,7 @@ instance Data.Traversable Pair where
   {-# INLINE traverse #-}
 
 qsortDC ::
-  (Ord a, Movable a, Deborrowable a) =>
+  (Ord a, Movable a, Copyable a) =>
   -- | Threshold for the length of vector to switch to sequential sort
   Int ->
   DivideConquer α Pair (LV.Vector a) ()
@@ -260,7 +260,7 @@ qsortDC thresh =
             | otherwise -> Control.do
                 let i = n `quot` 2
                 (pivot, v) <- sharing_ v \v ->
-                  move . deborrow Control.<$> LV.unsafeGet i v
+                  move . copy Control.<$> LV.unsafeGet i v
                 pivot & \(Ur pivot) -> Control.do
                   (lo, hi) <- LV.divide pivot v 0 n
                   Control.pure $ Continue $ Pair lo hi

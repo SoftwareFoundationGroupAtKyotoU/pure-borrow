@@ -276,7 +276,7 @@ not practical - you need a genuine parallel scheduler
 to scale this up.
 -}
 qsort ::
-  (Ord a, Deborrowable a, Movable a) =>
+  (Ord a, Copyable a, Movable a) =>
   {- | Cost for using parallelism. Halved after each recursive call,
   and stops parallelizing when it reaches 1.
   -}
@@ -292,7 +292,7 @@ qsort = go
         let i = n `quot` 2
          in Control.do
               (pivot, v) <- sharing_ v \v ->
-                move . deborrow Control.<$> unsafeGet i v
+                move . copy Control.<$> unsafeGet i v
               pivot & \(Ur pivot) -> Control.do
                 (lo, hi) <- divide pivot v 0 n
                 let b' = budget `quot` 2
@@ -309,7 +309,7 @@ parIf p =
       Control.pure (l, r)
 
 divide ::
-  (Ord a, Deborrowable a) =>
+  (Ord a, Copyable a) =>
   a ->
   Mut α (Vector a) %1 ->
   Int ->
@@ -319,14 +319,14 @@ divide pivot = partUp
   where
     partUp v l u
       | l < u = Control.do
-          (e, v) <- sharing_ v $ Control.fmap deborrow . unsafeGet l
+          (e, v) <- sharing_ v $ Control.fmap copy . unsafeGet l
           if e < pivot
             then partUp v (l + 1) u
             else partDown v l (u - 1)
       | otherwise = Control.pure $ splitAtMut l v
     partDown v l u
       | l < u = Control.do
-          (e, v) <- sharing_ v $ Control.fmap deborrow . unsafeGet u
+          (e, v) <- sharing_ v $ Control.fmap copy . unsafeGet u
           if pivot < e
             then partDown v l (u - 1)
             else Control.do

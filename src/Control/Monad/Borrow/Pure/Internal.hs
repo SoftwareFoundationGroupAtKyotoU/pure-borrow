@@ -477,161 +477,161 @@ instance GDistributeAlias U1 where
   gdistributeAlias = coerceLin . unsafeUnwrapAlias
   {-# INLINE gdistributeAlias #-}
 
-class Deborrowable a where
-  unsafeDeborrow :: Share α a %1 -> a
+class Copyable a where
+  unsafeCopy :: Share α a %1 -> a
 
 instance
-  (Unsatisfiable (ShowType (Ref a) :<>: Text " cannot be deborrowed!")) =>
-  Deborrowable (Ref a)
+  (Unsatisfiable (ShowType (Ref a) :<>: Text " cannot be copyed!")) =>
+  Copyable (Ref a)
   where
-  unsafeDeborrow = unsatisfiable
+  unsafeCopy = unsatisfiable
 
 instance
-  (Unsatisfiable (ShowType (Array a) :<>: Text " cannot be deborrowed!")) =>
-  Deborrowable (Array a)
+  (Unsatisfiable (ShowType (Array a) :<>: Text " cannot be copyed!")) =>
+  Copyable (Array a)
   where
-  unsafeDeborrow = unsatisfiable
+  unsafeCopy = unsatisfiable
 
 instance
-  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be deborrowed!")) =>
-  Deborrowable (Vector a)
+  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copyed!")) =>
+  Copyable (Vector a)
   where
-  unsafeDeborrow = unsatisfiable
+  unsafeCopy = unsatisfiable
 
-deborrow :: (Deborrowable a) => Share α a %1 -> a
-{-# INLINE [1] deborrow #-}
-deborrow = unsafeDeborrow
+copy :: (Copyable a) => Share α a %1 -> a
+{-# INLINE [1] copy #-}
+copy = unsafeCopy
 
-deborrowMut :: (Deborrowable a) => Mut α a %1 -> a
-deborrowMut mut = let !(Ur shr) = share mut in deborrow shr
+copyMut :: (Copyable a) => Mut α a %1 -> a
+copyMut mut = let !(Ur shr) = share mut in copy shr
 
 {-# RULES
-"deborrow/unsafeCoerce" [~1]
-  deborrow =
+"copy/unsafeCoerce" [~1]
+  copy =
     Unsafe.coerce
   #-}
 
 newtype UnsafeAssumeNoVar a = UnsafeAssumeNoVar a
 
-instance Deborrowable (UnsafeAssumeNoVar a) where
-  unsafeDeborrow = coerceLin
-  {-# INLINE unsafeDeborrow #-}
+instance Copyable (UnsafeAssumeNoVar a) where
+  unsafeCopy = coerceLin
+  {-# INLINE unsafeCopy #-}
 
-deriving via UnsafeAssumeNoVar Int instance Deborrowable Int
+deriving via UnsafeAssumeNoVar Int instance Copyable Int
 
-deriving via UnsafeAssumeNoVar Int8 instance Deborrowable Int8
+deriving via UnsafeAssumeNoVar Int8 instance Copyable Int8
 
-deriving via UnsafeAssumeNoVar Int16 instance Deborrowable Int16
+deriving via UnsafeAssumeNoVar Int16 instance Copyable Int16
 
-deriving via UnsafeAssumeNoVar Int32 instance Deborrowable Int32
+deriving via UnsafeAssumeNoVar Int32 instance Copyable Int32
 
-deriving via UnsafeAssumeNoVar Int64 instance Deborrowable Int64
+deriving via UnsafeAssumeNoVar Int64 instance Copyable Int64
 
-deriving via UnsafeAssumeNoVar Word instance Deborrowable Word
+deriving via UnsafeAssumeNoVar Word instance Copyable Word
 
-deriving via UnsafeAssumeNoVar Word8 instance Deborrowable Word8
+deriving via UnsafeAssumeNoVar Word8 instance Copyable Word8
 
-deriving via UnsafeAssumeNoVar Word16 instance Deborrowable Word16
+deriving via UnsafeAssumeNoVar Word16 instance Copyable Word16
 
-deriving via UnsafeAssumeNoVar Word32 instance Deborrowable Word32
+deriving via UnsafeAssumeNoVar Word32 instance Copyable Word32
 
-deriving via UnsafeAssumeNoVar Word64 instance Deborrowable Word64
+deriving via UnsafeAssumeNoVar Word64 instance Copyable Word64
 
-deriving via UnsafeAssumeNoVar Integer instance Deborrowable Integer
+deriving via UnsafeAssumeNoVar Integer instance Copyable Integer
 
-deriving via UnsafeAssumeNoVar Natural instance Deborrowable Natural
+deriving via UnsafeAssumeNoVar Natural instance Copyable Natural
 
-deriving via UnsafeAssumeNoVar Float instance Deborrowable Float
+deriving via UnsafeAssumeNoVar Float instance Copyable Float
 
-deriving via UnsafeAssumeNoVar Double instance Deborrowable Double
+deriving via UnsafeAssumeNoVar Double instance Copyable Double
 
-deriving via UnsafeAssumeNoVar Char instance Deborrowable Char
+deriving via UnsafeAssumeNoVar Char instance Copyable Char
 
-deriving via UnsafeAssumeNoVar Bool instance Deborrowable Bool
+deriving via UnsafeAssumeNoVar Bool instance Copyable Bool
 
-type GenericDeborrowable a = (Generic a, GDeborrowable (Rep a))
+type GenericCopyable a = (Generic a, GCopyable (Rep a))
 
-genericDeborrowShare :: (GenericDeborrowable a) => Share α a %1 -> a
-{-# INLINE genericDeborrowShare #-}
-genericDeborrowShare (UnsafeShare x) = to (gdeborrow (UnsafeShare (from x)))
+genericCopyShare :: (GenericCopyable a) => Share α a %1 -> a
+{-# INLINE genericCopyShare #-}
+genericCopyShare (UnsafeShare x) = to (gcopy (UnsafeShare (from x)))
 
-type GDeborrowable :: forall {k}. (k -> Type) -> Constraint
-class GDeborrowable f where
-  gdeborrow :: Share α (f x) %1 -> f x
+type GCopyable :: forall {k}. (k -> Type) -> Constraint
+class GCopyable f where
+  gcopy :: Share α (f x) %1 -> f x
 
-instance (Deborrowable a) => GDeborrowable (K1 i a) where
-  gdeborrow = coerceLin . unsafeUnwrapAlias
+instance (Copyable a) => GCopyable (K1 i a) where
+  gcopy = coerceLin . unsafeUnwrapAlias
 
-instance (GDeborrowable f, GDeborrowable g) => GDeborrowable (f :*: g) where
-  gdeborrow (UnsafeShare (f :*: g)) =
-    gdeborrow (UnsafeShare f) :*: gdeborrow (UnsafeShare g)
+instance (GCopyable f, GCopyable g) => GCopyable (f :*: g) where
+  gcopy (UnsafeShare (f :*: g)) =
+    gcopy (UnsafeShare f) :*: gcopy (UnsafeShare g)
 
-instance (GDeborrowable f) => GDeborrowable (M1 i c f) where
-  gdeborrow = \case
-    UnsafeShare (M1 x) -> M1 (gdeborrow (UnsafeShare x))
+instance (GCopyable f) => GCopyable (M1 i c f) where
+  gcopy = \case
+    UnsafeShare (M1 x) -> M1 (gcopy (UnsafeShare x))
 
-instance (GDeborrowable f) => GDeborrowable (MP1 m f) where
-  gdeborrow = \case
-    UnsafeShare (MP1 x) -> MP1 (gdeborrow (UnsafeShare x))
+instance (GCopyable f) => GCopyable (MP1 m f) where
+  gcopy = \case
+    UnsafeShare (MP1 x) -> MP1 (gcopy (UnsafeShare x))
 
-instance (GDeborrowable f, GDeborrowable g) => GDeborrowable (f :+: g) where
-  gdeborrow = \case
-    UnsafeShare (L1 x) -> L1 (gdeborrow (UnsafeShare x))
-    UnsafeShare (R1 x) -> R1 (gdeborrow (UnsafeShare x))
+instance (GCopyable f, GCopyable g) => GCopyable (f :+: g) where
+  gcopy = \case
+    UnsafeShare (L1 x) -> L1 (gcopy (UnsafeShare x))
+    UnsafeShare (R1 x) -> R1 (gcopy (UnsafeShare x))
 
-instance GDeborrowable U1 where
-  gdeborrow = coerceLin . unsafeUnwrapAlias
+instance GCopyable U1 where
+  gcopy = coerceLin . unsafeUnwrapAlias
 
-instance GDeborrowable V1 where
-  gdeborrow = \case {} . unsafeUnwrapAlias
+instance GCopyable V1 where
+  gcopy = \case {} . unsafeUnwrapAlias
 
-instance (GenericDeborrowable a) => Deborrowable (Generically a) where
-  unsafeDeborrow = Generically . genericDeborrowShare . unsafeMapAlias (\(Generically x) -> x)
+instance (GenericCopyable a) => Copyable (Generically a) where
+  unsafeCopy = Generically . genericCopyShare . unsafeMapAlias (\(Generically x) -> x)
 
 deriving via
   Generically (Sum a)
   instance
-    (Deborrowable a) => Deborrowable (Sum a)
+    (Copyable a) => Copyable (Sum a)
 
 deriving via
   Generically (Product a)
   instance
-    (Deborrowable a) => Deborrowable (Product a)
+    (Copyable a) => Copyable (Product a)
 
 deriving via
   Generically (Sem.Max a)
   instance
-    (Deborrowable a) => Deborrowable (Sem.Max a)
+    (Copyable a) => Copyable (Sem.Max a)
 
 deriving via
   Generically (Maybe a)
   instance
-    (Deborrowable a) => Deborrowable (Maybe a)
+    (Copyable a) => Copyable (Maybe a)
 
 deriving via
   Generically (Sem.Min a)
   instance
-    (Deborrowable a) => Deborrowable (Sem.Min a)
+    (Copyable a) => Copyable (Sem.Min a)
 
 deriving via
   Generically (a, b)
   instance
-    (Deborrowable a, Deborrowable b) =>
-    Deborrowable (a, b)
+    (Copyable a, Copyable b) =>
+    Copyable (a, b)
 
 deriving via
   Generically (a, b, c)
   instance
-    (Deborrowable a, Deborrowable b, Deborrowable c) =>
-    Deborrowable (a, b, c)
+    (Copyable a, Copyable b, Copyable c) =>
+    Copyable (a, b, c)
 
 deriving via
   Generically (a, b, c, d)
   instance
-    (Deborrowable a, Deborrowable b, Deborrowable c, Deborrowable d) =>
-    Deborrowable (a, b, c, d)
+    (Copyable a, Copyable b, Copyable c, Copyable d) =>
+    Copyable (a, b, c, d)
 
 deriving via
   Generically (Either a b)
   instance
-    (Deborrowable a, Deborrowable b) => Deborrowable (Either a b)
+    (Copyable a, Copyable b) => Copyable (Either a b)

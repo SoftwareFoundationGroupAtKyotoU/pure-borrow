@@ -35,11 +35,11 @@ module Control.Monad.Borrow.Pure (
   reborrow,
   joinMut,
   joinShareMut,
-  Deborrowable (),
-  deborrow,
-  deborrowMut,
-  genericDeborrowShare,
-  GenericDeborrowable,
+  Copyable (),
+  copy,
+  copyMut,
+  genericCopyShare,
+  GenericCopyable,
 
   -- ** Case-splitting for borrows
   Alias,

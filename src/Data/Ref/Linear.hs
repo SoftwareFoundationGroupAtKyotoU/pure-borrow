@@ -32,7 +32,7 @@ new a lin = Ref (newRef# a lin)
 instance LinearOnly (Ref a) where
   unsafeWithLinear = unsafeLinearOnly
 
-instance Affable (Ref a) where
+instance Affine (Ref a) where
   aff = Unsafe.toLinear UnsafeAff
 
 atomicModify_ :: Ref a %1 -> (a %1 -> a) %1 -> Ref a

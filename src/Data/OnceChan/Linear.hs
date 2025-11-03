@@ -42,7 +42,7 @@ instance LinearOnly (Sink a) where
 instance LinearOnly (Source a) where
   unsafeWithLinear = unsafeLinearOnly
 
-instance Affable (Sink a) where
+instance Affine (Sink a) where
   aff = Unsafe.toLinear UnsafeAff
 
 instance Consumable (Sink a) where
@@ -51,7 +51,7 @@ instance Consumable (Sink a) where
 instance Consumable (Source a) where
   consume = Unsafe.toLinear \(Source !_) -> ()
 
-instance Affable (Source a) where
+instance Affine (Source a) where
   aff = Unsafe.toLinear UnsafeAff
 
 take :: Source a %1 -> BO α a

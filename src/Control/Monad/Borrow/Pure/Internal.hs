@@ -184,11 +184,11 @@ instance LinearOnly (Mut α a) where
 
 type role Mut nominal nominal
 
-instance Affable (Mut α a) where
+instance Affine (Mut α a) where
   aff = UnsafeAff
   {-# INLINE aff #-}
 
-deriving via AsAffable (Mut α a) instance Consumable (Mut α a)
+deriving via AsAffine (Mut α a) instance Consumable (Mut α a)
 
 instance (β <= α, a <: b, b <: a) => Mut α a <: Mut β b where
   upcast (UnsafeMut a) = UnsafeMut (upcast a)
@@ -200,11 +200,11 @@ newtype Share α a = UnsafeShare a
 
 type role Share nominal representational
 
-instance Affable (Share α a) where
+instance Affine (Share α a) where
   aff = UnsafeAff
   {-# INLINE aff #-}
 
-deriving via AsAffable (Share α a) instance Consumable (Share α a)
+deriving via AsAffine (Share α a) instance Consumable (Share α a)
 
 unsafeWrapView :: (View_ view) => a %1 -> view a
 {-# INLINE unsafeWrapView #-}

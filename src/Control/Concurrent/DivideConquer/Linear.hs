@@ -32,7 +32,7 @@ import Control.Concurrent.DivideConquer.Utils.MQueue.Linear qualified as MQ
 import Control.Functor.Linear (runStateT)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Affine (Affable, GenericallyAffable (..))
+import Control.Monad.Borrow.Pure.Affine (Affine, GenericallyAffine (..))
 import Control.Monad.Borrow.Pure.Internal
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce qualified as NonLinear
@@ -230,9 +230,9 @@ deriving via
     (Dupable a) => Dupable (Pair a)
 
 deriving via
-  GenericallyAffable (Pair a)
+  GenericallyAffine (Pair a)
   instance
-    (Affable a) => Affable (Pair a)
+    (Affine a) => Affine (Pair a)
 
 deriving via
   Generically (Pair a)

@@ -6,16 +6,16 @@
 
 module Control.Monad.Borrow.Pure.Affine (
   -- * Affine Modality
-  Affable (..),
-  AsAffable (..),
+  Affine (..),
+  AsAffine (..),
   Aff,
   affu,
   unaff,
   pop,
 
   -- ** Linear Generics
-  GenericAffable,
-  GenericallyAffable (..),
+  GenericAffine,
+  GenericallyAffine (..),
 ) where
 
 import Control.Monad.Borrow.Pure.Affine.Internal

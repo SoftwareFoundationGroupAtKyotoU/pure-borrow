@@ -42,13 +42,13 @@ module Control.Monad.Borrow.Pure (
   GenericDeborrowable,
 
   -- ** Case-splitting for borrows
-  View,
-  ViewAt,
+  Alias,
+  AliasAt,
   Borrow,
   BorrowAt,
-  DistributesView (),
+  DistributesAlias (),
   split,
-  GenericDistributesView,
+  GenericDistributesAlias,
   genericSplit,
 
   -- *** Specialized case-splitting for variables

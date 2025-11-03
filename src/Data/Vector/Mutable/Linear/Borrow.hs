@@ -135,8 +135,8 @@ unsafeFromVector = Unsafe.toLinear \v l ->
 size :: (Borrow bor) => bor (Vector a) %1 -> (Ur Int, bor (Vector a))
 {-# INLINE size #-}
 size =
-  unsafeUnwrapView >>> Unsafe.toLinear \(Vector v) ->
-    (move (MV.length v), unsafeWrapView (Vector v))
+  unsafeUnwrapAlias >>> Unsafe.toLinear \(Vector v) ->
+    (move (MV.length v), unsafeWrapAlias (Vector v))
 
 -- | Get without bounds check.
 unsafeGet :: (BorrowAt α bor) => Int -> bor (Vector a) %1 -> BO α (bor a)
@@ -144,9 +144,9 @@ unsafeGet :: (BorrowAt α bor) => Int -> bor (Vector a) %1 -> BO α (bor a)
 unsafeGet i =
   Unsafe.toLinear \v ->
     GHC.noinline $
-      unsafeUnwrapView v
+      unsafeUnwrapAlias v
         NonLinear.& \(Vector v) ->
-          unsafeWrapView
+          unsafeWrapAlias
             Control.<$> unsafeSystemIOToBO (MV.unsafeRead v i)
 
 head :: (HasCallStack, BorrowAt α bor) => bor (Vector a) %1 -> BO α (bor a)

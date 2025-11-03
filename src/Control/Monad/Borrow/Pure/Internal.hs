@@ -206,13 +206,13 @@ instance Affine (Share α a) where
 
 deriving via AsAffine (Share α a) instance Consumable (Share α a)
 
-unsafeWrapView :: (View_ view) => a %1 -> view a
-{-# INLINE unsafeWrapView #-}
-unsafeWrapView = coerceLin
+unsafeWrapAlias :: (Alias_ alias) => a %1 -> alias a
+{-# INLINE unsafeWrapAlias #-}
+unsafeWrapAlias = coerceLin
 
-unsafeUnwrapView :: (View_ view) => view a %1 -> a
-{-# INLINE unsafeUnwrapView #-}
-unsafeUnwrapView = coerceLin
+unsafeUnwrapAlias :: (Alias_ alias) => alias a %1 -> a
+{-# INLINE unsafeUnwrapAlias #-}
+unsafeUnwrapAlias = coerceLin
 
 instance Dupable (Share α a) where
   dup2 = Unsafe.toLinear $ NonLinear.join (,)
@@ -271,40 +271,40 @@ joinMut = coerceLin
 joinShareMut :: Share α (Mut β a) %1 -> Share (α /\ β) a
 joinShareMut = coerceLin
 
-type View_ :: (Type -> Type) -> Constraint
+type Alias_ :: (Type -> Type) -> Constraint
 class
-  (forall x. Coercible x (view x)) =>
-  View_ view
+  (forall x. Coercible x (alias x)) =>
+  Alias_ alias
   where
-  type ViewLifetime view :: Lifetime
-  coercionWit :: Coercion x (view x)
+  type AliasLifetime alias :: Lifetime
+  coercionWit :: Coercion x (alias x)
 
-instance View_ (Mut α) where
-  type ViewLifetime (Mut α) = α
+instance Alias_ (Mut α) where
+  type AliasLifetime (Mut α) = α
   coercionWit = Coercion
 
-instance View_ (Share α) where
-  type ViewLifetime (Share α) = α
+instance Alias_ (Share α) where
+  type AliasLifetime (Share α) = α
   coercionWit = Coercion
 
-instance View_ (Lend α) where
-  type ViewLifetime (Lend α) = α
+instance Alias_ (Lend α) where
+  type AliasLifetime (Lend α) = α
   coercionWit = Coercion
 
 -- | An abstraction over a type that can be
-class (View_ view) => View view
+class (Alias_ alias) => Alias alias
 
-instance (View_ view) => View view
+instance (Alias_ alias) => Alias alias
 
-type ViewAt α view = (View view, ViewLifetime view ~ α)
+type AliasAt α alias = (Alias alias, AliasLifetime alias ~ α)
 
-data CaseBorrow view where
+data CaseBorrow alias where
   IsMut :: CaseBorrow (Mut α)
   IsShare :: CaseBorrow (Share α)
 
--- | A constraint that requires @view@ to be either a 'Share' or a 'Mut' borrow, which is accessible in 'BO' regions.
-class (View view) => Borrow view where
-  caseBorrow :: CaseBorrow view
+-- | A constraint that requires @alias@ to be either a 'Share' or a 'Mut' borrow, which is accessible in 'BO' regions.
+class (Alias alias) => Borrow alias where
+  caseBorrow :: CaseBorrow alias
 
 instance Borrow (Mut α) where
   caseBorrow = IsMut
@@ -312,170 +312,170 @@ instance Borrow (Mut α) where
 instance Borrow (Share α) where
   caseBorrow = IsShare
 
-type BorrowAt α view =
-  ( Borrow view
-  , ViewLifetime view ~ α
+type BorrowAt α alias =
+  ( Borrow alias
+  , AliasLifetime alias ~ α
   )
 
-splitList :: (View f) => f [x] %1 -> [f x]
+splitList :: (Alias f) => f [x] %1 -> [f x]
 splitList = split
 
-splitPair :: (View view) => view (a, b) %1 -> (view a, view b)
+splitPair :: (Alias alias) => alias (a, b) %1 -> (alias a, alias b)
 {-# INLINE splitPair #-}
-splitPair = coerceLin . unsafeUnwrapView
+splitPair = coerceLin . unsafeUnwrapAlias
 
-splitEither :: (View view) => view (Either a b) %1 -> Either (view a) (view b)
+splitEither :: (Alias alias) => alias (Either a b) %1 -> Either (alias a) (alias b)
 {-# INLINE splitEither #-}
-splitEither = coerceLin . unsafeUnwrapView
+splitEither = coerceLin . unsafeUnwrapAlias
 
--- | A dual to 'View', which allows us to distribute a borrow over a functor.
-class DistributesView f where
-  split_ :: (View view) => view (f x) %1 -> f (view x)
+-- | A dual to 'Alias', which allows us to distribute a borrow over a functor.
+class DistributesAlias f where
+  split_ :: (Alias alias) => alias (f x) %1 -> f (alias x)
   default split_ ::
-    (GenericDistributesView f, View view) =>
-    view (f x) %1 -> f (view x)
+    (GenericDistributesAlias f, Alias alias) =>
+    alias (f x) %1 -> f (alias x)
   split_ = genericSplit
 
 split ::
-  forall view f x.
-  ( DistributesView f
-  , View view
+  forall alias f x.
+  ( DistributesAlias f
+  , Alias alias
   ) =>
-  view (f x) %1 -> f (view x)
+  alias (f x) %1 -> f (alias x)
 {-# INLINE [1] split #-}
 split = split_
 
-deriving anyclass instance DistributesView Identity
+deriving anyclass instance DistributesAlias Identity
 
-deriving anyclass instance DistributesView []
+deriving anyclass instance DistributesAlias []
 
-deriving anyclass instance DistributesView Maybe
+deriving anyclass instance DistributesAlias Maybe
 
-deriving anyclass instance DistributesView Solo
+deriving anyclass instance DistributesAlias Solo
 
-deriving anyclass instance DistributesView Ord.Down
+deriving anyclass instance DistributesAlias Ord.Down
 
-deriving anyclass instance DistributesView Sem.Dual
+deriving anyclass instance DistributesAlias Sem.Dual
 
-deriving anyclass instance DistributesView Sem.Max
+deriving anyclass instance DistributesAlias Sem.Max
 
-deriving anyclass instance DistributesView Sem.Min
+deriving anyclass instance DistributesAlias Sem.Min
 
-deriving anyclass instance DistributesView Sem.First
+deriving anyclass instance DistributesAlias Sem.First
 
-deriving anyclass instance DistributesView Sem.Last
+deriving anyclass instance DistributesAlias Sem.Last
 
-deriving anyclass instance DistributesView Mon.First
+deriving anyclass instance DistributesAlias Mon.First
 
-deriving anyclass instance DistributesView Mon.Last
+deriving anyclass instance DistributesAlias Mon.Last
 
-instance (Unsatisfiable ('Text "Use splitEither directly!")) => DistributesView (Either e) where
+instance (Unsatisfiable ('Text "Use splitEither directly!")) => DistributesAlias (Either e) where
   {-# INLINE split_ #-}
   split_ = unsatisfiable
 
-instance (Unsatisfiable ('Text "Use splitPair instead!")) => DistributesView ((,) a) where
+instance (Unsatisfiable ('Text "Use splitPair instead!")) => DistributesAlias ((,) a) where
   {-# INLINE split_ #-}
   split_ = unsatisfiable
 
-type GenericDistributesView f = (Generic1 f, GDistributeView (Rep1 f))
+type GenericDistributesAlias f = (Generic1 f, GDistributeAlias (Rep1 f))
 
 genericSplit ::
-  forall view f x.
-  ( GenericDistributesView f
-  , View view
+  forall alias f x.
+  ( GenericDistributesAlias f
+  , Alias alias
   ) =>
-  view (f x) %1 -> f (view x)
+  alias (f x) %1 -> f (alias x)
 {-# INLINE genericSplit #-}
 genericSplit =
   to1
-    . gdistributeView @(Rep1 f) @view
-    . unsafeMapView from1
+    . gdistributeAlias @(Rep1 f) @alias
+    . unsafeMapAlias from1
 
-unsafeMapView :: (View view) => (a %1 -> b) -> view a %1 -> view b
-{-# INLINE unsafeMapView #-}
-unsafeMapView f = coerceLin f
+unsafeMapAlias :: (Alias alias) => (a %1 -> b) -> alias a %1 -> alias b
+{-# INLINE unsafeMapAlias #-}
+unsafeMapAlias f = coerceLin f
 
-instance (GenericDistributesView f) => DistributesView (Generically1 f) where
+instance (GenericDistributesAlias f) => DistributesAlias (Generically1 f) where
   {-# INLINE split_ #-}
-  split_ = Generically1 . genericSplit . unsafeMapView \(Generically1 f) -> f
+  split_ = Generically1 . genericSplit . unsafeMapAlias \(Generically1 f) -> f
 
-class GDistributeView f where
-  gdistributeView :: (View view) => view (f x) %1 -> f (view x)
+class GDistributeAlias f where
+  gdistributeAlias :: (Alias alias) => alias (f x) %1 -> f (alias x)
 
 instance
-  ( GDistributeView f
-  , GDistributeView g
+  ( GDistributeAlias f
+  , GDistributeAlias g
   ) =>
-  GDistributeView (f :*: g)
+  GDistributeAlias (f :*: g)
   where
-  {-# INLINE gdistributeView #-}
-  gdistributeView (view :: view a) =
-    case unsafeUnwrapView view of
+  {-# INLINE gdistributeAlias #-}
+  gdistributeAlias (alias :: alias a) =
+    case unsafeUnwrapAlias alias of
       f :*: g -> DataFlow.do
-        f <- gdistributeView $ unsafeWrapView f
-        g <- gdistributeView $ unsafeWrapView g
+        f <- gdistributeAlias $ unsafeWrapAlias f
+        g <- gdistributeAlias $ unsafeWrapAlias g
         f :*: g
 
 instance
-  ( GDistributeView f
-  , GDistributeView g
+  ( GDistributeAlias f
+  , GDistributeAlias g
   ) =>
-  GDistributeView (f :+: g)
+  GDistributeAlias (f :+: g)
   where
-  {-# INLINE gdistributeView #-}
-  gdistributeView view = case unsafeUnwrapView view of
-    L1 l -> L1 (gdistributeView (unsafeWrapView l))
-    R1 r -> R1 (gdistributeView (unsafeWrapView r))
+  {-# INLINE gdistributeAlias #-}
+  gdistributeAlias alias = case unsafeUnwrapAlias alias of
+    L1 l -> L1 (gdistributeAlias (unsafeWrapAlias l))
+    R1 r -> R1 (gdistributeAlias (unsafeWrapAlias r))
 
 instance
   (Unsatisfiable (Text "Nonlinear fields cannot distribute borrows!")) =>
-  GDistributeView (MP1 GHC.Many f)
+  GDistributeAlias (MP1 GHC.Many f)
   where
-  {-# INLINE gdistributeView #-}
-  gdistributeView = unsatisfiable
+  {-# INLINE gdistributeAlias #-}
+  gdistributeAlias = unsatisfiable
 
-instance (GDistributeView f) => GDistributeView (MP1 GHC.One f) where
-  {-# INLINE gdistributeView #-}
-  gdistributeView =
-    MP1 . gdistributeView . unsafeWrapView . unMP1 . unsafeUnwrapView
+instance (GDistributeAlias f) => GDistributeAlias (MP1 GHC.One f) where
+  {-# INLINE gdistributeAlias #-}
+  gdistributeAlias =
+    MP1 . gdistributeAlias . unsafeWrapAlias . unMP1 . unsafeUnwrapAlias
 
-instance (GDistributeView f) => GDistributeView (M1 i c f) where
-  {-# INLINE gdistributeView #-}
-  gdistributeView = \x ->
-    case unsafeUnwrapView x of
-      M1 x -> M1 $ gdistributeView $ unsafeWrapView x
+instance (GDistributeAlias f) => GDistributeAlias (M1 i c f) where
+  {-# INLINE gdistributeAlias #-}
+  gdistributeAlias = \x ->
+    case unsafeUnwrapAlias x of
+      M1 x -> M1 $ gdistributeAlias $ unsafeWrapAlias x
 
-instance DistributesView Par1 where
+instance DistributesAlias Par1 where
   {-# INLINE split_ #-}
-  split_ = \x -> case unsafeUnwrapView x of
-    Par1 a -> Par1 (unsafeWrapView a)
+  split_ = \x -> case unsafeUnwrapAlias x of
+    Par1 a -> Par1 (unsafeWrapAlias a)
 
 instance
-  ( DistributesView f
-  , DistributesView g
+  ( DistributesAlias f
+  , DistributesAlias g
   , Data.Functor f
   ) =>
-  GDistributeView (f :.: g)
+  GDistributeAlias (f :.: g)
   where
-  {-# INLINE gdistributeView #-}
-  gdistributeView = \(x :: view _) -> case unsafeUnwrapView x of
-    Comp1 fg -> Comp1 $ Data.fmap split_ $ split_ $ unsafeWrapView @view fg
+  {-# INLINE gdistributeAlias #-}
+  gdistributeAlias = \(x :: alias _) -> case unsafeUnwrapAlias x of
+    Comp1 fg -> Comp1 $ Data.fmap split_ $ split_ $ unsafeWrapAlias @alias fg
 
-instance GDistributeView Par1 where
-  {-# INLINE gdistributeView #-}
-  gdistributeView = \x -> case unsafeUnwrapView x of
-    Par1 a -> Par1 (unsafeWrapView a)
+instance GDistributeAlias Par1 where
+  {-# INLINE gdistributeAlias #-}
+  gdistributeAlias = \x -> case unsafeUnwrapAlias x of
+    Par1 a -> Par1 (unsafeWrapAlias a)
 
 instance
   (Unsatisfiable (Text "A type containing non-parametric field with type `" :<>: ShowType c :<>: Text "', which cannot be safely splitted!")) =>
-  GDistributeView (K1 i c)
+  GDistributeAlias (K1 i c)
   where
-  {-# INLINE gdistributeView #-}
-  gdistributeView = unsatisfiable
+  {-# INLINE gdistributeAlias #-}
+  gdistributeAlias = unsatisfiable
 
-instance GDistributeView U1 where
-  gdistributeView = coerceLin . unsafeUnwrapView
-  {-# INLINE gdistributeView #-}
+instance GDistributeAlias U1 where
+  gdistributeAlias = coerceLin . unsafeUnwrapAlias
+  {-# INLINE gdistributeAlias #-}
 
 class Deborrowable a where
   unsafeDeborrow :: Share α a %1 -> a
@@ -560,7 +560,7 @@ class GDeborrowable f where
   gdeborrow :: Share α (f x) %1 -> f x
 
 instance (Deborrowable a) => GDeborrowable (K1 i a) where
-  gdeborrow = coerceLin . unsafeUnwrapView
+  gdeborrow = coerceLin . unsafeUnwrapAlias
 
 instance (GDeborrowable f, GDeborrowable g) => GDeborrowable (f :*: g) where
   gdeborrow (UnsafeShare (f :*: g)) =
@@ -580,13 +580,13 @@ instance (GDeborrowable f, GDeborrowable g) => GDeborrowable (f :+: g) where
     UnsafeShare (R1 x) -> R1 (gdeborrow (UnsafeShare x))
 
 instance GDeborrowable U1 where
-  gdeborrow = coerceLin . unsafeUnwrapView
+  gdeborrow = coerceLin . unsafeUnwrapAlias
 
 instance GDeborrowable V1 where
-  gdeborrow = \case {} . unsafeUnwrapView
+  gdeborrow = \case {} . unsafeUnwrapAlias
 
 instance (GenericDeborrowable a) => Deborrowable (Generically a) where
-  unsafeDeborrow = Generically . genericDeborrowShare . unsafeMapView (\(Generically x) -> x)
+  unsafeDeborrow = Generically . genericDeborrowShare . unsafeMapAlias (\(Generically x) -> x)
 
 deriving via
   Generically (Sum a)

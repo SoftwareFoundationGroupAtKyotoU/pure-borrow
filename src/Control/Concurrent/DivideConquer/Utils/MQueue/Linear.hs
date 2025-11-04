@@ -68,7 +68,7 @@ instance
   (Unsatisfiable (ShowType (MQueue a) :<>: Text " cannot be copied!")) =>
   Copyable (MQueue a)
   where
-  unsafeCopy = unsatisfiable
+  copy = unsatisfiable
 
 -- | NOTE: unconditional use of this function MAY BREAK PURITY!
 unsafeClone :: Mut α (MQueue a) %1 -> (Mut α (MQueue a), Mut α (MQueue a))
@@ -97,7 +97,7 @@ writeMQueueMany = Unsafe.toLinear2 \q as ->
       Data.traverse (unsafeSTMToBO . Unsafe.toLinear (TMQ.writeTMQueue (NonLinear.coerce q))) as
 
 readMQueue :: Mut α (MQueue a) %1 -> BO α (Maybe (a, Mut α (MQueue a)))
-readMQueue = Unsafe.toLinear \mutq@(UnsafeMut (MkMQ q)) ->
+readMQueue = Unsafe.toLinear \mutq@(UnsafeAlias (MkMQ q)) ->
   unsafeSystemIOToBO (atomically $ TMQ.readTMQueue q) Control.<&> \case
     Nothing -> mutq `lseq` Nothing
     Just a -> Just (a, mutq)
@@ -109,7 +109,7 @@ unsafeAtomically :: BO α a %1 -> BO α a
 unsafeAtomically = Unsafe.toLinear \(BO f) -> unsafeSystemIOToBO (atomically (GHC.STM (Unsafe.coerce f)))
 
 closeMQueue :: Mut α (MQueue a) %1 -> BO α ()
-closeMQueue = Unsafe.toLinear \(UnsafeMut (MkMQ q)) ->
+closeMQueue = Unsafe.toLinear \(UnsafeAlias (MkMQ q)) ->
   unsafeSystemIOToBO $ atomically $ TMQ.closeTMQueue q
 
 instance Consumable (MQueue a) where

@@ -132,39 +132,39 @@ unsafeFromVector = Unsafe.toLinear \v l ->
         unsafeSystemIOToBO $!
           V.unsafeThaw v
 
-size :: (Borrow bor) => bor (Vector a) %1 -> (Ur Int, bor (Vector a))
+size :: Borrow bk α (Vector a) %1 -> (Ur Int, Borrow bk α (Vector a))
 {-# INLINE size #-}
 size =
-  unsafeUnwrapAlias >>> Unsafe.toLinear \(Vector v) ->
-    (move (MV.length v), unsafeWrapAlias (Vector v))
+  unsafeUnalias >>> Unsafe.toLinear \(Vector v) ->
+    (move (MV.length v), UnsafeAlias (Vector v))
 
 -- | Get without bounds check.
-unsafeGet :: (BorrowAt α bor) => Int -> bor (Vector a) %1 -> BO α (bor a)
+unsafeGet :: Int -> Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
 {-# INLINE unsafeGet #-}
 unsafeGet i =
   Unsafe.toLinear \v ->
     GHC.noinline $
-      unsafeUnwrapAlias v
+      unsafeUnalias v
         NonLinear.& \(Vector v) ->
-          unsafeWrapAlias
+          UnsafeAlias
             Control.<$> unsafeSystemIOToBO (MV.unsafeRead v i)
 
-head :: (HasCallStack, BorrowAt α bor) => bor (Vector a) %1 -> BO α (bor a)
+head :: (HasCallStack) => Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
 {-# INLINE head #-}
 head = get 0
 
-unsafeHead :: (BorrowAt α bor) => bor (Vector a) %1 -> BO α (bor a)
+unsafeHead :: Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
 {-# INLINE unsafeHead #-}
 unsafeHead = unsafeGet 0
 
-unsafeLast :: (BorrowAt α bor) => bor (Vector a) %1 -> BO α (bor a)
+unsafeLast :: Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
 {-# INLINE unsafeLast #-}
 unsafeLast v = DataFlow.do
   (len, v) <- size v
   case len of
     Ur len -> unsafeGet (len - 1) v
 
-last :: (HasCallStack, BorrowAt α bor) => bor (Vector a) %1 -> BO α (bor a)
+last :: (HasCallStack) => Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
 {-# INLINE last #-}
 last v = DataFlow.do
   (len, v) <- size v
@@ -174,10 +174,8 @@ last v = DataFlow.do
       | otherwise -> error ("last: empty vector") v
 
 get ::
-  ( HasCallStack
-  , BorrowAt α bor
-  ) =>
-  Int -> bor (Vector a) %1 -> BO α (bor a)
+  (HasCallStack) =>
+  Int -> Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
 {-# INLINE get #-}
 get i v = DataFlow.do
   (len, v) <- size v
@@ -189,11 +187,11 @@ get i v = DataFlow.do
 
 unsafeSet :: Int -> a %1 -> Mut α (Vector a) %1 -> BO α (Mut α (Vector a))
 {-# INLINE unsafeSet #-}
-unsafeSet i = Unsafe.toLinear2 \a (UnsafeMut v) ->
+unsafeSet i = Unsafe.toLinear2 \a (UnsafeAlias v) ->
   let v' = v
    in Control.do
         () <- unsafeSystemIOToBO $ Unsafe.toLinear3 MV.unsafeWrite (content v') i a
-        Control.pure $ UnsafeMut v
+        Control.pure $ UnsafeAlias v
 
 set ::
   (HasCallStack) =>
@@ -208,11 +206,11 @@ set i a v = DataFlow.do
 
 unsafeUpdate :: (β <= α) => Int -> (a %1 -> BO β (a, b)) %1 -> Mut α (Vector a) %1 -> BO β (Mut α (Vector a), b)
 {-# INLINE unsafeUpdate #-}
-unsafeUpdate i = Unsafe.toLinear2 \k (UnsafeMut v) -> Control.do
+unsafeUpdate i = Unsafe.toLinear2 \k (UnsafeAlias v) -> Control.do
   a <- unsafeSystemIOToBO $ MV.unsafeRead (content v) i
   (a', b) <- k a
   () <- unsafeSystemIOToBO $ Unsafe.toLinear3 MV.unsafeWrite (content v) i a'
-  Control.pure $ (UnsafeMut v, b)
+  Control.pure $ (UnsafeAlias v, b)
 
 update :: (β <= α) => Int -> (a %1 -> BO β (a, b)) %1 -> Mut α (Vector a) %1 -> BO β (Mut α (Vector a), b)
 update i k v = DataFlow.do
@@ -245,18 +243,18 @@ indicesMut = Unsafe.toLinear2 \v is ->
 
 splitAtMut :: Int %1 -> Mut α (Vector a) %1 -> (Mut α (Vector a), Mut α (Vector a))
 {-# INLINE splitAtMut #-}
-splitAtMut = Unsafe.toLinear2 \i (UnsafeMut (Vector v)) ->
+splitAtMut = Unsafe.toLinear2 \i (UnsafeAlias (Vector v)) ->
   let (v1, v2) = MV.splitAt i v
-   in (UnsafeMut (Vector v1), UnsafeMut (Vector v2))
+   in (UnsafeAlias (Vector v1), UnsafeAlias (Vector v2))
 
 instance LinearOnly (Vector a) where
   unsafeWithLinear = unsafeLinearOnly
   {-# INLINE unsafeWithLinear #-}
 
 unsafeSwap :: Mut α (Vector a) %1 -> Int -> Int -> BO α (Mut α (Vector a))
-unsafeSwap = Unsafe.toLinear3 \(UnsafeMut v) i j -> Control.do
+unsafeSwap = Unsafe.toLinear3 \(UnsafeAlias v) i j -> Control.do
   () <- unsafeSystemIOToBO $ MV.unsafeSwap v.content i j
-  Control.pure $ UnsafeMut v
+  Control.pure $ UnsafeAlias v
 
 swap :: (HasCallStack) => Mut α (Vector a) %1 -> Int -> Int -> BO α (Mut α (Vector a))
 swap v i j = DataFlow.do

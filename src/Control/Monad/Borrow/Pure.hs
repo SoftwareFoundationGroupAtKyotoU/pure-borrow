@@ -20,10 +20,14 @@ module Control.Monad.Borrow.Pure (
   -- * Parallel computation
   parBO,
 
-  -- * Borrows and refernces
-  Mut (),
-  Share (),
-  Lend (),
+  -- * Borrowing
+  Alias,
+  AliasKind,
+  BorrowKind,
+  Borrow,
+  Mut,
+  Share,
+  Lend,
   borrow,
   borrow_,
   sharing,
@@ -34,25 +38,17 @@ module Control.Monad.Borrow.Pure (
   reclaim,
   reborrow,
   joinMut,
-  joinShareMut,
   Copyable (),
   copy,
   copyMut,
   genericCopyShare,
   GenericCopyable,
 
-  -- ** Case-splitting for borrows
-  Alias,
-  AliasAt,
-  Borrow,
-  BorrowAt,
+  -- ** Splitting aliases
   DistributesAlias (),
   split,
   GenericDistributesAlias,
   genericSplit,
-
-  -- *** Specialized case-splitting for variables
-  splitList,
   splitPair,
   splitEither,
 

@@ -175,14 +175,39 @@ evaluate :: a %1 -> BO α a
 {-# INLINE evaluate #-}
 evaluate a = unsafeSystemIOToBO (Unsafe.toLinear SystemIO.evaluate a)
 
--- | Mutable borrow to some resource 'a'
+-- | Alias of kind 'ak' to a resource of type 'a'
+type Alias :: AliasKind -> Type -> Type
+newtype Alias ak a = UnsafeAlias a
+
+unsafeUnalias :: Alias ak a %1 -> a
+unsafeUnalias (UnsafeAlias x) = x
+
+type role Alias nominal representational
+
+-- | Alias kind
+data AliasKind
+  = -- | Borrower
+    Borrow BorrowKind Lifetime
+  | -- | Lender
+    Lend Lifetime
+
+-- | Borrower kind
+data BorrowKind
+  = -- | Mutable
+    Mut
+  | -- | Shared
+    Share
+
+-- | Borrower of kind `bk` that is active during the lifetime 'α'
+type Borrow :: BorrowKind -> Lifetime -> Type -> Type
+type Borrow bk α = Alias ('Borrow bk α)
+
+-- | Mutable borrower, which is affine and can update the data
 type Mut :: Lifetime -> Type -> Type
-newtype Mut α a = UnsafeMut a
+type Mut α = Borrow 'Mut α
 
 instance LinearOnly (Mut α a) where
   unsafeWithLinear = unsafeLinearOnly
-
-type role Mut nominal nominal
 
 instance Affine (Mut α a) where
   aff = UnsafeAff
@@ -191,28 +216,18 @@ instance Affine (Mut α a) where
 deriving via AsAffine (Mut α a) instance Consumable (Mut α a)
 
 instance (β <= α, a <: b, b <: a) => Mut α a <: Mut β b where
-  upcast (UnsafeMut a) = UnsafeMut (upcast a)
+  upcast (UnsafeAlias a) = UnsafeAlias (upcast a)
   {-# INLINE upcast #-}
 
--- | Immutable shared borrow to some resource 'a'
+-- | Shared borrower, which is unrestricted but usually can only read from the data
 type Share :: Lifetime -> Type -> Type
-newtype Share α a = UnsafeShare a
-
-type role Share nominal representational
+type Share α = Borrow 'Share α
 
 instance Affine (Share α a) where
   aff = UnsafeAff
   {-# INLINE aff #-}
 
 deriving via AsAffine (Share α a) instance Consumable (Share α a)
-
-unsafeWrapAlias :: (Alias_ alias) => a %1 -> alias a
-{-# INLINE unsafeWrapAlias #-}
-unsafeWrapAlias = coerceLin
-
-unsafeUnwrapAlias :: (Alias_ alias) => alias a %1 -> a
-{-# INLINE unsafeUnwrapAlias #-}
-unsafeUnwrapAlias = coerceLin
 
 instance Dupable (Share α a) where
   dup2 = Unsafe.toLinear $ NonLinear.join (,)
@@ -223,125 +238,58 @@ instance Movable (Share α a) where
   {-# INLINE move #-}
 
 instance (β <= α, a <: b) => Share α a <: Share β b where
-  upcast (UnsafeShare a) = UnsafeShare (upcast a)
+  upcast (UnsafeAlias a) = UnsafeAlias (upcast a)
   {-# INLINE upcast #-}
 
-{- | A (mutable) lent resource to 'a', which
-will only be available at the 'End' of the lifetime 'α'.
--}
+-- | Lender, which can retrieve the lifetime at the lifetime 'α'
 type Lend :: Lifetime -> Type -> Type
-newtype Lend α a = UnsafeLend a
-
-type role Lend nominal nominal
+type Lend α = Alias ('Lend α)
 
 instance (α <= β, a <: b) => Lend α a <: Lend β b where
-  upcast (UnsafeLend a) = UnsafeLend (upcast a)
+  upcast (UnsafeAlias a) = UnsafeAlias (upcast a)
   {-# INLINE upcast #-}
 
 -- | Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim' the resource to lend at the 'End' of the lifetime.
 borrow :: a %1 -> Linearly %1 -> (Mut α a, Lend α a)
 borrow = Unsafe.toLinear \a lin ->
-  lin `lseq` (UnsafeMut a, UnsafeLend a)
+  lin `lseq` (UnsafeAlias a, UnsafeAlias a)
 
 -- | Analogous to 'borrow', but does not return the original 'Lend' to be reclaimed
 borrow_ :: a %1 -> Linearly %1 -> Mut α a
 {-# INLINE borrow_ #-}
 borrow_ = Unsafe.toLinear \(a :: a) lin ->
-  lin `lseq` UnsafeMut a
+  lin `lseq` UnsafeAlias a
 
 -- | Shares a mutable borrow, invalidating the original one.
 share :: Mut α a %1 -> Ur (Share α a)
 {-# INLINE share #-}
-share = Unsafe.toLinear \(UnsafeMut a) -> Ur (UnsafeShare a)
+share = Unsafe.toLinear \(UnsafeAlias a) -> Ur (UnsafeAlias a)
 
 -- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
 reclaim :: End α %1 -> Lend α a %1 -> a
-reclaim end = end `lseq` \(UnsafeLend !a) -> a
+reclaim end = end `lseq` \(UnsafeAlias !a) -> a
 
 -- | Reborrow a mutable borrow into a sublifetime
 reborrow :: (β <= α) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
 reborrow = Unsafe.toLinear \mutA ->
   (Data.Coerce.coerce mutA, Data.Coerce.coerce mutA)
 
--- | Collapse a nested mutable borrow
-joinMut :: Mut α (Mut β a) %1 -> Mut (α /\ β) a
+-- | Collapse a borrower to a mutable borrower
+joinMut :: Borrow bk α (Mut β a) %1 -> Borrow bk (α /\ β) a
 joinMut = coerceLin
 
--- | Collapse a shared borrow over a mutable borrow
-joinShareMut :: Share α (Mut β a) %1 -> Share (α /\ β) a
-joinShareMut = coerceLin
-
-type Alias_ :: (Type -> Type) -> Constraint
-class
-  (forall x. Coercible x (alias x)) =>
-  Alias_ alias
-  where
-  type AliasLifetime alias :: Lifetime
-  coercionWit :: Coercion x (alias x)
-
-instance Alias_ (Mut α) where
-  type AliasLifetime (Mut α) = α
-  coercionWit = Coercion
-
-instance Alias_ (Share α) where
-  type AliasLifetime (Share α) = α
-  coercionWit = Coercion
-
-instance Alias_ (Lend α) where
-  type AliasLifetime (Lend α) = α
-  coercionWit = Coercion
-
--- | An abstraction over a type that can be
-class (Alias_ alias) => Alias alias
-
-instance (Alias_ alias) => Alias alias
-
-type AliasAt α alias = (Alias alias, AliasLifetime alias ~ α)
-
-data CaseBorrow alias where
-  IsMut :: CaseBorrow (Mut α)
-  IsShare :: CaseBorrow (Share α)
-
--- | A constraint that requires @alias@ to be either a 'Share' or a 'Mut' borrow, which is accessible in 'BO' regions.
-class (Alias alias) => Borrow alias where
-  caseBorrow :: CaseBorrow alias
-
-instance Borrow (Mut α) where
-  caseBorrow = IsMut
-
-instance Borrow (Share α) where
-  caseBorrow = IsShare
-
-type BorrowAt α alias =
-  ( Borrow alias
-  , AliasLifetime alias ~ α
-  )
-
-splitList :: (Alias f) => f [x] %1 -> [f x]
-splitList = split
-
-splitPair :: (Alias alias) => alias (a, b) %1 -> (alias a, alias b)
-{-# INLINE splitPair #-}
-splitPair = coerceLin . unsafeUnwrapAlias
-
-splitEither :: (Alias alias) => alias (Either a b) %1 -> Either (alias a) (alias b)
-{-# INLINE splitEither #-}
-splitEither = coerceLin . unsafeUnwrapAlias
-
--- | A dual to 'Alias', which allows us to distribute a borrow over a functor.
+-- | Distribute an alias over a functor.
 class DistributesAlias f where
-  split_ :: (Alias alias) => alias (f x) %1 -> f (alias x)
+  split_ :: Alias ak (f x) %1 -> f (Alias ak x)
   default split_ ::
-    (GenericDistributesAlias f, Alias alias) =>
-    alias (f x) %1 -> f (alias x)
+    (GenericDistributesAlias f) =>
+    Alias ak (f x) %1 -> f (Alias ak x)
   split_ = genericSplit
 
 split ::
-  forall alias f x.
-  ( DistributesAlias f
-  , Alias alias
-  ) =>
-  alias (f x) %1 -> f (alias x)
+  forall f x ak.
+  (DistributesAlias f) =>
+  Alias ak (f x) %1 -> f (Alias ak x)
 {-# INLINE [1] split #-}
 split = split_
 
@@ -369,6 +317,14 @@ deriving anyclass instance DistributesAlias Mon.First
 
 deriving anyclass instance DistributesAlias Mon.Last
 
+splitPair :: Alias ak (a, b) %1 -> (Alias ak a, Alias ak b)
+{-# INLINE splitPair #-}
+splitPair = coerceLin
+
+splitEither :: Alias ak (Either a b) %1 -> Either (Alias ak a) (Alias ak b)
+{-# INLINE splitEither #-}
+splitEither = coerceLin
+
 instance (Unsatisfiable ('Text "Use splitEither directly!")) => DistributesAlias (Either e) where
   {-# INLINE split_ #-}
   split_ = unsatisfiable
@@ -380,18 +336,16 @@ instance (Unsatisfiable ('Text "Use splitPair instead!")) => DistributesAlias ((
 type GenericDistributesAlias f = (Generic1 f, GDistributeAlias (Rep1 f))
 
 genericSplit ::
-  forall alias f x.
-  ( GenericDistributesAlias f
-  , Alias alias
-  ) =>
-  alias (f x) %1 -> f (alias x)
+  forall f x ak.
+  (GenericDistributesAlias f) =>
+  Alias ak (f x) %1 -> f (Alias ak x)
 {-# INLINE genericSplit #-}
 genericSplit =
   to1
-    . gdistributeAlias @(Rep1 f) @alias
+    . gdistributeAlias @(Rep1 f)
     . unsafeMapAlias from1
 
-unsafeMapAlias :: (Alias alias) => (a %1 -> b) -> alias a %1 -> alias b
+unsafeMapAlias :: (a %1 -> b) -> Alias ak a %1 -> Alias ak b
 {-# INLINE unsafeMapAlias #-}
 unsafeMapAlias f = coerceLin f
 
@@ -400,7 +354,7 @@ instance (GenericDistributesAlias f) => DistributesAlias (Generically1 f) where
   split_ = Generically1 . genericSplit . unsafeMapAlias \(Generically1 f) -> f
 
 class GDistributeAlias f where
-  gdistributeAlias :: (Alias alias) => alias (f x) %1 -> f (alias x)
+  gdistributeAlias :: Alias ak (f x) %1 -> f (Alias ak x)
 
 instance
   ( GDistributeAlias f
@@ -409,12 +363,11 @@ instance
   GDistributeAlias (f :*: g)
   where
   {-# INLINE gdistributeAlias #-}
-  gdistributeAlias (alias :: alias a) =
-    case unsafeUnwrapAlias alias of
-      f :*: g -> DataFlow.do
-        f <- gdistributeAlias $ unsafeWrapAlias f
-        g <- gdistributeAlias $ unsafeWrapAlias g
-        f :*: g
+  gdistributeAlias !(UnsafeAlias !(f :*: g)) =
+    DataFlow.do
+      f <- gdistributeAlias $ UnsafeAlias f
+      g <- gdistributeAlias $ UnsafeAlias g
+      f :*: g
 
 instance
   ( GDistributeAlias f
@@ -423,9 +376,9 @@ instance
   GDistributeAlias (f :+: g)
   where
   {-# INLINE gdistributeAlias #-}
-  gdistributeAlias alias = case unsafeUnwrapAlias alias of
-    L1 l -> L1 (gdistributeAlias (unsafeWrapAlias l))
-    R1 r -> R1 (gdistributeAlias (unsafeWrapAlias r))
+  gdistributeAlias (UnsafeAlias x) = case x of
+    L1 l -> L1 (gdistributeAlias (UnsafeAlias l))
+    R1 r -> R1 (gdistributeAlias (UnsafeAlias r))
 
 instance
   (Unsatisfiable (Text "Nonlinear fields cannot distribute borrows!")) =>
@@ -437,18 +390,16 @@ instance
 instance (GDistributeAlias f) => GDistributeAlias (MP1 GHC.One f) where
   {-# INLINE gdistributeAlias #-}
   gdistributeAlias =
-    MP1 . gdistributeAlias . unsafeWrapAlias . unMP1 . unsafeUnwrapAlias
+    MP1 . gdistributeAlias . UnsafeAlias . unMP1 . unsafeUnalias
 
 instance (GDistributeAlias f) => GDistributeAlias (M1 i c f) where
   {-# INLINE gdistributeAlias #-}
-  gdistributeAlias = \x ->
-    case unsafeUnwrapAlias x of
-      M1 x -> M1 $ gdistributeAlias $ unsafeWrapAlias x
+  gdistributeAlias (UnsafeAlias (M1 x)) =
+    M1 $ gdistributeAlias $ UnsafeAlias x
 
 instance DistributesAlias Par1 where
   {-# INLINE split_ #-}
-  split_ = \x -> case unsafeUnwrapAlias x of
-    Par1 a -> Par1 (unsafeWrapAlias a)
+  split_ (UnsafeAlias (Par1 a)) = Par1 (UnsafeAlias a)
 
 instance
   ( DistributesAlias f
@@ -458,13 +409,12 @@ instance
   GDistributeAlias (f :.: g)
   where
   {-# INLINE gdistributeAlias #-}
-  gdistributeAlias = \(x :: alias _) -> case unsafeUnwrapAlias x of
-    Comp1 fg -> Comp1 $ Data.fmap split_ $ split_ $ unsafeWrapAlias @alias fg
+  gdistributeAlias (UnsafeAlias (Comp1 fg)) =
+    Comp1 $ Data.fmap split_ $ split_ $ UnsafeAlias fg
 
 instance GDistributeAlias Par1 where
   {-# INLINE gdistributeAlias #-}
-  gdistributeAlias = \x -> case unsafeUnwrapAlias x of
-    Par1 a -> Par1 (unsafeWrapAlias a)
+  gdistributeAlias (UnsafeAlias (Par1 a)) = Par1 (UnsafeAlias a)
 
 instance
   (Unsatisfiable (Text "A type containing non-parametric field with type `" :<>: ShowType c :<>: Text "', which cannot be safely splitted!")) =>
@@ -474,33 +424,29 @@ instance
   gdistributeAlias = unsatisfiable
 
 instance GDistributeAlias U1 where
-  gdistributeAlias = coerceLin . unsafeUnwrapAlias
+  gdistributeAlias = coerceLin
   {-# INLINE gdistributeAlias #-}
 
 class Copyable a where
-  unsafeCopy :: Share α a %1 -> a
+  copy :: Share α a %1 -> a
 
 instance
   (Unsatisfiable (ShowType (Ref a) :<>: Text " cannot be copied!")) =>
   Copyable (Ref a)
   where
-  unsafeCopy = unsatisfiable
+  copy = unsatisfiable
 
 instance
   (Unsatisfiable (ShowType (Array a) :<>: Text " cannot be copied!")) =>
   Copyable (Array a)
   where
-  unsafeCopy = unsatisfiable
+  copy = unsatisfiable
 
 instance
   (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copied!")) =>
   Copyable (Vector a)
   where
-  unsafeCopy = unsatisfiable
-
-copy :: (Copyable a) => Share α a %1 -> a
-{-# INLINE [1] copy #-}
-copy = unsafeCopy
+  copy = unsatisfiable
 
 copyMut :: (Copyable a) => Mut α a %1 -> a
 copyMut mut = let !(Ur shr) = share mut in copy shr
@@ -514,8 +460,8 @@ copyMut mut = let !(Ur shr) = share mut in copy shr
 newtype UnsafeAssumeNoVar a = UnsafeAssumeNoVar a
 
 instance Copyable (UnsafeAssumeNoVar a) where
-  unsafeCopy = coerceLin
-  {-# INLINE unsafeCopy #-}
+  copy = coerceLin
+  {-# INLINE copy #-}
 
 deriving via UnsafeAssumeNoVar Int instance Copyable Int
 
@@ -553,40 +499,40 @@ type GenericCopyable a = (Generic a, GCopyable (Rep a))
 
 genericCopyShare :: (GenericCopyable a) => Share α a %1 -> a
 {-# INLINE genericCopyShare #-}
-genericCopyShare (UnsafeShare x) = to (gcopy (UnsafeShare (from x)))
+genericCopyShare (UnsafeAlias x) = to (gcopy (UnsafeAlias (from x)))
 
 type GCopyable :: forall {k}. (k -> Type) -> Constraint
 class GCopyable f where
   gcopy :: Share α (f x) %1 -> f x
 
 instance (Copyable a) => GCopyable (K1 i a) where
-  gcopy = coerceLin . unsafeUnwrapAlias
+  gcopy = coerceLin . unsafeUnalias
 
 instance (GCopyable f, GCopyable g) => GCopyable (f :*: g) where
-  gcopy (UnsafeShare (f :*: g)) =
-    gcopy (UnsafeShare f) :*: gcopy (UnsafeShare g)
+  gcopy (UnsafeAlias (f :*: g)) =
+    gcopy (UnsafeAlias f) :*: gcopy (UnsafeAlias g)
 
 instance (GCopyable f) => GCopyable (M1 i c f) where
   gcopy = \case
-    UnsafeShare (M1 x) -> M1 (gcopy (UnsafeShare x))
+    UnsafeAlias (M1 x) -> M1 (gcopy (UnsafeAlias x))
 
 instance (GCopyable f) => GCopyable (MP1 m f) where
   gcopy = \case
-    UnsafeShare (MP1 x) -> MP1 (gcopy (UnsafeShare x))
+    UnsafeAlias (MP1 x) -> MP1 (gcopy (UnsafeAlias x))
 
 instance (GCopyable f, GCopyable g) => GCopyable (f :+: g) where
   gcopy = \case
-    UnsafeShare (L1 x) -> L1 (gcopy (UnsafeShare x))
-    UnsafeShare (R1 x) -> R1 (gcopy (UnsafeShare x))
+    UnsafeAlias (L1 x) -> L1 (gcopy (UnsafeAlias x))
+    UnsafeAlias (R1 x) -> R1 (gcopy (UnsafeAlias x))
 
 instance GCopyable U1 where
-  gcopy = coerceLin . unsafeUnwrapAlias
+  gcopy = coerceLin . unsafeUnalias
 
 instance GCopyable V1 where
-  gcopy = \case {} . unsafeUnwrapAlias
+  gcopy = \case {} . unsafeUnalias
 
 instance (GenericCopyable a) => Copyable (Generically a) where
-  unsafeCopy = Generically . genericCopyShare . unsafeMapAlias (\(Generically x) -> x)
+  copy = Generically . genericCopyShare . unsafeMapAlias (\(Generically x) -> x)
 
 deriving via
   Generically (Sum a)

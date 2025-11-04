@@ -481,19 +481,19 @@ class Copyable a where
   unsafeCopy :: Share α a %1 -> a
 
 instance
-  (Unsatisfiable (ShowType (Ref a) :<>: Text " cannot be copyed!")) =>
+  (Unsatisfiable (ShowType (Ref a) :<>: Text " cannot be copied!")) =>
   Copyable (Ref a)
   where
   unsafeCopy = unsatisfiable
 
 instance
-  (Unsatisfiable (ShowType (Array a) :<>: Text " cannot be copyed!")) =>
+  (Unsatisfiable (ShowType (Array a) :<>: Text " cannot be copied!")) =>
   Copyable (Array a)
   where
   unsafeCopy = unsatisfiable
 
 instance
-  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copyed!")) =>
+  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copied!")) =>
   Copyable (Vector a)
   where
   unsafeCopy = unsatisfiable

@@ -65,7 +65,7 @@ newMQueue lin = Control.do
   Control.pure $ borrow q lin
 
 instance
-  (Unsatisfiable (ShowType (MQueue a) :<>: Text " cannot be copyed!")) =>
+  (Unsatisfiable (ShowType (MQueue a) :<>: Text " cannot be copied!")) =>
   Copyable (MQueue a)
   where
   unsafeCopy = unsatisfiable

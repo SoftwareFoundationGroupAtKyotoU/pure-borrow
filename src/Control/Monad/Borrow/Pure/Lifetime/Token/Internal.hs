@@ -94,10 +94,6 @@ instance Movable (End α) where
   move UnsafeEnd = Ur UnsafeEnd
   {-# INLINE move #-}
 
-instance LinearOnly (End α) where
-  unsafeWithLinear = unsafeLinearOnly
-  {-# INLINE unsafeWithLinear #-}
-
 endLifetime :: Now (Al i) %1 -> (Ur (End (Al i)))
 endLifetime UnsafeNow = Ur UnsafeEnd
 

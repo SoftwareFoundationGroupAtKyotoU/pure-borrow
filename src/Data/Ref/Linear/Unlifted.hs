@@ -10,8 +10,8 @@ module Data.Ref.Linear.Unlifted (
   Ref#,
   newRef#,
   freeRef#,
-  readRef#,
-  writeRef#,
+  unsafeReadRef#,
+  unsafeWriteRef#,
   atomicModify_#,
   atomicModify#,
 ) where
@@ -36,16 +36,18 @@ newRef# = GHC.noinline $ Unsafe.toLinear $ \a lin ->
       case GHC.newMutVar# a s of
         (# _, !v #) -> Ref# v
 
-readRef# :: Ref# a %1 -> (# a, Ref# a #)
-{-# INLINE readRef# #-}
-readRef# = GHC.noinline $ Unsafe.toLinear \(Ref# mv) ->
+-- | This is unsafe, because the ownership of 'a' is duplicated
+unsafeReadRef# :: Ref# a %1 -> (# a, Ref# a #)
+{-# INLINE unsafeReadRef# #-}
+unsafeReadRef# = GHC.noinline $ Unsafe.toLinear \(Ref# mv) ->
   runRW# \s ->
     case GHC.readMutVar# mv s of
       (# _, !a #) -> (# a, Ref# mv #)
 
-writeRef# :: Ref# a %1 -> a %1 -> Ref# a
-{-# NOINLINE writeRef# #-}
-writeRef# = GHC.noinline $ Unsafe.toLinear2 \(Ref# mv) !a ->
+-- | This is unsafe, because the ownership of original 'a' is dropped
+unsafeWriteRef# :: Ref# a %1 -> a %1 -> Ref# a
+{-# NOINLINE unsafeWriteRef# #-}
+unsafeWriteRef# = GHC.noinline $ Unsafe.toLinear2 \(Ref# mv) !a ->
   runRW# \s ->
     case GHC.writeMutVar# mv a s of
       _ -> Ref# mv

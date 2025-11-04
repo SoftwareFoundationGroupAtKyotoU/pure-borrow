@@ -10,8 +10,8 @@ module Data.Ref.Linear (
   Ref,
   new,
   freeRef,
-  readRef,
-  writeRef,
+  unsafeReadRef,
+  unsafeWriteRef,
   atomicModify,
   atomicModify_,
 ) where
@@ -48,11 +48,11 @@ freeRef :: Ref a %1 -> a
 {-# INLINE freeRef #-}
 freeRef (Ref v) = freeRef# v
 
-readRef :: Ref a %1 -> (a, Ref a)
-{-# INLINE readRef #-}
-readRef (Ref v) = case readRef# v of
+unsafeReadRef :: Ref a %1 -> (a, Ref a)
+{-# INLINE unsafeReadRef #-}
+unsafeReadRef (Ref v) = case unsafeReadRef# v of
   (# a, v' #) -> (a, Ref v')
 
-writeRef :: Ref a %1 -> a %1 -> Ref a
-{-# INLINE writeRef #-}
-writeRef (Ref v) a = Ref (writeRef# v a)
+unsafeWriteRef :: Ref a %1 -> a %1 -> Ref a
+{-# INLINE unsafeWriteRef #-}
+unsafeWriteRef (Ref v) a = Ref (unsafeWriteRef# v a)

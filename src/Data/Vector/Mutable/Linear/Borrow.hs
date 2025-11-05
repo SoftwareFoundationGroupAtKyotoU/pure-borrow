@@ -32,7 +32,7 @@ module Data.Vector.Mutable.Linear.Borrow (
   last,
   unsafeIndicesMut,
   indicesMut,
-  splitAtMut,
+  splitAt,
   unsafeSwap,
   swap,
 
@@ -59,7 +59,7 @@ import Data.Vector.Mutable qualified as MV
 import GHC.Exts qualified as GHC
 import GHC.IO (unsafePerformIO)
 import GHC.Stack (HasCallStack)
-import Prelude.Linear hiding (head, last)
+import Prelude.Linear hiding (head, last, splitAt)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
@@ -241,9 +241,9 @@ indicesMut = Unsafe.toLinear2 \v is ->
             error ("indicesMut: duplicate indices: " <> show is) v
         | otherwise -> unsafeIndicesMut v is
 
-splitAtMut :: Int %1 -> Mut α (Vector a) %1 -> (Mut α (Vector a), Mut α (Vector a))
-{-# INLINE splitAtMut #-}
-splitAtMut = Unsafe.toLinear2 \i (UnsafeAlias (Vector v)) ->
+splitAt :: Int %1 -> Borrow bk α (Vector a) %1 -> (Borrow bk α (Vector a), Borrow bk α (Vector a))
+{-# INLINE splitAt #-}
+splitAt = Unsafe.toLinear2 \i (UnsafeAlias (Vector v)) ->
   let (v1, v2) = MV.splitAt i v
    in (UnsafeAlias (Vector v1), UnsafeAlias (Vector v2))
 
@@ -321,7 +321,7 @@ divide pivot = partUp
           if e < pivot
             then partUp v (l + 1) u
             else partDown v l (u - 1)
-      | otherwise = Control.pure $ splitAtMut l v
+      | otherwise = Control.pure $ splitAt l v
     partDown v l u
       | l < u = Control.do
           (e, v) <- sharing_ v $ Control.fmap copy . unsafeGet u
@@ -330,4 +330,4 @@ divide pivot = partUp
             else Control.do
               v <- unsafeSwap v l u
               partUp v (l + 1) u
-      | otherwise = Control.pure $ splitAtMut l v
+      | otherwise = Control.pure $ splitAt l v

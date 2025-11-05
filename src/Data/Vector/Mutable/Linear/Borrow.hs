@@ -33,6 +33,8 @@ module Data.Vector.Mutable.Linear.Borrow (
   splitAt,
   unsafeSwap,
   swap,
+  copyAt,
+  copyAtMut,
 
   -- * An example algorithm implementations
   qsort,
@@ -244,6 +246,12 @@ swap v i j = DataFlow.do
         then error ("swap: index out of bound: " <> show (i, j) <> " for length " <> show len) v
         else unsafeSwap v i j
 
+copyAt :: (Copyable a) => Int -> Share α (Vector a) -> BO α (Ur a)
+copyAt i v = Control.do Ur s <- move Control.<$> get i v; Control.pure $ Ur $ copy s
+
+copyAtMut :: (Copyable a) => Int -> Mut α (Vector a) %1 -> BO α (Ur a, Mut α (Vector a))
+copyAtMut i v = sharing_ v $ copyAt i
+
 {- | A simple parallel implementation of quicksort.
 It uses a sequential divide-and-conquer when size <8,
 and parallel divide-and-conquer with 'parBO' otherwise.
@@ -268,12 +276,10 @@ qsort = go
       (Ur n, v) ->
         let i = n `quot` 2
          in Control.do
-              (pivot, v) <- sharing_ v \v ->
-                move . copy Control.<$> unsafeGet i v
-              pivot & \(Ur pivot) -> Control.do
-                (lo, hi) <- divide pivot v 0 n
-                let b' = budget `quot` 2
-                Control.void $ parIf (b' NonLinear.> 0) (go b' lo) (go b' hi)
+              (Ur pivot, v) <- copyAtMut i v
+              (lo, hi) <- divide pivot v 0 n
+              let b' = budget `quot` 2
+              Control.void $ parIf (b' NonLinear.> 0) (go b' lo) (go b' hi)
 
 parIf :: Bool %1 -> BO α a %1 -> BO α b %1 -> BO α (a, b)
 {-# INLINE parIf #-}
@@ -296,14 +302,14 @@ divide pivot = partUp
   where
     partUp v l u
       | l < u = Control.do
-          (e, v) <- sharing_ v $ Control.fmap copy . unsafeGet l
+          (Ur e, v) <- copyAtMut l v
           if e < pivot
             then partUp v (l + 1) u
             else partDown v l (u - 1)
       | otherwise = Control.pure $ splitAt l v
     partDown v l u
       | l < u = Control.do
-          (e, v) <- sharing_ v $ Control.fmap copy . unsafeGet u
+          (Ur e, v) <- copyAtMut u v
           if pivot < e
             then partDown v l (u - 1)
             else Control.do

@@ -259,10 +259,8 @@ qsortDC thresh =
                 Done Control.<$> LV.qsort 0 v
             | otherwise -> Control.do
                 let i = n `quot` 2
-                (pivot, v) <- sharing_ v \v ->
-                  move . copy Control.<$> LV.unsafeGet i v
-                pivot & \(Ur pivot) -> Control.do
-                  (lo, hi) <- LV.divide pivot v 0 n
-                  Control.pure $ Continue $ Pair lo hi
+                (Ur pivot, v) <- LV.copyAtMut i v
+                (lo, hi) <- LV.divide pivot v 0 n
+                Control.pure $ Continue $ Pair lo hi
     , conquer = NoOp
     }

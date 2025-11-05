@@ -448,8 +448,8 @@ instance
   where
   copy = unsatisfiable
 
-copyMut :: (Copyable a) => Mut α a %1 -> a
-copyMut mut = let !(Ur shr) = share mut in copy shr
+copyMut :: (Copyable a) => Mut α a %1 -> Ur a
+copyMut mut = let !(Ur shr) = share mut in Ur (copy shr)
 
 {-# RULES
 "copy/unsafeCoerce" [~1]

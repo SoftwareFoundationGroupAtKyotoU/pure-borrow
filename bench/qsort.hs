@@ -31,7 +31,7 @@ qsortWith (Parallel budget) v =
       runBO lin Control.do
         (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
         VL.qsort budget v
-        Control.pure PL.$ \end -> VL.toVector (reclaim end lend)
+        Control.pure PL.$ \end -> VL.toVector (reclaim lend end)
 qsortWith Sequential v =
   unur PL.$ unur PL.$ linearly \lin ->
     DataFlow.do
@@ -39,7 +39,7 @@ qsortWith Sequential v =
       runBO lin Control.do
         (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
         VL.qsort 0 v
-        Control.pure PL.$ \end -> VL.toVector (reclaim end lend)
+        Control.pure PL.$ \end -> VL.toVector (reclaim lend end)
 qsortWith (Worksteal p) v =
   unur PL.$ unur PL.$ linearly \lin ->
     DataFlow.do
@@ -47,7 +47,7 @@ qsortWith (Worksteal p) v =
       runBO lin Control.do
         (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
         Control.void PL.$ divideAndConquer p (qsortDC 16) v
-        Control.pure PL.$ \end -> VL.toVector (reclaim end lend)
+        Control.pure PL.$ \end -> VL.toVector (reclaim lend end)
 
 main :: IO ()
 main = do

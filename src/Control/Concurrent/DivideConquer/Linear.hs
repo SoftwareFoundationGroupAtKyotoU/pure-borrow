@@ -114,7 +114,7 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
               MQ.closeMQueue q
               Control.void $ forkBO $ Control.void $ Data.traverse killThreadBO chs
           -}
-          Control.pure (\end -> reclaim (upcast end) lend `lseq` r)
+          Control.pure (\end -> reclaim lend (upcast end) `lseq` r)
   where
     worker :: (β <= α) => Mut β (MQ.MQueue (Work β a t r)) %1 -> BO β ()
     worker q =

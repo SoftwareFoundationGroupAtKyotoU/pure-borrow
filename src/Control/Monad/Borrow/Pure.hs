@@ -81,7 +81,7 @@ runBO lin bo =
 
 runBOLend :: Linearly %1 -> (forall α. BO α (Lend α a)) %1 -> a
 {-# INLINE runBOLend #-}
-runBOLend lin bo = runBO lin (bo Control.<&> \lend end -> reclaim end lend)
+runBOLend lin bo = runBO lin (bo Control.<&> reclaim)
 
 runBO_ :: Linearly %1 -> (forall α. BO α a) %1 -> a
 {-# INLINE runBO_ #-}
@@ -132,7 +132,7 @@ sharing v k = DataFlow.do
     DataFlow.do
       (v, lend) <- reborrow v
       share v & \(Ur v) -> Control.do
-        k v Control.<&> \v end -> (v (upcast end), reclaim (upcast end) lend)
+        k v Control.<&> \v end -> (v (upcast end), reclaim lend (upcast end))
 
 reborrowing ::
   Mut α a %1 ->
@@ -144,7 +144,7 @@ reborrowing mutα k = DataFlow.do
     (v, lend) <- reborrow v
     Control.do
       v <- k v
-      Control.pure $ \end -> (v (upcast end), reclaim (upcast end) lend)
+      Control.pure $ \end -> (v (upcast end), reclaim lend (upcast end))
 
 reborrowing_ ::
   Mut α a %1 ->

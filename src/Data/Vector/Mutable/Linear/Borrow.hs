@@ -273,23 +273,16 @@ qsort = go
     go budget v = case size v of
       (Ur 0, v) -> Control.pure $ consume v
       (Ur 1, v) -> Control.pure $ consume v
-      (Ur n, v) ->
+      (Ur n, v) -> Control.do
         let i = n `quot` 2
-         in Control.do
-              (Ur pivot, v) <- copyAtMut i v
-              (lo, hi) <- divide pivot v 0 n
-              let b' = budget `quot` 2
-              Control.void $ parIf (b' NonLinear.> 0) (go b' lo) (go b' hi)
+        (Ur pivot, v) <- copyAtMut i v
+        (lo, hi) <- divide pivot v 0 n
+        let b' = budget `quot` 2
+        Control.void $ parIf (b' NonLinear.> 0) (go b' lo) (go b' hi)
 
 parIf :: Bool %1 -> BO α a %1 -> BO α b %1 -> BO α (a, b)
 {-# INLINE parIf #-}
-parIf p =
-  if p
-    then parBO
-    else \l r -> Control.do
-      !l <- l
-      !r <- r
-      Control.pure (l, r)
+parIf p = if p then parBO else Control.liftA2 (,)
 
 divide ::
   (Ord a, Copyable a) =>

@@ -22,8 +22,6 @@ module Data.Vector.Mutable.Linear.Borrow (
   size,
   unsafeGet,
   get,
-  unsafeSet,
-  set,
   unsafeUpdate,
   update,
   unsafeHead,
@@ -184,25 +182,6 @@ get i v = DataFlow.do
       if i < 0 || i >= len
         then error ("get: index " <> show i <> " out of bound: " <> show len) v
         else unsafeGet i v
-
-unsafeSet :: Int -> a %1 -> Mut α (Vector a) %1 -> BO α (Mut α (Vector a))
-{-# INLINE unsafeSet #-}
-unsafeSet i = Unsafe.toLinear2 \a (UnsafeAlias v) ->
-  let v' = v
-   in Control.do
-        () <- unsafeSystemIOToBO $ Unsafe.toLinear3 MV.unsafeWrite (content v') i a
-        Control.pure $ UnsafeAlias v
-
-set ::
-  (HasCallStack) =>
-  Int -> a %1 -> Mut α (Vector a) %1 -> BO α (Mut α (Vector a))
-set i a v = DataFlow.do
-  (len, v) <- size v
-  case len of
-    Ur len ->
-      if i < 0 || i >= len
-        then error ("set: index " <> show i <> " out of bound: " <> show len) v a
-        else unsafeSet i a v
 
 unsafeUpdate :: (β <= α) => Int -> (a %1 -> BO β (a, b)) %1 -> Mut α (Vector a) %1 -> BO β (Mut α (Vector a), b)
 {-# INLINE unsafeUpdate #-}

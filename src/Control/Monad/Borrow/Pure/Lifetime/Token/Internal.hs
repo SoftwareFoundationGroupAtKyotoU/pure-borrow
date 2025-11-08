@@ -66,10 +66,6 @@ instance Dupable Linearly where
   dup2 = \UnsafeLinearly -> (UnsafeLinearly, UnsafeLinearly)
   {-# INLINE dup2 #-}
 
-instance Affine Linearly where
-  aff UnsafeLinearly = UnsafeAff UnsafeLinearly
-  {-# INLINE aff #-}
-
 instance Affine (Now α) where
   aff UnsafeNow = UnsafeAff UnsafeNow
   {-# INLINE aff #-}

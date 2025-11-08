@@ -244,7 +244,7 @@ instance Data.Traversable Pair where
   {-# INLINE traverse #-}
 
 qsortDC ::
-  (Ord a, Movable a, Copyable a) =>
+  (Ord a, Copyable a) =>
   -- | Threshold for the length of vector to switch to sequential sort
   Int ->
   DivideConquer α Pair (LV.Vector a) ()

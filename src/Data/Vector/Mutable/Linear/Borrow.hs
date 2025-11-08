@@ -261,7 +261,7 @@ not practical - you need a genuine parallel scheduler
 to scale this up.
 -}
 qsort ::
-  (Ord a, Copyable a, Movable a) =>
+  (Ord a, Copyable a) =>
   {- | Cost for using parallelism. Halved after each recursive call,
   and stops parallelizing when it reaches 1.
   -}

@@ -50,7 +50,7 @@ put# = GHC.noinline $ Unsafe.toLinear2 \(Sink# mv) !a ->
       !_ -> ()
 
 instance LinearOnly (Sink# a) where
-  unsafeWithLinear = unsafeLinearOnly
+  linearOnly = UnsafeLinearOnly
 
 instance LinearOnly (Source# a) where
-  unsafeWithLinear = unsafeLinearOnly
+  linearOnly = UnsafeLinearOnly

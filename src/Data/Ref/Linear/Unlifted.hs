@@ -60,7 +60,7 @@ freeRef# = Unsafe.toLinear \(Ref# a) ->
       (# _, !a #) -> a
 
 instance LinearOnly (Ref# a) where
-  unsafeWithLinear = unsafeLinearOnly
+  linearOnly = UnsafeLinearOnly
 
 atomicModify_# :: Ref# a %1 -> (a %1 -> a) %1 -> Ref# a
 {-# NOINLINE atomicModify_# #-}

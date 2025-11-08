@@ -229,8 +229,8 @@ splitAt = Unsafe.toLinear2 \i (UnsafeAlias (Vector v)) ->
    in (UnsafeAlias (Vector v1), UnsafeAlias (Vector v2))
 
 instance LinearOnly (Vector a) where
-  unsafeWithLinear = unsafeLinearOnly
-  {-# INLINE unsafeWithLinear #-}
+  linearOnly = UnsafeLinearOnly
+  {-# INLINE linearOnly #-}
 
 unsafeSwap :: Mut α (Vector a) %1 -> Int -> Int -> BO α (Mut α (Vector a))
 unsafeSwap = Unsafe.toLinear3 \(UnsafeAlias v) i j -> Control.do

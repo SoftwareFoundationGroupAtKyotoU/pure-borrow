@@ -30,7 +30,7 @@ new :: a %1 -> Linearly %1 -> Ref a
 new a lin = Ref (newRef# a lin)
 
 instance LinearOnly (Ref a) where
-  unsafeWithLinear = unsafeLinearOnly
+  linearOnly = UnsafeLinearOnly
 
 instance Affine (Ref a) where
   aff = Unsafe.toLinear UnsafeAff

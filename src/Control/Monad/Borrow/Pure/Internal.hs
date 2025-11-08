@@ -207,7 +207,7 @@ type Mut :: Lifetime -> Type -> Type
 type Mut α = Borrow 'Mut α
 
 instance LinearOnly (Mut α a) where
-  unsafeWithLinear = unsafeLinearOnly
+  linearOnly = UnsafeLinearOnly
 
 instance Affine (Mut α a) where
   aff = UnsafeAff

@@ -37,10 +37,10 @@ new lin = case new# lin of
   (# sink, source #) -> (Sink sink, Source source)
 
 instance LinearOnly (Sink a) where
-  unsafeWithLinear = unsafeLinearOnly
+  linearOnly = UnsafeLinearOnly
 
 instance LinearOnly (Source a) where
-  unsafeWithLinear = unsafeLinearOnly
+  linearOnly = UnsafeLinearOnly
 
 instance Affine (Sink a) where
   aff = Unsafe.toLinear UnsafeAff

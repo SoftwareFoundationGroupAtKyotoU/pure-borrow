@@ -37,16 +37,11 @@ linearly :: (Movable a) => (Linearly %1 -> a) %1 -> Ur a
 {-# NOINLINE linearly #-}
 linearly = GHC.noinline \f -> move (f UnsafeLinearly)
 
-newtype UnsafeLinearOnly# a = MkUnsafeLinearOnly# (# #)
-
-type LinearOnlyWitness a = (# #) -> UnsafeLinearOnly# a
-
-unsafeLinearOnly :: LinearOnlyWitness a
-unsafeLinearOnly = \_ -> MkUnsafeLinearOnly# (# #)
+data LinearOnlyWitness a = UnsafeLinearOnly
 
 type LinearOnly :: forall rep. TYPE rep -> Constraint
 class LinearOnly a where
-  unsafeWithLinear :: LinearOnlyWitness a
+  linearOnly :: LinearOnlyWitness a
 
 withLinearly :: (LinearOnly a) => a %1 -> (Linearly, a)
 withLinearly !a = (UnsafeLinearly, a)
@@ -55,8 +50,8 @@ withLinearly# :: forall (a :: UnliftedType). (LinearOnly a) => a %1 -> (# Linear
 withLinearly# !a = (# UnsafeLinearly, a #)
 
 instance LinearOnly Linearly where
-  unsafeWithLinear = unsafeLinearOnly
-  {-# INLINE unsafeWithLinear #-}
+  linearOnly = UnsafeLinearOnly
+  {-# INLINE linearOnly #-}
 
 instance Consumable Linearly where
   consume = \UnsafeLinearly -> ()
@@ -71,8 +66,8 @@ instance Affine (Now α) where
   {-# INLINE aff #-}
 
 instance LinearOnly (Now α) where
-  unsafeWithLinear = unsafeLinearOnly
-  {-# INLINE unsafeWithLinear #-}
+  linearOnly = UnsafeLinearOnly
+  {-# INLINE linearOnly #-}
 
 instance Affine (End α) where
   aff UnsafeEnd = UnsafeAff UnsafeEnd

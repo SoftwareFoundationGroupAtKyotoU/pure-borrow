@@ -35,14 +35,14 @@ instance LinearOnly (Ref a) where
 instance Affine (Ref a) where
   aff = Unsafe.toLinear UnsafeAff
 
-atomicModify_ :: Ref a %1 -> (a %1 -> a) %1 -> Ref a
+atomicModify_ :: (a %1 -> a) %1 -> Ref a %1 -> Ref a
 {-# INLINE atomicModify_ #-}
-atomicModify_ (Ref v) f = Ref (atomicModify_# v f)
+atomicModify_ f (Ref v) = Ref (atomicModify_# f v)
 
-atomicModify :: Ref a %1 -> (a %1 -> (a, b)) %1 -> (Ref a, b)
+atomicModify :: (a %1 -> (b, a)) %1 -> Ref a %1 -> (b, Ref a)
 {-# INLINE atomicModify #-}
-atomicModify (Ref v) f = case atomicModify# v f of
-  (# v', b #) -> (Ref v', b)
+atomicModify f (Ref v) = case atomicModify# f v of
+  (# b, v' #) -> (b, Ref v')
 
 freeRef :: Ref a %1 -> a
 {-# INLINE freeRef #-}

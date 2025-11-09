@@ -62,16 +62,16 @@ freeRef# = Unsafe.toLinear \(Ref# a) ->
 instance LinearOnly (Ref# a) where
   linearOnly = UnsafeLinearOnly
 
-atomicModify_# :: Ref# a %1 -> (a %1 -> a) %1 -> Ref# a
+atomicModify_# :: (a %1 -> a) %1 -> Ref# a %1 -> Ref# a
 {-# NOINLINE atomicModify_# #-}
-atomicModify_# = GHC.noinline $ Unsafe.toLinear2 \(Ref# mv) f ->
+atomicModify_# = GHC.noinline $ Unsafe.toLinear2 \f (Ref# mv) ->
   runRW# \s ->
     case GHC.atomicModifyMutVar2# mv (Unsafe.toLinear f) s of
       (# _, !_, !_ #) -> Ref# mv
 
-atomicModify# :: Ref# a %1 -> (a %1 -> (a, b)) %1 -> (# Ref# a, b #)
+atomicModify# :: (a %1 -> (b, a)) %1 -> Ref# a %1 -> (# b, Ref# a #)
 {-# NOINLINE atomicModify# #-}
-atomicModify# = GHC.noinline $ Unsafe.toLinear2 \(Ref# mv) f ->
+atomicModify# = GHC.noinline $ Unsafe.toLinear2 \f (Ref# mv) ->
   runRW# \s ->
     case GHC.atomicModifyMutVar2# mv (Unsafe.toLinear f) s of
-      (# _, !_, (!_, !b) #) -> (# Ref# mv, b #)
+      (# _, !_, (!b, !_) #) -> (# b, Ref# mv #)

@@ -185,15 +185,15 @@ get i v = DataFlow.do
         then error ("get: index " <> show i <> " out of bound: " <> show len) v
         else unsafeGet i v
 
-unsafeUpdate :: (β <= α) => Int -> (a %1 -> BO β (a, b)) %1 -> Mut α (Vector a) %1 -> BO β (Mut α (Vector a), b)
+unsafeUpdate :: (β <= α) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))
 {-# INLINE unsafeUpdate #-}
 unsafeUpdate i = Unsafe.toLinear2 \k (UnsafeAlias v) -> Control.do
   a <- unsafeSystemIOToBO $ MV.unsafeRead (content v) i
-  (a', b) <- k a
+  (b, a') <- k a
   () <- unsafeSystemIOToBO $ Unsafe.toLinear3 MV.unsafeWrite (content v) i a'
-  Control.pure $ (UnsafeAlias v, b)
+  Control.pure $ (b, UnsafeAlias v)
 
-update :: (β <= α) => Int -> (a %1 -> BO β (a, b)) %1 -> Mut α (Vector a) %1 -> BO β (Mut α (Vector a), b)
+update :: (β <= α) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))
 update i k v = DataFlow.do
   (len, v) <- size v
   case len of

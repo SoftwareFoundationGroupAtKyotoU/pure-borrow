@@ -24,6 +24,7 @@ module Data.Vector.Mutable.Linear.Borrow (
   get,
   unsafeUpdate,
   update,
+  modify,
   unsafeHead,
   head,
   unsafeLast,
@@ -201,6 +202,11 @@ update i k v = DataFlow.do
       if i < 0 || i >= len
         then error ("set: index " <> show i <> " out of bound: " <> show len) v k
         else unsafeUpdate i k v
+
+modify :: (β <= α) => Int -> (a %1 -> a) %1 -> Mut α (Vector a) %1 -> BO β (Mut α (Vector a))
+modify i f v = Control.do
+  ((), ma) <- update i (Control.pure . ((),) . f) v
+  Control.pure ma
 
 {- | Get multiple elements at the given indices without bounds and duplication check.
 For more safety, use 'indicesMut'.

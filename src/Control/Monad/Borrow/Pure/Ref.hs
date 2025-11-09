@@ -10,6 +10,7 @@
 module Control.Monad.Borrow.Pure.Ref (
   Ref (),
   updateRef,
+  modifyRef,
   swapRef,
   readSharedRef,
 ) where
@@ -33,6 +34,11 @@ updateRef f (UnsafeAlias mv) = DataFlow.do
   f a Control.<&> \(!b, !a) -> DataFlow.do
     mv <- Ref.unsafeWriteRef mv a
     (b, UnsafeAlias mv)
+
+modifyRef :: (β <= α) => (a %1 -> a) %1 -> Mut α (Ref a) %1 -> BO β (Mut α (Ref a))
+modifyRef f ma = Control.do
+  ((), ma) <- updateRef (Control.pure . ((),) . f) ma
+  Control.pure ma
 
 swapRef :: (β <= α) => Mut α (Ref a) %1 -> Mut α (Ref a) %1 -> BO β (Mut α (Ref a), Mut α (Ref a))
 {-# INLINE swapRef #-}

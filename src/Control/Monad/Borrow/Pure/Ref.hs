@@ -24,21 +24,22 @@ import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
-updateRef :: (β <= α) => Mut α (Ref a) %1 -> (a %1 -> BO β (a, b)) %1 -> BO β (Mut α (Ref a), b)
+updateRef :: (β <= α) => (a %1 -> BO β (b, a)) %1 -> Mut α (Ref a) %1 -> BO β (b, Mut α (Ref a))
 {-# INLINE updateRef #-}
-updateRef (UnsafeAlias mv) f = DataFlow.do
+updateRef f (UnsafeAlias mv) = DataFlow.do
   -- NOTE: as there is only one reference to @'Ref' a@, we can just use read/write
   -- instead of 'MutVar.atomicModify' (which requires pure function) while retaining atomicity.
   (a, mv) <- Ref.unsafeReadRef mv
-  f a Control.<&> \(!a, !b) -> DataFlow.do
+  f a Control.<&> \(!b, !a) -> DataFlow.do
     mv <- Ref.unsafeWriteRef mv a
-    (UnsafeAlias mv, b)
+    (b, UnsafeAlias mv)
 
 swapRef :: (β <= α) => Mut α (Ref a) %1 -> Mut α (Ref a) %1 -> BO β (Mut α (Ref a), Mut α (Ref a))
 {-# INLINE swapRef #-}
-swapRef ma ma' = updateRef ma \a -> Control.do
-  (ma', a') <- updateRef ma' \a' -> Control.pure (a, a')
-  Control.pure (a', ma')
+swapRef ma ma' =
+  flip updateRef ma' \a' -> Control.do
+    (a, ma) <- updateRef (\a -> Control.pure (a, a')) ma
+    Control.pure (ma, a)
 
 readSharedRef :: (β <= α) => Share α (Ref a) %1 -> BO β (Share α a)
 {-# INLINE readSharedRef #-}

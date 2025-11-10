@@ -449,12 +449,6 @@ instance
 copyMut :: (Copyable a) => Mut α a %1 -> Ur a
 copyMut mut = let !(Ur shr) = share mut in Ur (copy shr)
 
-{-# RULES
-"copy/unsafeCoerce" [~1]
-  copy =
-    Unsafe.coerce
-  #-}
-
 newtype UnsafeAssumeNoVar a = UnsafeAssumeNoVar a
 
 instance Copyable (UnsafeAssumeNoVar a) where

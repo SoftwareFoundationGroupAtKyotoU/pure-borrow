@@ -165,8 +165,9 @@ wait (Thread tid source) = tid `lseq` Once.take source
 data Thread = Thread !ThreadId_ !(Source ())
   deriving stock (GHC.Generic)
 
-killThreadBO :: Thread %1 -> BO α ()
-killThreadBO = Unsafe.toLinear \(Thread tid _) ->
+-- Named with underscore, as it is not used for now
+_killThreadBO :: Thread %1 -> BO α ()
+_killThreadBO = Unsafe.toLinear \(Thread tid _) ->
   unsafeSystemIOToBO (Conc.killThread $ NonLinear.coerce tid)
 
 concurrentMap ::

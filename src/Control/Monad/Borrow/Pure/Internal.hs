@@ -38,7 +38,6 @@ import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Monad.ST.Strict (ST)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Array.Mutable.Linear (Array)
-import Data.Coerce (Coercible)
 import Data.Coerce qualified
 import Data.Coerce.Directed
 import Data.Functor.Identity (Identity)
@@ -50,7 +49,6 @@ import Data.Ord qualified as Ord
 import Data.Ref.Linear (Ref)
 import Data.Semigroup qualified as Sem
 import Data.Tuple (Solo (..))
-import Data.Type.Coercion (Coercion (..))
 import Data.Vector.Mutable.Linear (Vector)
 import Data.Word
 import GHC.Base (TYPE)

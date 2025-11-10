@@ -17,7 +17,6 @@ module Control.Monad.Borrow.Pure.Lifetime.Token (
   newLifetime',
   nowStatic,
   neverEnds,
-  alreadyEnded,
 ) where
 
 import Control.Monad.Borrow.Pure.Lifetime.Token.Internal

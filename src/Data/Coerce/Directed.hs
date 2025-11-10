@@ -6,21 +6,25 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Data.Coerce.Directed (
+  SubtypeWitness (UnsafeSubtype),
   type (<:) (..),
+  upcast,
   AsCoercible (..),
-  GenericUpcast,
+  GSubtype (..),
+  GenericSubtype,
   genericUpcast,
 ) where
 
-import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Coerce (Coercible)
 import Data.Kind (Constraint, Type)
 import Data.Type.Ord
 import GHC.Base (Multiplicity (..))
 import Generics.Linear
 import Prelude.Linear
+import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Linear qualified as Unsafe
 
 infix 4 <:
@@ -35,18 +39,21 @@ type family CmpMult p q where
   CmpMult Many One = GT
   CmpMult Many Many = EQ
 
+data SubtypeWitness a b = UnsafeSubtype
+
 class a <: b where
-  upcast :: a %1 -> b
+  subtype :: SubtypeWitness a b
+
+upcast :: (a <: b) => a %1 -> b
+upcast = Unsafe.toLinear unsafeCoerce
 
 instance {-# INCOHERENT #-} (Coercible a b) => a <: b where
-  upcast = coerceLin
-  {-# INLINE upcast #-}
+  subtype = UnsafeSubtype
 
 newtype AsCoercible a = AsCoercible {runAsCoercible :: a}
 
 instance (Coercible a b) => a <: AsCoercible b where
-  upcast = coerceLin
-  {-# INLINE upcast #-}
+  subtype = UnsafeSubtype
 
 deriving via
   Generically [b]
@@ -72,43 +79,37 @@ instance
   (a' <: a, b <: b', p Data.Type.Ord.<= q) =>
   (a %p -> b) <: (a' %q -> b')
   where
-  {-# INLINE upcast #-}
-  upcast f = Unsafe.toLinear \a -> upcast (f (upcast a))
+  subtype = UnsafeSubtype
 
-type GUpcast :: (k -> Type) -> (k -> Type) -> Constraint
-class GUpcast f g where
-  gupcast :: f a %1 -> g a
+type GSubtype :: (k -> Type) -> (k -> Type) -> Constraint
+class GSubtype f g where
+  gsubtype :: SubtypeWitness f g
 
-instance (a <: b) => GUpcast (K1 i a) (K1 i b) where
-  gupcast (K1 a) = K1 (upcast a)
-  {-# INLINE gupcast #-}
+gupcast :: (GSubtype f g) => f a %1 -> g a
+gupcast = Unsafe.toLinear unsafeCoerce
 
-instance {-# INCOHERENT #-} GUpcast f f where
-  gupcast = id
-  {-# INLINE gupcast #-}
+instance (a <: b) => GSubtype (K1 i a) (K1 i b) where
+  gsubtype = UnsafeSubtype
 
-instance (GUpcast f g) => GUpcast (MP1 p f) (MP1 p g) where
-  gupcast (MP1 f) = MP1 (gupcast f)
-  {-# INLINE gupcast #-}
+instance {-# INCOHERENT #-} GSubtype f f where
+  gsubtype = UnsafeSubtype
 
-instance (GUpcast f g) => GUpcast (M1 i c f) (M1 i c g) where
-  gupcast (M1 f) = M1 (gupcast f)
-  {-# INLINE gupcast #-}
+instance (GSubtype f g) => GSubtype (MP1 p f) (MP1 p g) where
+  gsubtype = UnsafeSubtype
 
-instance (GUpcast f f', GUpcast g g') => GUpcast (f :*: g) (f' :*: g') where
-  gupcast (f :*: g) = gupcast f :*: gupcast g
-  {-# INLINE gupcast #-}
+instance (GSubtype f g) => GSubtype (M1 i c f) (M1 i c g) where
+  gsubtype = UnsafeSubtype
 
-instance (GUpcast l l', GUpcast r r') => GUpcast (l :+: r) (l' :+: r') where
-  gupcast (L1 f) = L1 $ gupcast f
-  gupcast (R1 g) = R1 $ gupcast g
-  {-# INLINE gupcast #-}
+instance (GSubtype f f', GSubtype g g') => GSubtype (f :*: g) (f' :*: g') where
+  gsubtype = UnsafeSubtype
 
-type GenericUpcast a b = (Generic a, Generic b, GUpcast (Rep a) (Rep b))
+instance (GSubtype l l', GSubtype r r') => GSubtype (l :+: r) (l' :+: r') where
+  gsubtype = UnsafeSubtype
 
-instance (GenericUpcast a b) => a <: Generically b where
-  upcast = Generically . genericUpcast
-  {-# INLINE upcast #-}
+type GenericSubtype a b = (Generic a, Generic b, GSubtype (Rep a) (Rep b))
 
-genericUpcast :: (GenericUpcast a b) => a %1 -> b
+instance (GenericSubtype a b) => a <: Generically b where
+  subtype = UnsafeSubtype
+
+genericUpcast :: (GenericSubtype a b) => a %1 -> b
 genericUpcast = to . gupcast . from

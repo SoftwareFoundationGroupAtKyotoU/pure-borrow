@@ -16,7 +16,7 @@ module Control.Monad.Borrow.Pure.Lifetime.Token.Internal (
 
 import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Lifetime.Internal
-import Data.Coerce.Directed (type (<:) (..))
+import Data.Coerce.Directed (SubtypeWitness (UnsafeSubtype), type (<:) (..))
 import Data.Kind (Constraint)
 import Data.Unrestricted.Linear
 import GHC.Base (TYPE, UnliftedType)
@@ -91,12 +91,8 @@ endLifetime UnsafeNow = Ur UnsafeEnd
 data SomeNow where
   MkSomeNow :: Now (Al i) %1 -> SomeNow
 
-alreadyEnded :: (β <= α) => End α %1 -> End β
-{-# INLINE alreadyEnded #-}
-alreadyEnded = \UnsafeEnd -> UnsafeEnd
-
 instance (β <= α) => End α <: End β where
-  upcast = alreadyEnded
+  subtype = UnsafeSubtype
 
 newLifetime :: Linearly %1 -> SomeNow
 newLifetime UnsafeLinearly = MkSomeNow UnsafeNow

@@ -214,8 +214,7 @@ instance Affine (Mut α a) where
 deriving via AsAffine (Mut α a) instance Consumable (Mut α a)
 
 instance (β <= α, a <: b, b <: a) => Mut α a <: Mut β b where
-  upcast (UnsafeAlias a) = UnsafeAlias (upcast a)
-  {-# INLINE upcast #-}
+  subtype = UnsafeSubtype
 
 -- | Shared borrower, which is unrestricted but usually can only read from the data
 type Share :: Lifetime -> Type -> Type
@@ -236,16 +235,14 @@ instance Movable (Share α a) where
   {-# INLINE move #-}
 
 instance (β <= α, a <: b) => Share α a <: Share β b where
-  upcast (UnsafeAlias a) = UnsafeAlias (upcast a)
-  {-# INLINE upcast #-}
+  subtype = UnsafeSubtype
 
 -- | Lender, which can retrieve the lifetime at the lifetime 'α'
 type Lend :: Lifetime -> Type -> Type
 type Lend α = Alias ('Lend α)
 
 instance (α <= β, a <: b) => Lend α a <: Lend β b where
-  upcast (UnsafeAlias a) = UnsafeAlias (upcast a)
-  {-# INLINE upcast #-}
+  subtype = UnsafeSubtype
 
 -- | Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim' the resource to lend at the 'End' of the lifetime.
 borrow :: a %1 -> Linearly %1 -> (Mut α a, Lend α a)

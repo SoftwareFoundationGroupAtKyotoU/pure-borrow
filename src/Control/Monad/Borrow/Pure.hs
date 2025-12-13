@@ -2,7 +2,9 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ImpredicativeTypes #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE QualifiedDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
@@ -16,6 +18,12 @@ module Control.Monad.Borrow.Pure (
   scope_,
   srunBO,
   scope,
+
+  -- ** In-place modification with mutable borrows
+  modifyBO,
+  modifyBO_,
+  modifyLinearOnlyBO,
+  modifyLinearOnlyBO_,
 
   -- * Parallel computation
   parBO,
@@ -156,3 +164,55 @@ reborrowing_ ::
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
   BO α' (r, Mut α a)
 reborrowing_ mutα k = reborrowing mutα (\mut -> k mut Control.<&> \a _ -> a)
+
+-- | Modifies linear resources in-place, together with results.
+modifyBO ::
+  a %1 ->
+  Linearly %1 ->
+  (forall α. Mut α a %1 -> BO α r) %1 ->
+  (r, a)
+modifyBO v lin k = DataFlow.do
+  (lin, lin') <- dup lin
+  runBO lin Control.do
+    let %1 !(mut, lend) = borrow v lin'
+    r <- k mut
+    Control.pure $ undefined r (reclaim lend)
+
+-- | Modifies linear resources in-place, without results.
+modifyBO_ ::
+  a %1 ->
+  Linearly %1 ->
+  (forall α. Mut α a %1 -> BO α ()) %1 ->
+  a
+modifyBO_ v lin k = DataFlow.do
+  (lin, lin') <- dup lin
+  runBO lin Control.do
+    let %1 !(mut, lend) = borrow v lin'
+    r <- k mut
+    Control.pure $ undefined r (reclaim lend)
+
+-- | Modifies linear resources in-place, together with results.
+modifyLinearOnlyBO ::
+  (LinearOnly a) =>
+  a %1 ->
+  (forall α. Mut α a %1 -> BO α r) %1 ->
+  (r, a)
+modifyLinearOnlyBO v k = DataFlow.do
+  (lin, v) <- withLinearly v
+  runBO lin Control.do
+    let %1 !(mut, lend) = borrowLinearOnly v
+    r <- k mut
+    Control.pure $ undefined r (reclaim lend)
+
+-- | Modifies linear resources in-place, together with results.
+modifyLinearOnlyBO_ ::
+  (LinearOnly a) =>
+  a %1 ->
+  (forall α. Mut α a %1 -> BO α ()) %1 ->
+  a
+modifyLinearOnlyBO_ v k = DataFlow.do
+  (lin, v) <- withLinearly v
+  runBO lin Control.do
+    let %1 !(mut, lend) = borrowLinearOnly v
+    r <- k mut
+    Control.pure $ undefined r (reclaim lend)

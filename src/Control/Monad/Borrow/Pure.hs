@@ -30,6 +30,7 @@ module Control.Monad.Borrow.Pure (
   Lend,
   borrow,
   borrow_,
+  borrowLinearOnly,
   sharing,
   sharing_,
   reborrowing,
@@ -102,6 +103,10 @@ srunBO bo lin =
 
 scope :: Linearly %1 -> (forall α. Proxy α -> BO (α /\ β) (End α -> a)) %1 -> BO β a
 scope = flip srunBO
+
+-- | A variant of 'borrow' that obtains 'Linearly' viar 'LinearOnly'.
+borrowLinearOnly :: (LinearOnly a) => a %1 -> (Mut α a, Lend α a)
+borrowLinearOnly = uncurry (flip borrow) . withLinearly
 
 {- | Executes an operation on 'Share'd borrow in sub lifetime.
 You may need @-XImpredicativeTypes@ extension to use this function.

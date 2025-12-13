@@ -249,6 +249,10 @@ borrow :: a %1 -> Linearly %1 -> (Mut α a, Lend α a)
 borrow = Unsafe.toLinear \a lin ->
   lin `lseq` (UnsafeAlias a, UnsafeAlias a)
 
+-- | A variant of 'borrow' that obtains 'Linearly' viar 'LinearOnly'.
+borrowLinearOnly :: (LinearOnly a) => a %1 -> (Mut α a, Lend α a)
+borrowLinearOnly = uncurry (flip borrow) . withLinearly
+
 -- | Analogous to 'borrow', but does not return the original 'Lend' to be reclaimed
 borrow_ :: a %1 -> Linearly %1 -> Mut α a
 {-# INLINE borrow_ #-}

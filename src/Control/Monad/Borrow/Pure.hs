@@ -18,6 +18,8 @@ module Control.Monad.Borrow.Pure (
   scope_,
   srunBO,
   scope,
+  askLinearly,
+  withLinearlyBO,
 
   -- ** In-place modification with mutable borrows
   modifyBO,
@@ -216,3 +218,9 @@ modifyLinearOnlyBO_ v k = DataFlow.do
     let %1 !(mut, lend) = borrowLinearOnly v
     r <- k mut
     Control.pure $ undefined r (reclaim lend)
+
+withLinearlyBO :: (Linearly %1 -> BO α r) %1 -> BO α r
+{-# INLINE withLinearlyBO #-}
+withLinearlyBO k = Control.do
+  lin <- askLinearly
+  k lin

@@ -260,7 +260,7 @@ borrow_ = Unsafe.toLinear \(a :: a) lin ->
   lin `lseq` UnsafeAlias a
 
 -- | Shares a mutable borrow, invalidating the original one.
-share :: Mut α a %1 -> Ur (Share α a)
+share :: Borrow k α a %1 -> Ur (Share α a)
 {-# INLINE share #-}
 share = Unsafe.toLinear \(UnsafeAlias a) -> Ur (UnsafeAlias a)
 

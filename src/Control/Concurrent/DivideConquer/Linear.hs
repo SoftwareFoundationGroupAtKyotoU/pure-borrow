@@ -85,7 +85,7 @@ divideAndConquer ::
 divideAndConquer n DivideConquer {..} ini = DataFlow.do
   (lin, ini) <- withLinearly ini
   (lin, lin', lin'') <- dup3 lin
-  reborrowing ini \(ini :: Mut γ a) ->
+  reborrowing' ini \(ini :: Mut γ a) ->
     someNatVal (fromIntegral n) & \(SomeNat (_ :: Proxy n)) -> Control.do
       (q, lend) <- newMQueue lin
       DataFlow.do

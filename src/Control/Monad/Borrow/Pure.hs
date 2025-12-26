@@ -41,8 +41,10 @@ module Control.Monad.Borrow.Pure (
   borrow,
   borrow_,
   borrowLinearOnly,
+  sharing',
   sharing,
   sharing_,
+  reborrowing',
   reborrowing,
   reborrowing_,
   share,
@@ -121,27 +123,40 @@ borrowLinearOnly = uncurry (flip borrow) . withLinearly
 {- | Executes an operation on 'Share'd borrow in sub lifetime.
 You may need @-XImpredicativeTypes@ extension to use this function.
 
-See also: 'sharing'.
+See also: 'sharing' and 'sharing''.
 -}
 sharing_ ::
-  forall α α' a r.
+  forall α α' a.
   Mut α a %1 ->
-  (forall β. Share (β /\ α) a -> BO (β /\ α') r) %1 ->
-  BO α' (r, Mut α a)
+  (forall β. Share (β /\ α) a -> BO (β /\ α') ()) %1 ->
+  BO α' (Mut α a)
 {-# INLINE sharing_ #-}
-sharing_ v k = sharing v (\mut -> k mut Control.<&> \a _ -> a)
+sharing_ v k = sharing v k Control.<&> \((), a) -> a
 
 {- | Executes an operation on 'Share'd borrow in sub lifetime.
 You may need @-XImpredicativeTypes@ extension to use this function.
 
-See also: 'sharing_'.
+See also: 'sharing'' and 'sharing_'.
 -}
 sharing ::
+  forall α α' a r.
+  Mut α a %1 ->
+  (forall β. Share (β /\ α) a -> BO (β /\ α') r) %1 ->
+  BO α' (r, Mut α a)
+{-# INLINE sharing #-}
+sharing v k = sharing' v (\mut -> k mut Control.<&> \a _ -> a)
+
+{- | Executes an operation on 'Share'd borrow in sub lifetime.
+You may need @-XImpredicativeTypes@ extension to use this function.
+
+See also: 'sharing' and 'sharing_'.
+-}
+sharing' ::
   Mut α a %1 ->
   (forall β. Share (β /\ α) a -> BO (β /\ α') (End β -> r)) %1 ->
   BO α' (r, Mut α a)
-{-# INLINE sharing #-}
-sharing v k = DataFlow.do
+{-# INLINE sharing' #-}
+sharing' v k = DataFlow.do
   (lin, v) <- withLinearly v
   scope lin \_ ->
     DataFlow.do
@@ -149,11 +164,11 @@ sharing v k = DataFlow.do
       share v & \(Ur v) -> Control.do
         k v Control.<&> \v end -> (v (upcast end), reclaim lend (upcast end))
 
-reborrowing ::
+reborrowing' ::
   Mut α a %1 ->
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') (End β -> r)) %1 ->
   BO α' (r, Mut α a)
-reborrowing mutα k = DataFlow.do
+reborrowing' mutα k = DataFlow.do
   (lin, v) <- withLinearly mutα
   scope lin \(Proxy :: Proxy β) -> DataFlow.do
     (v, lend) <- reborrow v
@@ -161,11 +176,17 @@ reborrowing mutα k = DataFlow.do
       v <- k v
       Control.pure $ \end -> (v (upcast end), reclaim lend (upcast end))
 
-reborrowing_ ::
+reborrowing ::
   Mut α a %1 ->
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
   BO α' (r, Mut α a)
-reborrowing_ mutα k = reborrowing mutα (\mut -> k mut Control.<&> \a _ -> a)
+reborrowing mutα k = reborrowing' mutα (\mut -> k mut Control.<&> \a _ -> a)
+
+reborrowing_ ::
+  Mut α a %1 ->
+  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') ()) %1 ->
+  BO α' (Mut α a)
+reborrowing_ mutα k = reborrowing mutα k Control.<&> \((), a) -> a
 
 -- | Modifies linear resources in-place, together with results.
 modifyBO ::

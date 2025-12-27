@@ -212,7 +212,7 @@ modifyBO v lin k = DataFlow.do
   runBO lin Control.do
     let %1 !(mut, lend) = borrow v lin'
     r <- k mut
-    Control.pure $ undefined r (reclaim lend)
+    Control.pure \end -> (r, reclaim lend end)
 
 -- | Modifies linear resources in-place, without results.
 modifyBO_ ::
@@ -224,8 +224,8 @@ modifyBO_ v lin k = DataFlow.do
   (lin, lin') <- dup lin
   runBO lin Control.do
     let %1 !(mut, lend) = borrow v lin'
-    r <- k mut
-    Control.pure $ undefined r (reclaim lend)
+    k mut
+    Control.pure $ reclaim lend
 
 -- | Modifies linear resources in-place, together with results.
 modifyLinearOnlyBO ::
@@ -238,7 +238,7 @@ modifyLinearOnlyBO v k = DataFlow.do
   runBO lin Control.do
     let %1 !(mut, lend) = borrowLinearOnly v
     r <- k mut
-    Control.pure $ undefined r (reclaim lend)
+    Control.pure \end -> (r, reclaim lend end)
 
 -- | Modifies linear resources in-place, together with results.
 modifyLinearOnlyBO_ ::
@@ -250,8 +250,8 @@ modifyLinearOnlyBO_ v k = DataFlow.do
   (lin, v) <- withLinearly v
   runBO lin Control.do
     let %1 !(mut, lend) = borrowLinearOnly v
-    r <- k mut
-    Control.pure $ undefined r (reclaim lend)
+    k mut
+    Control.pure $ reclaim lend
 
 withLinearlyBO :: (Linearly %1 -> BO α r) %1 -> BO α r
 {-# INLINE withLinearlyBO #-}

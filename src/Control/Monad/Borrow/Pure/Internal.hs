@@ -49,6 +49,7 @@ import Data.Ord qualified as Ord
 import Data.Ref.Linear (Ref)
 import Data.Semigroup qualified as Sem
 import Data.Tuple (Solo (..))
+import Data.Type.Equality ((:~:) (Refl))
 import Data.Vector.Mutable.Linear (Vector)
 import Data.Word
 import GHC.Base (TYPE)
@@ -75,6 +76,18 @@ data ForBO α
 
 -- Morally an ST Monad, but linear!
 newtype BO α a = BO (State# (ForBO α) %1 -> (# State# (ForBO α), a #))
+
+assocRBO :: BO ((α /\ β) /\ γ) a %1 -> BO (α /\ (β /\ γ)) a
+{-# INLINE assocRBO #-}
+assocRBO = Unsafe.coerce
+
+assocLBO :: BO (α /\ (β /\ γ)) a %1 -> BO ((α /\ β) /\ γ) a
+{-# INLINE assocLBO #-}
+assocLBO = Unsafe.coerce
+
+assocBOEq :: forall α β γ a. BO ((α /\ β) /\ γ) a :~: BO (α /\ (β /\ γ)) a
+{-# INLINE assocBOEq #-}
+assocBOEq = Unsafe.coerce $ Refl @(BO (α /\ β /\ γ) a)
 
 instance Data.Functor (BO α) where
   fmap f (BO g) = BO \s -> case g s of
@@ -207,6 +220,40 @@ type Borrow bk α = Alias ('Borrow bk α)
 -- | Mutable borrower, which is affine and can update the data
 type Mut :: Lifetime -> Type -> Type
 type Mut α = Borrow 'Mut α
+
+assocBorrowR ::
+  Borrow bk ((α /\ β) /\ γ) a %1 ->
+  Borrow bk (α /\ (β /\ γ)) a
+{-# INLINE assocBorrowR #-}
+assocBorrowR = coerceLin
+
+assocBorrowL ::
+  Borrow bk (α /\ (β /\ γ)) a %1 ->
+  Borrow bk ((α /\ β) /\ γ) a
+{-# INLINE assocBorrowL #-}
+assocBorrowL = coerceLin
+
+assocBorrowEq ::
+  forall bk α β γ a.
+  (Borrow bk ((α /\ β) /\ γ) a) :~: (Borrow bk (α /\ (β /\ γ)) a)
+{-# INLINE assocBorrowEq #-}
+assocBorrowEq = Unsafe.coerce $ Refl @(Borrow bk (α /\ β /\ γ) a)
+
+assocLendR ::
+  Lend ((α /\ β) /\ γ) a %1 ->
+  Lend (α /\ (β /\ γ)) a
+{-# INLINE assocLendR #-}
+assocLendR = coerceLin
+
+assocLendL ::
+  Lend (α /\ (β /\ γ)) a %1 ->
+  Lend ((α /\ β) /\ γ) a
+{-# INLINE assocLendL #-}
+assocLendL = coerceLin
+
+assocLendEq :: forall α β γ a. (Lend ((α /\ β) /\ γ) a) :~: (Lend (α /\ (β /\ γ)) a)
+{-# INLINE assocLendEq #-}
+assocLendEq = Unsafe.coerce $ Refl @(Lend (α /\ β /\ γ) a)
 
 instance LinearOnly (Mut α a) where
   linearOnly = UnsafeLinearOnly

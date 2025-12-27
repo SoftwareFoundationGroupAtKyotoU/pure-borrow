@@ -65,6 +65,19 @@ module Control.Monad.Borrow.Pure (
   splitPair,
   splitEither,
 
+  -- ** Misc Utilities
+
+  -- *** Manual lifetime reassociation
+  assocRBO,
+  assocLBO,
+  assocBOEq,
+  assocBorrowL,
+  assocBorrowR,
+  assocBorrowEq,
+  assocLendL,
+  assocLendR,
+  assocLendEq,
+
   -- * References
   module Control.Monad.Borrow.Pure.Ref,
 

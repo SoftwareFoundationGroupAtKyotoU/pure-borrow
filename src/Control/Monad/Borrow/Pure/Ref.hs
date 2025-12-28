@@ -21,14 +21,13 @@ import Control.Monad.Borrow.Pure.Lifetime
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Ref.Linear (Ref)
 import Data.Ref.Linear qualified as Ref
-import GHC.Base (noinline)
 import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
 updateRef :: (β <= α) => (a %1 -> BO β (b, a)) %1 -> Mut α (Ref a) %1 -> BO β (b, Mut α (Ref a))
-{-# NOINLINE updateRef #-}
-updateRef = noinline \f (UnsafeAlias mv) -> DataFlow.do
+{-# INLINE updateRef #-}
+updateRef f (UnsafeAlias mv) = DataFlow.do
   -- NOTE: as there is only one reference to @'Ref' a@, we can just use read/write
   -- instead of 'MutVar.atomicModify' (which requires pure function) while retaining atomicity.
   (a, mv) <- Ref.unsafeReadRef mv
@@ -49,6 +48,6 @@ swapRef ma ma' =
     Control.pure (ma, a)
 
 readSharedRef :: (β <= α) => Share α (Ref a) %1 -> BO β (Share α a)
-{-# NOINLINE readSharedRef #-}
-readSharedRef = noinline $ Unsafe.toLinear \(UnsafeAlias mv) ->
+{-# INLINE readSharedRef #-}
+readSharedRef = Unsafe.toLinear \(UnsafeAlias mv) ->
   Control.pure $ UnsafeAlias NonLinear.$ NonLinear.fst $ Ref.unsafeReadRef mv

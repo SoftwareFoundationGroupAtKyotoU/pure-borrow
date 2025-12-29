@@ -35,7 +35,9 @@ data Linearly = UnsafeLinearly
 
 linearly :: (Movable a) => (Linearly %1 -> a) %1 -> Ur a
 {-# NOINLINE linearly #-}
-linearly = GHC.noinline \f -> move (f UnsafeLinearly)
+linearly = GHC.noinline \f ->
+  case move (f UnsafeLinearly) of
+    Ur !x -> Ur x
 
 data LinearOnlyWitness a = UnsafeLinearOnly
 

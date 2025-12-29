@@ -257,4 +257,5 @@ withLinearlyBO :: (Linearly %1 -> BO α r) %1 -> BO α r
 {-# INLINE withLinearlyBO #-}
 withLinearlyBO k = Control.do
   lin <- askLinearly
-  k lin
+  !a <- k lin
+  Control.pure a

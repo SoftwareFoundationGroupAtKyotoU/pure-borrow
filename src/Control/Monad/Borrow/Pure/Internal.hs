@@ -66,8 +66,8 @@ import System.IO.Linear qualified as L
 import Unsafe.Linear qualified as Unsafe
 
 askLinearly :: BO α Linearly
-{-# INLINE askLinearly #-}
-askLinearly = Control.pure UnsafeLinearly
+{-# NOINLINE askLinearly #-}
+askLinearly = GHC.noinline $ Control.pure UnsafeLinearly
 
 -- NOTE: We want to use `TypeData` extension for 'ForBO', but it makes Haddock panic!
 

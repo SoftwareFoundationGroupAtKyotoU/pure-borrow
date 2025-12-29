@@ -298,14 +298,14 @@ instance (α <= β, a <: b) => Lend α a <: Lend β b where
 -- | Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim' the resource to lend at the 'End' of the lifetime.
 borrow :: a %1 -> Linearly %1 -> (Mut α a, Lend α a)
 {-# NOINLINE borrow #-}
-borrow = GHC.noinline $ Unsafe.toLinear \ !a !lin ->
-  lin `lseq` (UnsafeAlias a, UnsafeAlias a)
+borrow = GHC.noinline $ Unsafe.toLinear2 \ !a !_ ->
+  (UnsafeAlias a, UnsafeAlias a)
 
 -- | Analogous to 'borrow', but does not return the original 'Lend' to be reclaimed
 borrow_ :: a %1 -> Linearly %1 -> Mut α a
 {-# NOINLINE borrow_ #-}
-borrow_ = GHC.noinline $ Unsafe.toLinear \ !a lin ->
-  lin `lseq` UnsafeAlias a
+borrow_ = GHC.noinline $ Unsafe.toLinear2 \ !a !_ ->
+  UnsafeAlias a
 
 -- | Shares a mutable borrow, invalidating the original one.
 share :: Borrow k α a %1 -> Ur (Share α a)

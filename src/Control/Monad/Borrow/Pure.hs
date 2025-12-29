@@ -237,7 +237,7 @@ modifyLinearOnlyBO v k = DataFlow.do
   (lin, v) <- withLinearly v
   runBO lin Control.do
     let %1 !(mut, lend) = borrowLinearOnly v
-    r <- k mut
+    !r <- k mut
     Control.pure \end -> (r, reclaim lend end)
 
 -- | Modifies linear resources in-place, together with results.

@@ -298,28 +298,28 @@ instance (α <= β, a <: b) => Lend α a <: Lend β b where
 -- | Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim' the resource to lend at the 'End' of the lifetime.
 borrow :: a %1 -> Linearly %1 -> (Mut α a, Lend α a)
 {-# NOINLINE borrow #-}
-borrow = GHC.noinline $ Unsafe.toLinear \a lin ->
+borrow = GHC.noinline $ Unsafe.toLinear \ !a lin ->
   lin `lseq` (UnsafeAlias a, UnsafeAlias a)
 
 -- | Analogous to 'borrow', but does not return the original 'Lend' to be reclaimed
 borrow_ :: a %1 -> Linearly %1 -> Mut α a
 {-# NOINLINE borrow_ #-}
-borrow_ = GHC.noinline $ Unsafe.toLinear \(a :: a) lin ->
+borrow_ = GHC.noinline $ Unsafe.toLinear \ !a lin ->
   lin `lseq` UnsafeAlias a
 
 -- | Shares a mutable borrow, invalidating the original one.
 share :: Borrow k α a %1 -> Ur (Share α a)
 {-# INLINE share #-}
-share = Unsafe.toLinear \(UnsafeAlias a) -> Ur (UnsafeAlias a)
+share = Unsafe.toLinear \(UnsafeAlias !a) -> Ur (UnsafeAlias a)
 
 -- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
 reclaim :: Lend α a %1 -> End α -> a
 {-# NOINLINE reclaim #-}
-reclaim = GHC.noinline \(UnsafeAlias a) !_ -> a
+reclaim = GHC.noinline \(UnsafeAlias !a) !_ -> a
 
 -- | Reborrow a mutable borrow into a sublifetime
 reborrow :: (β <= α) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
-reborrow = Unsafe.toLinear \mutA ->
+reborrow = Unsafe.toLinear \ !mutA ->
   (Data.Coerce.coerce mutA, Data.Coerce.coerce mutA)
 
 -- | Collapse a borrower to a mutable borrower
@@ -413,8 +413,8 @@ instance
   {-# INLINE gdistributeAlias #-}
   gdistributeAlias !(UnsafeAlias !(f :*: g)) =
     DataFlow.do
-      f <- gdistributeAlias $ UnsafeAlias f
-      g <- gdistributeAlias $ UnsafeAlias g
+      !f <- gdistributeAlias $ UnsafeAlias f
+      !g <- gdistributeAlias $ UnsafeAlias g
       f :*: g
 
 instance
@@ -425,8 +425,8 @@ instance
   where
   {-# INLINE gdistributeAlias #-}
   gdistributeAlias (UnsafeAlias x) = case x of
-    L1 l -> L1 (gdistributeAlias (UnsafeAlias l))
-    R1 r -> R1 (gdistributeAlias (UnsafeAlias r))
+    L1 !l -> L1 (gdistributeAlias (UnsafeAlias l))
+    R1 !r -> R1 (gdistributeAlias (UnsafeAlias r))
 
 instance
   (Unsatisfiable (Text "Nonlinear fields cannot distribute borrows!")) =>
@@ -457,12 +457,12 @@ instance
   GDistributeAlias (f :.: g)
   where
   {-# INLINE gdistributeAlias #-}
-  gdistributeAlias (UnsafeAlias (Comp1 fg)) =
+  gdistributeAlias (UnsafeAlias (Comp1 !fg)) =
     Comp1 $ Data.fmap split_ $ split_ $ UnsafeAlias fg
 
 instance GDistributeAlias Par1 where
   {-# INLINE gdistributeAlias #-}
-  gdistributeAlias (UnsafeAlias (Par1 a)) = Par1 (UnsafeAlias a)
+  gdistributeAlias (UnsafeAlias (Par1 !a)) = Par1 (UnsafeAlias a)
 
 instance
   (Unsatisfiable (Text "A type containing non-parametric field with type `" :<>: ShowType c :<>: Text "', which cannot be safely splitted!")) =>

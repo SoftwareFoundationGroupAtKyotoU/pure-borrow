@@ -131,7 +131,8 @@ scope = flip srunBO
 
 -- | A variant of 'borrow' that obtains 'Linearly' viar 'LinearOnly'.
 borrowLinearOnly :: (LinearOnly a) => a %1 -> (Mut α a, Lend α a)
-borrowLinearOnly = uncurry (flip borrow) . withLinearly
+borrowLinearOnly !a = case withLinearly a of
+  (!lin, !a) -> borrow a lin
 
 {- | Executes an operation on 'Share'd borrow in sub lifetime.
 You may need @-XImpredicativeTypes@ extension to use this function.

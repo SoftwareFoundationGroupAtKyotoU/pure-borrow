@@ -25,7 +25,7 @@ data Mode = Parallel Word | Worksteal Int | Sequential | IntroSort
 qsortWith :: Mode -> V.Vector Int -> V.Vector Int
 qsortWith IntroSort v = V.modify AI.sort v
 qsortWith (Parallel budget) v =
-  unur PL.$ unur PL.$ linearly \lin ->
+  unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2, l3) <- dup3 lin
       runBO lin Control.do
@@ -33,7 +33,7 @@ qsortWith (Parallel budget) v =
         VL.qsort budget v
         Control.pure PL.$ \end -> VL.toVector (reclaim lend end)
 qsortWith Sequential v =
-  unur PL.$ unur PL.$ linearly \lin ->
+  unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2, l3) <- dup3 lin
       runBO lin Control.do
@@ -41,7 +41,7 @@ qsortWith Sequential v =
         VL.qsort 0 v
         Control.pure PL.$ \end -> VL.toVector (reclaim lend end)
 qsortWith (Worksteal p) v =
-  unur PL.$ unur PL.$ linearly \lin ->
+  unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2, l3) <- dup3 lin
       runBO lin Control.do

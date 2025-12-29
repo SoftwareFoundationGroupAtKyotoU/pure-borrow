@@ -58,7 +58,7 @@ optionsP numCap = Opts.info (p <**> Opts.helper) $ Opts.progDesc "Parallel quick
 qsortWith :: Mode -> V.Vector Int -> V.Vector Int
 qsortWith IntroSort v = V.modify AI.sort v
 qsortWith (Parallel bud) v =
-  unur PL.$ unur PL.$ linearly \lin ->
+  unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2, l3) <- dup3 lin
       runBO lin Control.do
@@ -66,7 +66,7 @@ qsortWith (Parallel bud) v =
         VL.qsort bud v
         Control.pure PL.$ \end -> VL.toVector (reclaim lend end)
 qsortWith Sequential v =
-  unur PL.$ unur PL.$ linearly \lin ->
+  unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2, l3) <- dup3 lin
       runBO lin Control.do
@@ -74,7 +74,7 @@ qsortWith Sequential v =
         VL.qsort 0 v
         Control.pure PL.$ \end -> VL.toVector (reclaim lend end)
 qsortWith (Worksteal workers thresh) v =
-  unur PL.$ unur PL.$ linearly \lin ->
+  unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2, l3) <- dup3 lin
       runBO lin Control.do

@@ -46,6 +46,7 @@ class LinearOnly a where
   linearOnly :: LinearOnlyWitness a
 
 withLinearly :: (LinearOnly a) => a %1 -> (Linearly, a)
+{-# NOINLINE withLinearly #-}
 withLinearly !a = (UnsafeLinearly, a)
 
 withLinearly# :: forall (a :: UnliftedType). (LinearOnly a) => a %1 -> (# Linearly, a #)

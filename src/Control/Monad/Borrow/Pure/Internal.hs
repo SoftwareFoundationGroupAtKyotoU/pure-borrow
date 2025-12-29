@@ -79,11 +79,11 @@ newtype BO α a = BO (State# (ForBO α) %1 -> (# State# (ForBO α), a #))
 
 assocRBO :: BO ((α /\ β) /\ γ) a %1 -> BO (α /\ (β /\ γ)) a
 {-# INLINE assocRBO #-}
-assocRBO = Unsafe.coerce
+assocRBO = unsafeCastBO
 
 assocLBO :: BO (α /\ (β /\ γ)) a %1 -> BO ((α /\ β) /\ γ) a
 {-# INLINE assocLBO #-}
-assocLBO = Unsafe.coerce
+assocLBO = unsafeCastBO
 
 assocBOEq :: forall α β γ a. BO ((α /\ β) /\ γ) a :~: BO (α /\ (β /\ γ)) a
 {-# INLINE assocBOEq #-}
@@ -136,7 +136,7 @@ execBO (BO f) !now =
 
 dropState# :: State# a %1 -> ()
 {-# INLINE dropState# #-}
-dropState# = Unsafe.toLinear \_ -> ()
+dropState# = Unsafe.toLinear \ !_ -> ()
 
 -- | See also 'scope'.
 sexecBO :: BO (α /\ β) a %1 -> Now α %1 -> BO β (Now α, a)
@@ -309,8 +309,8 @@ borrow_ = GHC.noinline $ Unsafe.toLinear \ !a lin ->
 
 -- | Shares a mutable borrow, invalidating the original one.
 share :: Borrow k α a %1 -> Ur (Share α a)
-{-# INLINE share #-}
-share = Unsafe.toLinear \(UnsafeAlias !a) -> Ur (UnsafeAlias a)
+{-# NOINLINE share #-}
+share = GHC.noinline $ Unsafe.toLinear \(UnsafeAlias !a) -> Ur (UnsafeAlias a)
 
 -- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
 reclaim :: Lend α a %1 -> End α -> a
@@ -319,7 +319,8 @@ reclaim = GHC.noinline \(UnsafeAlias !a) !_ -> a
 
 -- | Reborrow a mutable borrow into a sublifetime
 reborrow :: (β <= α) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
-reborrow = Unsafe.toLinear \ !mutA ->
+{-# NOINLINE reborrow #-}
+reborrow = GHC.noinline $ Unsafe.toLinear \ !mutA ->
   (Data.Coerce.coerce mutA, Data.Coerce.coerce mutA)
 
 -- | Collapse a borrower to a mutable borrower

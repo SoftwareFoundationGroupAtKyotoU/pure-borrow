@@ -588,6 +588,11 @@ deriving via
     (Copyable a) => Copyable (Product a)
 
 deriving via
+  Generically [a]
+  instance
+    (Copyable a) => Copyable [a]
+
+deriving via
   Generically (Sem.Max a)
   instance
     (Copyable a) => Copyable (Sem.Max a)

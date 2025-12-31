@@ -33,16 +33,15 @@ newRef# :: a %1 -> Linearly %1 -> Ref# a
 newRef# = GHC.noinline $ Unsafe.toLinear $ \a lin ->
   lin
     `lseq#` GHC.runRW# \s ->
-      case GHC.newMutVar# a (noDuplicate# s) of
+      case GHC.newMutVar# a s of
         (# !_, !v #) -> Ref# v
 
 -- | This is unsafe, because the ownership of 'a' is duplicated
 unsafeReadRef# :: Ref# a %1 -> (# a, Ref# a #)
-{-# NOINLINE unsafeReadRef# #-}
 unsafeReadRef# = GHC.noinline $ Unsafe.toLinear \(Ref# !mv) ->
   runRW# \s ->
     case GHC.readMutVar# mv s of
-      (# _, !a #) -> (# a, Ref# mv #)
+      (# !_, !a #) -> (# a, Ref# mv #)
 
 -- | This is unsafe, because the ownership of original 'a' is dropped
 unsafeWriteRef# :: Ref# a %1 -> a %1 -> Ref# a

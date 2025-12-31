@@ -299,30 +299,25 @@ instance (α <= β, a <: b) => Lend α a <: Lend β b where
 
 -- | Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim' the resource to lend at the 'End' of the lifetime.
 borrow :: a %1 -> Linearly %1 -> (Mut α a, Lend α a)
-{-# NOINLINE borrow #-}
-borrow = GHC.noinline $ Unsafe.toLinear2 \ !a !_ ->
+borrow = Unsafe.toLinear2 \ !a !_ ->
   (UnsafeAlias a, UnsafeAlias a)
 
 -- | Analogous to 'borrow', but does not return the original 'Lend' to be reclaimed
 borrow_ :: a %1 -> Linearly %1 -> Mut α a
-{-# NOINLINE borrow_ #-}
-borrow_ = GHC.noinline $ Unsafe.toLinear2 \ !a !_ ->
+borrow_ = Unsafe.toLinear2 \ !a !_ ->
   UnsafeAlias a
 
 -- | Shares a mutable borrow, invalidating the original one.
 share :: Borrow k α a %1 -> Ur (Share α a)
-{-# NOINLINE share #-}
-share = GHC.noinline $ Unsafe.toLinear \(UnsafeAlias !a) -> Ur (UnsafeAlias a)
+share = Unsafe.toLinear \(UnsafeAlias !a) -> Ur (UnsafeAlias a)
 
 -- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
 reclaim :: Lend α a %1 -> End α -> a
-{-# NOINLINE reclaim #-}
-reclaim = GHC.noinline \(UnsafeAlias !a) !_ -> a
+reclaim = \(UnsafeAlias !a) !_ -> a
 
 -- | Reborrow a mutable borrow into a sublifetime
 reborrow :: (β <= α) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
-{-# NOINLINE reborrow #-}
-reborrow = GHC.noinline $ Unsafe.toLinear \ !mutA ->
+reborrow = Unsafe.toLinear \ !mutA ->
   (Data.Coerce.coerce mutA, Data.Coerce.coerce mutA)
 
 -- | Collapse a borrower to a mutable borrower

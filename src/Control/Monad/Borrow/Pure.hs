@@ -235,8 +235,7 @@ modifyLinearOnlyBO ::
   a %1 ->
   (forall α. Mut α a %1 -> BO α r) %1 ->
   (r, a)
-{-# NOINLINE modifyLinearOnlyBO #-}
-modifyLinearOnlyBO = noinline \v k -> DataFlow.do
+modifyLinearOnlyBO v k = DataFlow.do
   (lin, v) <- withLinearly v
   runBO lin Control.do
     let %1 !(mut, lend) = borrowLinearOnly v
@@ -249,8 +248,7 @@ modifyLinearOnlyBO_ ::
   a %1 ->
   (forall α. Mut α a %1 -> BO α ()) %1 ->
   a
-{-# NOINLINE modifyLinearOnlyBO_ #-}
-modifyLinearOnlyBO_ = noinline \v k -> DataFlow.do
+modifyLinearOnlyBO_ v k = DataFlow.do
   (lin, v) <- withLinearly v
   runBO lin Control.do
     let %1 !(mut, lend) = borrowLinearOnly v

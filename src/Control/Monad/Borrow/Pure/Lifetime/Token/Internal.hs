@@ -19,7 +19,7 @@ import Control.Monad.Borrow.Pure.Lifetime.Internal
 import Data.Coerce.Directed (SubtypeWitness (UnsafeSubtype), type (<:) (..))
 import Data.Kind (Constraint)
 import Data.Unrestricted.Linear
-import GHC.Base (TYPE, UnliftedType)
+import GHC.Base (TYPE, UnliftedType, noinline)
 import GHC.Exts qualified as GHC
 import GHC.Stack (HasCallStack)
 
@@ -33,11 +33,11 @@ data End (α :: Lifetime) = UnsafeEnd
 
 data Linearly = UnsafeLinearly
 
-linearly :: (Movable a) => (Linearly %1 -> a) %1 -> Ur a
+linearly :: (Movable a) => (Linearly %1 -> a) %1 -> a
 {-# NOINLINE linearly #-}
 linearly = GHC.noinline \f ->
   case move (f UnsafeLinearly) of
-    Ur !x -> Ur x
+    Ur !x -> x
 
 data LinearOnlyWitness a = UnsafeLinearOnly
 
@@ -46,10 +46,11 @@ class LinearOnly a where
   linearOnly :: LinearOnlyWitness a
 
 withLinearly :: (LinearOnly a) => a %1 -> (Linearly, a)
-withLinearly !a = (UnsafeLinearly, a)
+{-# NOINLINE withLinearly #-}
+withLinearly = noinline \ !a -> (UnsafeLinearly, a)
 
 withLinearly# :: forall (a :: UnliftedType). (LinearOnly a) => a %1 -> (# Linearly, a #)
-withLinearly# !a = (# UnsafeLinearly, a #)
+withLinearly# = noinline \ !a -> (# UnsafeLinearly, a #)
 
 instance LinearOnly Linearly where
   linearOnly = UnsafeLinearOnly
@@ -60,8 +61,8 @@ instance Consumable Linearly where
   {-# INLINE consume #-}
 
 instance Dupable Linearly where
-  dup2 = \UnsafeLinearly -> (UnsafeLinearly, UnsafeLinearly)
-  {-# INLINE dup2 #-}
+  dup2 = GHC.noinline \UnsafeLinearly -> (UnsafeLinearly, UnsafeLinearly)
+  {-# NOINLINE dup2 #-}
 
 instance Affine (Now α) where
   aff UnsafeNow = UnsafeAff UnsafeNow

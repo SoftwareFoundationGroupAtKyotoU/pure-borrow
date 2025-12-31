@@ -13,6 +13,7 @@ module Control.Monad.Borrow.Pure.Ref (
   modifyRef,
   swapRef,
   readSharedRef,
+  copyRef,
 ) where
 
 import Control.Functor.Linear qualified as Control
@@ -30,9 +31,9 @@ updateRef :: (β <= α) => (a %1 -> BO β (b, a)) %1 -> Mut α (Ref a) %1 -> BO 
 updateRef f (UnsafeAlias mv) = DataFlow.do
   -- NOTE: as there is only one reference to @'Ref' a@, we can just use read/write
   -- instead of 'MutVar.atomicModify' (which requires pure function) while retaining atomicity.
-  (a, mv) <- Ref.unsafeReadRef mv
+  (!a, !mv) <- Ref.unsafeReadRef mv
   f a Control.<&> \(!b, !a) -> DataFlow.do
-    mv <- Ref.unsafeWriteRef mv a
+    !mv <- Ref.unsafeWriteRef mv a
     (b, UnsafeAlias mv)
 
 modifyRef :: (β <= α) => (a %1 -> a) %1 -> Mut α (Ref a) %1 -> BO β (Mut α (Ref a))
@@ -43,11 +44,18 @@ modifyRef f ma = Control.do
 swapRef :: (β <= α) => Mut α (Ref a) %1 -> Mut α (Ref a) %1 -> BO β (Mut α (Ref a), Mut α (Ref a))
 {-# INLINE swapRef #-}
 swapRef ma ma' =
-  flip updateRef ma' \a' -> Control.do
-    (a, ma) <- updateRef (\a -> Control.pure (a, a')) ma
+  flip updateRef ma' \ !a' -> Control.do
+    (a, ma) <- updateRef (\ !a -> Control.pure (a, a')) ma
     Control.pure (ma, a)
 
-readSharedRef :: (β <= α) => Share α (Ref a) %1 -> BO β (Share α a)
+readSharedRef :: (β <= α) => Share α (Ref a) %1 -> BO β (Ur (Share α a))
 {-# INLINE readSharedRef #-}
 readSharedRef = Unsafe.toLinear \(UnsafeAlias mv) ->
-  Control.pure $ UnsafeAlias NonLinear.$ NonLinear.fst $ Ref.unsafeReadRef mv
+  Control.pure $ Ur $! UnsafeAlias NonLinear.$! NonLinear.fst $! Ref.unsafeReadRef mv
+
+copyRef :: (Copyable a) => Borrow k α (Ref a) %1 -> BO α a
+{-# INLINE copyRef #-}
+copyRef bor =
+  share bor & \(Ur bor) -> Control.do
+    Ur !shr <- readSharedRef bor
+    Control.pure $! copy shr

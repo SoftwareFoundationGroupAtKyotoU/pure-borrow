@@ -94,6 +94,7 @@ import Control.Monad.Borrow.Pure.Ref
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce.Directed (upcast)
 import Data.Proxy (Proxy (..))
+import GHC.Exts (noinline)
 import Prelude.Linear
 
 runBO :: Linearly %1 -> (forall α. BO α (End α -> a)) %1 -> a
@@ -131,7 +132,8 @@ scope = flip srunBO
 
 -- | A variant of 'borrow' that obtains 'Linearly' viar 'LinearOnly'.
 borrowLinearOnly :: (LinearOnly a) => a %1 -> (Mut α a, Lend α a)
-borrowLinearOnly = uncurry (flip borrow) . withLinearly
+borrowLinearOnly !a = case withLinearly a of
+  (!lin, !a) -> borrow a lin
 
 {- | Executes an operation on 'Share'd borrow in sub lifetime.
 You may need @-XImpredicativeTypes@ extension to use this function.
@@ -237,7 +239,7 @@ modifyLinearOnlyBO v k = DataFlow.do
   (lin, v) <- withLinearly v
   runBO lin Control.do
     let %1 !(mut, lend) = borrowLinearOnly v
-    r <- k mut
+    !r <- k mut
     Control.pure \end -> (r, reclaim lend end)
 
 -- | Modifies linear resources in-place, together with results.

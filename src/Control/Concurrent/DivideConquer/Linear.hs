@@ -246,10 +246,20 @@ instance Data.Traversable Pair where
 
 qsortDC ::
   (Ord a, Copyable a) =>
+  -- | The # of workers
+  Int ->
+  -- | Threshold for the length of vector to switch to sequential sort
+  Int ->
+  Mut α (LV.Vector a) %1 ->
+  BO α ((), Mut α (LV.Vector a))
+qsortDC nwork thresh = divideAndConquer nwork (qsortDC' thresh)
+
+qsortDC' ::
+  (Ord a, Copyable a) =>
   -- | Threshold for the length of vector to switch to sequential sort
   Int ->
   DivideConquer α Pair (LV.Vector a) ()
-qsortDC thresh =
+qsortDC' thresh =
   DivideConquer
     { divide = \vs ->
         case LV.size vs of

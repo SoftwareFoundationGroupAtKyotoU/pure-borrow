@@ -47,7 +47,7 @@ swapRef ma ma' =
     (a, ma) <- updateRef (\ !a -> Control.pure (a, a')) ma
     Control.pure (ma, a)
 
-readSharedRef :: (β <= α) => Share α (Ref a) %1 -> BO β (Share α a)
+readSharedRef :: (β <= α) => Share α (Ref a) %1 -> BO β (Ur (Share α a))
 {-# INLINE readSharedRef #-}
 readSharedRef = Unsafe.toLinear \(UnsafeAlias mv) ->
-  Control.pure $ UnsafeAlias NonLinear.$ NonLinear.fst $ Ref.unsafeReadRef mv
+  Control.pure $ Ur $! UnsafeAlias NonLinear.$! NonLinear.fst $! Ref.unsafeReadRef mv

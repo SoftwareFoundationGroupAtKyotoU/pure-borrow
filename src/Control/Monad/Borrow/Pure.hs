@@ -17,7 +17,6 @@ module Control.Monad.Borrow.Pure (
   sexecBO,
   scope_,
   srunBO,
-  scope,
   askLinearly,
   withLinearlyBO,
 
@@ -119,16 +118,13 @@ scope_ :: Now α %1 -> BO (α /\ β) a %1 -> BO β (Now α, a)
 {-# INLINE scope_ #-}
 scope_ = flip sexecBO
 
-srunBO :: (forall α. Proxy α -> BO (α /\ β) (End α -> a)) %1 -> Linearly %1 -> BO β a
+srunBO :: (forall α. Proxy α -> BO (α /\ β) (End α -> a)) %1 -> BO β a
 {-# INLINE srunBO #-}
-srunBO bo lin =
+srunBO bo = withLinearlyBO \lin ->
   newLifetime' lin \now -> Control.do
     (now, f) <- sexecBO (bo Proxy) now
     Ur end <- Control.pure (endLifetime now)
     Control.pure (f end)
-
-scope :: Linearly %1 -> (forall α. Proxy α -> BO (α /\ β) (End α -> a)) %1 -> BO β a
-scope = flip srunBO
 
 -- | A variant of 'borrow' that obtains 'Linearly' viar 'LinearOnly'.
 borrowLinearOnly :: (LinearOnly a) => a %1 -> (Mut α a, Lend α a)
@@ -172,8 +168,7 @@ sharing' ::
   BO α' (r, Mut α a)
 {-# INLINE sharing' #-}
 sharing' v k = DataFlow.do
-  (lin, v) <- withLinearly v
-  scope lin \_ ->
+  srunBO \_ ->
     DataFlow.do
       (v, lend) <- reborrow v
       share v & \(Ur v) -> Control.do
@@ -183,9 +178,8 @@ reborrowing' ::
   Mut α a %1 ->
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') (End β -> r)) %1 ->
   BO α' (r, Mut α a)
-reborrowing' mutα k = DataFlow.do
-  (lin, v) <- withLinearly mutα
-  scope lin \(Proxy :: Proxy β) -> DataFlow.do
+reborrowing' v k = DataFlow.do
+  srunBO \(Proxy :: Proxy β) -> DataFlow.do
     (v, lend) <- reborrow v
     Control.do
       v <- k v

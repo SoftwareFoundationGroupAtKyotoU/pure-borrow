@@ -54,7 +54,7 @@ import Data.Vector.Mutable.Linear (Vector)
 import Data.Word
 import GHC.Base (TYPE)
 import GHC.Base qualified as GHC
-import GHC.Exts (State#, realWorld#)
+import GHC.Exts (State#, noDuplicate#, runRW#)
 import GHC.ST qualified as ST
 import GHC.TypeError (ErrorMessage (..))
 import Generics.Linear
@@ -63,6 +63,7 @@ import Prelude.Linear
 import Prelude.Linear qualified as PL
 import Prelude.Linear.Unsatisfiable (Unsatisfiable, unsatisfiable)
 import System.IO.Linear qualified as L
+import Unsafe.Coerce (unsafeCoerce#)
 import Unsafe.Linear qualified as Unsafe
 
 askLinearly :: BO α Linearly
@@ -126,7 +127,8 @@ unsafeBOToLinIO (BO f) = L.IO (Unsafe.coerce f)
 
 runBO# :: forall {rep} α (o :: TYPE rep). (State# (ForBO α) %1 -> o) %1 -> o
 {-# NOINLINE runBO# #-}
-runBO# f = Unsafe.coerce f realWorld#
+runBO# = GHC.noinline $ Unsafe.toLinear \f -> runRW# \s ->
+  f (noDuplicate# (unsafeCoerce# s))
 
 execBO :: BO α a %1 -> Now α %1 -> (Now α, a)
 {-# INLINE execBO #-}

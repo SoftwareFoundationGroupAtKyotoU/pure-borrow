@@ -94,6 +94,7 @@ import Control.Monad.Borrow.Pure.Ref
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce.Directed (upcast)
 import Data.Proxy (Proxy (..))
+import GHC.Exts (noinline)
 import Prelude.Linear
 
 runBO :: Linearly %1 -> (forall α. BO α (End α -> a)) %1 -> a
@@ -234,7 +235,8 @@ modifyLinearOnlyBO ::
   a %1 ->
   (forall α. Mut α a %1 -> BO α r) %1 ->
   (r, a)
-modifyLinearOnlyBO v k = DataFlow.do
+{-# NOINLINE modifyLinearOnlyBO #-}
+modifyLinearOnlyBO = noinline \v k -> DataFlow.do
   (lin, v) <- withLinearly v
   runBO lin Control.do
     let %1 !(mut, lend) = borrowLinearOnly v
@@ -247,7 +249,8 @@ modifyLinearOnlyBO_ ::
   a %1 ->
   (forall α. Mut α a %1 -> BO α ()) %1 ->
   a
-modifyLinearOnlyBO_ v k = DataFlow.do
+{-# NOINLINE modifyLinearOnlyBO_ #-}
+modifyLinearOnlyBO_ = noinline \v k -> DataFlow.do
   (lin, v) <- withLinearly v
   runBO lin Control.do
     let %1 !(mut, lend) = borrowLinearOnly v

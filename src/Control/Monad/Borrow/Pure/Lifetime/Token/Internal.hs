@@ -61,8 +61,8 @@ instance Consumable Linearly where
   {-# INLINE consume #-}
 
 instance Dupable Linearly where
-  dup2 = \UnsafeLinearly -> (UnsafeLinearly, UnsafeLinearly)
-  {-# INLINE dup2 #-}
+  dup2 = GHC.noinline \UnsafeLinearly -> (UnsafeLinearly, UnsafeLinearly)
+  {-# NOINLINE dup2 #-}
 
 instance Affine (Now α) where
   aff UnsafeNow = UnsafeAff UnsafeNow

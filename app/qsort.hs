@@ -79,7 +79,7 @@ qsortWith (Worksteal workers thresh) v =
       (lin, l2, l3) <- dup3 lin
       runBO lin Control.do
         (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
-        Control.void PL.$ divideAndConquer workers (qsortDC thresh) v
+        Control.void PL.$ qsortDC workers thresh v
         Control.pure PL.$ \end -> VL.toVector (reclaim lend end)
 
 main :: IO ()

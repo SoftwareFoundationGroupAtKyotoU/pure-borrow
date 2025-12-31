@@ -13,6 +13,7 @@ module Control.Monad.Borrow.Pure.Ref (
   modifyRef,
   swapRef,
   readSharedRef,
+  copyRef,
 ) where
 
 import Control.Functor.Linear qualified as Control
@@ -51,3 +52,10 @@ readSharedRef :: (β <= α) => Share α (Ref a) %1 -> BO β (Ur (Share α a))
 {-# INLINE readSharedRef #-}
 readSharedRef = Unsafe.toLinear \(UnsafeAlias mv) ->
   Control.pure $ Ur $! UnsafeAlias NonLinear.$! NonLinear.fst $! Ref.unsafeReadRef mv
+
+copyRef :: (Copyable a) => Borrow k α (Ref a) %1 -> BO α a
+{-# INLINE copyRef #-}
+copyRef bor =
+  share bor & \(Ur bor) -> Control.do
+    Ur !shr <- readSharedRef bor
+    Control.pure $! copy shr

@@ -61,6 +61,15 @@ instance Consumable Linearly where
   {-# INLINE consume #-}
 
 instance Dupable Linearly where
+  -- NOTE: without inlining, GHC optimizer (especially, full-laziness and demand analysis)
+  -- can eliminate duplicated 'Linearly's too eagerly, ruining the state-threading,
+  -- and result in resource corruption in some cases.
+  -- Such optimization can manifest when, for example, one duplicates 'Linearly'
+  -- tokens multiple times and feed them to different allocation functions.
+  -- Although we are not able to detect the exact situation, but we believe that
+  -- GHC optimizer then eliminates every invocation on bulk alloction functions
+  -- into a single one, which introduces unintended reuse of linear resources.
+  -- Hence, we must instruct GHC not to inline this function and force
   dup2 = GHC.noinline \UnsafeLinearly -> (UnsafeLinearly, UnsafeLinearly)
   {-# NOINLINE dup2 #-}
 

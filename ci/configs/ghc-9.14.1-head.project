@@ -6,6 +6,17 @@
 -- remote-repo: stackage-nightly-2026-01-02:http://www.stackage.org/nightly-2026-01-02
 import: ../../cabal.project
 with-compiler: ghc-9.14.1
+
+allow-newer:
+  template-haskell,
+  base,
+  containers,
+  ghc-bignum,
+  ghc,
+  time,
+  ghc-exactprint,
+  ghc-boot,
+
 constraints:
   abstract-deque ==0.3,
   abstract-deque-tests ==0.3,

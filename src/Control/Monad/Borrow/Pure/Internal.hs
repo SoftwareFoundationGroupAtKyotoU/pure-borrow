@@ -128,7 +128,7 @@ unsafeBOToLinIO (BO f) = L.IO (Unsafe.coerce f)
 runBO# :: forall {rep} α (o :: TYPE rep). (State# (ForBO α) %1 -> o) %1 -> o
 {-# NOINLINE runBO# #-}
 runBO# = GHC.noinline $ Unsafe.toLinear \f -> runRW# \s ->
-  f (noDuplicate# (unsafeCoerce# s))
+  f (unsafeCoerce# s)
 
 execBO :: BO α a %1 -> Now α %1 -> (Now α, a)
 {-# INLINE execBO #-}

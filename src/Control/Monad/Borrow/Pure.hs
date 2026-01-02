@@ -93,7 +93,6 @@ import Control.Monad.Borrow.Pure.Ref
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce.Directed (upcast)
 import Data.Proxy (Proxy (..))
-import GHC.Exts (noinline)
 import Prelude.Linear
 
 runBO :: Linearly %1 -> (forall α. BO α (End α -> a)) %1 -> a

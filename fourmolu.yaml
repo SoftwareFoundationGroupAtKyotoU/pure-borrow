@@ -6,3 +6,6 @@ diff-friendly-import-export: false
 respectful: false
 haddock-style: multi-line
 newlines-between-decls: 1
+fixities:
+  - infixr 0 $!
+  - infixr 0 $

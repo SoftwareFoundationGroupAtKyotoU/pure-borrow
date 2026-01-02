@@ -16,6 +16,7 @@ allow-newer:
   time,
   ghc-exactprint,
   ghc-boot,
+  falsify:optparse-applicative
 
 constraints:
   abstract-deque ==0.3,

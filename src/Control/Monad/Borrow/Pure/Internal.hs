@@ -578,6 +578,8 @@ instance GCopyable V1 where
 instance (GenericCopyable a) => Copyable (Generically a) where
   copy = Generically . genericCopyShare . unsafeMapAlias (\(Generically x) -> x)
 
+deriving via Generically () instance Copyable ()
+
 deriving via
   Generically (Sum a)
   instance

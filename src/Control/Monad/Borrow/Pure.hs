@@ -18,7 +18,8 @@ module Control.Monad.Borrow.Pure (
   scope_,
   srunBO,
   askLinearly,
-  withLinearlyBO,
+  asksLinearly,
+  asksLinearlyM,
 
   -- ** In-place modification with mutable borrows
   modifyBO,
@@ -119,7 +120,7 @@ scope_ = flip sexecBO
 
 srunBO :: (forall α. Proxy α -> BO (α /\ β) (End α -> a)) %1 -> BO β a
 {-# INLINE srunBO #-}
-srunBO bo = withLinearlyBO \lin ->
+srunBO bo = asksLinearlyM \lin ->
   newLifetime' lin \now -> Control.do
     (now, f) <- sexecBO (bo Proxy) now
     Ur end <- Control.pure (endLifetime now)
@@ -248,9 +249,13 @@ modifyLinearOnlyBO_ v k = DataFlow.do
     k mut
     Control.pure $ reclaim lend
 
-withLinearlyBO :: (Linearly %1 -> BO α r) %1 -> BO α r
-{-# INLINE withLinearlyBO #-}
-withLinearlyBO k = Control.do
+asksLinearlyM :: (Linearly %1 -> BO α r) %1 -> BO α r
+{-# INLINE asksLinearlyM #-}
+asksLinearlyM k = Control.do
   lin <- askLinearly
   !a <- k lin
   Control.pure a
+
+asksLinearly :: (Linearly %1 -> r) %1 -> BO α r
+{-# INLINE asksLinearly #-}
+asksLinearly k = asksLinearlyM $ Control.pure . k

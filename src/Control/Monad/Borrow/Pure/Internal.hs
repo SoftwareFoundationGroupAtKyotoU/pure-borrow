@@ -54,7 +54,7 @@ import Data.Vector.Mutable.Linear (Vector)
 import Data.Word
 import GHC.Base (TYPE)
 import GHC.Base qualified as GHC
-import GHC.Exts (State#, noDuplicate#, runRW#)
+import GHC.Exts (State#, runRW#)
 import GHC.ST qualified as ST
 import GHC.TypeError (ErrorMessage (..))
 import Generics.Linear
@@ -475,6 +475,10 @@ instance GDistributeAlias U1 where
 
 class Copyable a where
   copy :: Share α a %1 -> a
+
+instance (Copyable a) => Copyable (Ur a) where
+  copy (UnsafeAlias (Ur a)) = Ur $ copy $ UnsafeAlias a
+  {-# INLINE copy #-}
 
 instance
   (Unsatisfiable (ShowType (Ref a) :<>: Text " cannot be copied!")) =>

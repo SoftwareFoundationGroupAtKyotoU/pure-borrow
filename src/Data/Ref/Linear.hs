@@ -19,6 +19,8 @@ module Data.Ref.Linear (
 import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
 import Data.Ref.Linear.Unlifted
+import Prelude.Linear (Consumable (..), Dupable (..))
+import Prelude.Linear qualified as PL
 import Unsafe.Linear qualified as Unsafe
 
 data Ref a = Ref (Ref# a)
@@ -31,6 +33,17 @@ new a lin = Ref (newRef# a lin)
 
 instance LinearOnly (Ref a) where
   linearOnly = UnsafeLinearOnly
+
+instance (Consumable a) => Consumable (Ref a) where
+  consume = consume PL.. freeRef
+  {-# INLINE consume #-}
+
+instance (PL.Dupable a) => PL.Dupable (Ref a) where
+  dup2 = Unsafe.toLinear \ !v ->
+    withLinearly v PL.& \(l, !v) ->
+      let !v2 = Unsafe.toLinear (\(!_, !v) -> v) PL.$ dup2 PL.$ freeRef v
+       in (v, new v2 l)
+  {-# INLINE dup2 #-}
 
 instance Affine (Ref a) where
   aff = Unsafe.toLinear UnsafeAff

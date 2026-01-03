@@ -43,10 +43,14 @@ module Control.Monad.Borrow.Pure (
   borrowLinearOnly,
   sharing',
   sharing,
+  (<$~),
   sharing_,
+  (<$=),
   reborrowing',
   reborrowing,
+  (<%~),
   reborrowing_,
+  (<%=),
   share,
   reclaim,
   reborrow,
@@ -134,7 +138,7 @@ borrowLinearOnly !a = case withLinearly a of
 {- | Executes an operation on 'Share'd borrow in sub lifetime.
 You may need @-XImpredicativeTypes@ extension to use this function.
 
-See also: 'sharing' and 'sharing''.
+See also: '(<$=)', 'sharing' and 'sharing''.
 -}
 sharing_ ::
   forall α α' a.
@@ -144,10 +148,18 @@ sharing_ ::
 {-# INLINE sharing_ #-}
 sharing_ v k = sharing v k Control.<&> \((), a) -> a
 
+-- | Flipped infix version of 'sharing_', smoewhat analgous to '(Control.<$>)' and @(<%=)@ in @lens@ package.
+(<$=) ::
+  (forall β. Share (β /\ α) a -> BO (β /\ α') ()) %1 ->
+  Mut α a %1 ->
+  BO α' (Mut α a)
+{-# INLINE (<$=) #-}
+(<$=) = flip sharing_
+
 {- | Executes an operation on 'Share'd borrow in sub lifetime.
 You may need @-XImpredicativeTypes@ extension to use this function.
 
-See also: 'sharing'' and 'sharing_'.
+See also: '(<$~)', 'sharing'', and 'sharing_'.
 -}
 sharing ::
   forall α α' a r.
@@ -156,6 +168,16 @@ sharing ::
   BO α' (r, Mut α a)
 {-# INLINE sharing #-}
 sharing v k = sharing' v (\mut -> k mut Control.<&> \a _ -> a)
+
+-- | Flipped infix version of 'sharing', smoewhat analgous to '(Control.<$>)' and @(<%~)@ in @lens@ package.
+(<$~) ::
+  (forall β. Share (β /\ α) a -> BO (β /\ α') r) %1 ->
+  Mut α a %1 ->
+  BO α' (r, Mut α a)
+{-# INLINE (<$~) #-}
+(<$~) = flip sharing
+
+infix 4 <$~
 
 {- | Executes an operation on 'Share'd borrow in sub lifetime.
 You may need @-XImpredicativeTypes@ extension to use this function.
@@ -191,11 +213,31 @@ reborrowing ::
   BO α' (r, Mut α a)
 reborrowing mutα k = reborrowing' mutα (\mut -> k mut Control.<&> \a _ -> a)
 
+-- | Flipped infix version of 'reborrowing', smoewhat analgous to '(Control.<$>)' and @(<%~)@ in @lens@ package.
+(<%~) ::
+  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
+  Mut α a %1 ->
+  BO α' (r, Mut α a)
+{-# INLINE (<%~) #-}
+(<%~) = flip reborrowing
+
+infix 4 <%~
+
 reborrowing_ ::
   Mut α a %1 ->
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') ()) %1 ->
   BO α' (Mut α a)
 reborrowing_ mutα k = reborrowing mutα k Control.<&> \((), a) -> a
+
+-- | Flipped infix version of 'reborrowing_', smoewhat analgous to '(Control.<$>)' and @(<%=)@ in @lens@ package.
+(<%=) ::
+  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') ()) %1 ->
+  Mut α a %1 ->
+  BO α' (Mut α a)
+{-# INLINE (<%=) #-}
+(<%=) = flip reborrowing_
+
+infix 4 <%=
 
 -- | Modifies linear resources in-place, together with results.
 modifyBO ::

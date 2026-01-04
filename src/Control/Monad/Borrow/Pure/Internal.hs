@@ -632,3 +632,8 @@ deriving via
   Generically (Either a b)
   instance
     (Copyable a, Copyable b) => Copyable (Either a b)
+
+deriving via
+  Generically (Sem.Arg a b)
+  instance
+    (Copyable a, Copyable b) => Copyable (Sem.Arg a b)

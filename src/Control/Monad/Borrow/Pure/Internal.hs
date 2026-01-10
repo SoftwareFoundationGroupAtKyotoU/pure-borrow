@@ -270,11 +270,11 @@ instance Affine (Borrow bk α a) where
   aff = UnsafeAff
   {-# INLINE aff #-}
 
-instance (bk ~ 'Share) => Dupable (Borrow bk α a) where
+instance (k ~ 'Borrow 'Share α) => Dupable (Alias k a) where
   dup2 = Unsafe.toLinear $ NonLinear.join (,)
   {-# INLINE dup2 #-}
 
-instance (bk ~ 'Share) => Movable (Borrow bk α a) where
+instance (k ~ 'Borrow 'Share α) => Movable (Alias k a) where
   move = Unsafe.toLinear Ur
   {-# INLINE move #-}
 

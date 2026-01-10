@@ -200,12 +200,11 @@ reborrowing' ::
   Mut α a %1 ->
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') (End β -> r)) %1 ->
   BO α' (r, Mut α a)
-reborrowing' v k = DataFlow.do
-  srunBO \(Proxy :: Proxy β) -> DataFlow.do
-    (v, lend) <- reborrow v
-    Control.do
-      v <- k v
-      Control.pure $ \end -> (v (upcast end), reclaim lend (upcast end))
+reborrowing' v k = srunBO \(Proxy :: Proxy β) -> DataFlow.do
+  (v, lend) <- reborrow v
+  Control.do
+    v <- k v
+    Control.pure $ \end -> (v (upcast end), reclaim lend (upcast end))
 
 reborrowing ::
   Mut α a %1 ->

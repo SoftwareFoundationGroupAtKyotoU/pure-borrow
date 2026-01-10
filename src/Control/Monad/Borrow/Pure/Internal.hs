@@ -257,35 +257,29 @@ assocLendEq :: forall α β γ a. (Lend ((α /\ β) /\ γ) a) :~: (Lend (α /\ (
 {-# INLINE assocLendEq #-}
 assocLendEq = Unsafe.coerce $ Refl @(Lend (α /\ β /\ γ) a)
 
-instance LinearOnly (Mut α a) where
+instance (bk ~ 'Mut) => LinearOnly (Borrow bk α a) where
   linearOnly = UnsafeLinearOnly
 
-instance Affine (Mut α a) where
-  aff = UnsafeAff
-  {-# INLINE aff #-}
-
-deriving via AsAffine (Mut α a) instance Consumable (Mut α a)
-
-instance (β <= α, a <: b, b <: a) => Mut α a <: Mut β b where
-  subtype = UnsafeSubtype
+deriving via AsAffine (Borrow bk α a) instance Consumable (Borrow bk α a)
 
 -- | Shared borrower, which is unrestricted but usually can only read from the data
 type Share :: Lifetime -> Type -> Type
 type Share α = Borrow 'Share α
 
-instance Affine (Share α a) where
+instance Affine (Borrow bk α a) where
   aff = UnsafeAff
   {-# INLINE aff #-}
 
-deriving via AsAffine (Share α a) instance Consumable (Share α a)
-
-instance Dupable (Share α a) where
+instance (bk ~ 'Share) => Dupable (Borrow bk α a) where
   dup2 = Unsafe.toLinear $ NonLinear.join (,)
   {-# INLINE dup2 #-}
 
-instance Movable (Share α a) where
+instance (bk ~ 'Share) => Movable (Borrow bk α a) where
   move = Unsafe.toLinear Ur
   {-# INLINE move #-}
+
+instance (β <= α, a <: b, b <: a) => Mut α a <: Mut β b where
+  subtype = UnsafeSubtype
 
 instance (β <= α, a <: b) => Share α a <: Share β b where
   subtype = UnsafeSubtype

@@ -308,7 +308,7 @@ share :: Borrow k α a %1 -> Ur (Share α a)
 share = Unsafe.toLinear \(UnsafeAlias !a) -> Ur (UnsafeAlias a)
 
 -- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
-reclaim :: Lend α a %1 -> Ending α a
+reclaim :: Lend α a %1 -> After α a
 reclaim l = ending (reclaim' l)
 
 -- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.

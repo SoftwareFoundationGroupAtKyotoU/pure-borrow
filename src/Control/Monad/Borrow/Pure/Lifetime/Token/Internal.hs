@@ -39,18 +39,18 @@ data EndToken (α :: Lifetime) = UnsafeEnd
 class End (α :: Lifetime) where
   endToken :: EndToken α
 
-newtype Ending α a = Ending ((End α) => a)
+newtype After α a = After ((End α) => a)
 
-instance (α <= β, a <: b) => Ending α a <: Ending β b where
+instance (α <= β, a <: b) => After α a <: After β b where
   subtype = UnsafeSubtype
 
-ending :: ((End α) => a) %1 -> Ending α a
+ending :: ((End α) => a) %1 -> After α a
 {-# INLINE ending #-}
-ending = Unsafe.toLinear Ending
+ending = Unsafe.toLinear After
 
-ended :: (End α) => Ending α a %1 -> a
+ended :: (End α) => After α a %1 -> a
 {-# INLINE ended #-}
-ended (Ending r) = r
+ended (After r) = r
 
 instance {-# INCOHERENT #-} (End β) => End (β /\ α) where
   endToken = upcast (endToken @β)
@@ -59,28 +59,28 @@ withEnd :: forall α r. EndToken α -> ((End α) => r) %1 -> r
 {-# INLINE withEnd #-}
 withEnd end = Unsafe.toLinear (withDict @(End α) end)
 
-instance Data.Functor (Ending α) where
-  fmap f (Ending r) = Ending (f r)
+instance Data.Functor (After α) where
+  fmap f (After r) = After (f r)
   {-# INLINE fmap #-}
 
-instance Control.Functor (Ending α) where
-  fmap f (Ending r) = Ending (f r)
+instance Control.Functor (After α) where
+  fmap f (After r) = After (f r)
   {-# INLINE fmap #-}
 
-instance Data.Applicative (Ending α) where
-  pure a = Ending a
+instance Data.Applicative (After α) where
+  pure a = After a
   {-# INLINE pure #-}
-  Ending f <*> Ending r = Ending (f r)
+  After f <*> After r = After (f r)
   {-# INLINE (<*>) #-}
 
-instance Control.Applicative (Ending α) where
-  pure a = Ending a
+instance Control.Applicative (After α) where
+  pure a = After a
   {-# INLINE pure #-}
-  Ending f <*> Ending r = Ending (f r)
+  After f <*> After r = After (f r)
   {-# INLINE (<*>) #-}
 
-instance Control.Monad (Ending α) where
-  Ending r >>= k = Ending (ended (k r))
+instance Control.Monad (After α) where
+  After r >>= k = After (ended (k r))
   {-# INLINE (>>=) #-}
 
 data Linearly = UnsafeLinearly

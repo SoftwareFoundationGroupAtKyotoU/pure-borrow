@@ -9,7 +9,7 @@ module Control.Monad.Borrow.Pure.Lifetime.Token (
   Now (),
   End (),
   EndToken,
-  Ending (..),
+  After (..),
   ending,
   ended,
   withEnd,

@@ -102,12 +102,12 @@ import Data.Coerce.Directed (upcast)
 import Data.Proxy (Proxy (..))
 import Prelude.Linear
 
-runBO :: forall a. Linearly %1 -> (forall α. BO α (Ending α a)) %1 -> a
+runBO :: forall a. Linearly %1 -> (forall α. BO α (After α a)) %1 -> a
 {-# INLINE runBO #-}
 runBO lin bo =
   case newLifetime lin of
     MkSomeNow (now :: Now α) -> DataFlow.do
-      (now, f) <- execBO @α @(Ending α a) bo now
+      (now, f) <- execBO @α @(After α a) bo now
       case endLifetime now of
         Ur end -> withEnd @α end $ ended f
 
@@ -128,7 +128,7 @@ scope_ :: Now α %1 -> BO (α /\ β) a %1 -> BO β (Now α, a)
 {-# INLINE scope_ #-}
 scope_ = flip sexecBO
 
-srunBO :: (forall α. Proxy α -> BO (α /\ β) (Ending α a)) %1 -> BO β a
+srunBO :: (forall α. Proxy α -> BO (α /\ β) (After α a)) %1 -> BO β a
 {-# INLINE srunBO #-}
 srunBO bo = asksLinearlyM \lin ->
   newLifetime' lin \now -> Control.do
@@ -192,7 +192,7 @@ See also: 'sharing' and 'sharing_'.
 -}
 sharing' ::
   Mut α a %1 ->
-  (forall β. Share (β /\ α) a -> BO (β /\ α') (Ending β r)) %1 ->
+  (forall β. Share (β /\ α) a -> BO (β /\ α') (After β r)) %1 ->
   BO α' (r, Mut α a)
 {-# INLINE sharing' #-}
 sharing' v k = DataFlow.do
@@ -204,7 +204,7 @@ sharing' v k = DataFlow.do
 
 reborrowing' ::
   Mut α a %1 ->
-  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') (Ending β r)) %1 ->
+  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') (After β r)) %1 ->
   BO α' (r, Mut α a)
 reborrowing' v k = srunBO \(Proxy :: Proxy β) -> DataFlow.do
   (v, lend) <- reborrow v

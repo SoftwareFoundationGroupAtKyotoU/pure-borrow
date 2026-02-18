@@ -53,10 +53,11 @@ module Control.Monad.Borrow.Pure (
   reborrowing_,
   (<%=),
   share,
-  reclaim,
   reclaim',
+  reclaim,
   reborrow,
   joinMut,
+  joinLend,
   Copyable (),
   copy,
   copyMut,
@@ -109,19 +110,19 @@ runBO lin bo =
     MkSomeNow (now :: Now α) -> DataFlow.do
       (now, f) <- execBO @α @(After α a) bo now
       case endLifetime now of
-        Ur end -> withEnd @α end $ ended f
+        Ur end -> withEnd @α end $ unAfter f
 
 runBOLend :: Linearly %1 -> (forall α. BO α (Lend α a)) %1 -> a
 {-# INLINE runBOLend #-}
 runBOLend lin bo = runBO lin Control.do
   lend <- bo
-  Control.pure (reclaim lend)
+  Control.pure (reclaim' lend)
 
 runBO_ :: Linearly %1 -> (forall α. BO α a) %1 -> a
 {-# INLINE runBO_ #-}
 runBO_ lin bo = runBO lin Control.do
   a <- bo
-  Control.pure $ Control.pure a
+  pureAfter a
 
 -- | Flipped version of 'sexecBO'.
 scope_ :: Now α %1 -> BO (α /\ β) a %1 -> BO β (Now α, a)
@@ -134,7 +135,7 @@ srunBO bo = asksLinearlyM \lin ->
   newLifetime' lin \now -> Control.do
     (now, f) <- sexecBO (bo Proxy) now
     Ur end <- Control.pure (endLifetime now)
-    Control.pure (withEnd end $ ended f)
+    Control.pure (withEnd end $ unAfter f)
 
 -- | A variant of 'borrow' that obtains 'Linearly' viar 'LinearOnly'.
 borrowLinearOnly :: (LinearOnly a) => a %1 -> (Mut α a, Lend α a)
@@ -200,7 +201,7 @@ sharing' v k = DataFlow.do
     DataFlow.do
       (v, lend) <- reborrow v
       share v & \(Ur v) -> Control.do
-        k v Control.<&> \v -> (,) Control.<$> v Control.<*> upcast (reclaim lend)
+        k v Control.<&> \v -> (,) Control.<$> v Control.<*> upcast (reclaim' lend)
 
 reborrowing' ::
   Mut α a %1 ->
@@ -210,7 +211,7 @@ reborrowing' v k = srunBO \(Proxy :: Proxy β) -> DataFlow.do
   (v, lend) <- reborrow v
   Control.do
     v <- k v
-    Control.pure $ (,) Control.<$> v Control.<*> upcast (reclaim lend)
+    Control.pure $ (,) Control.<$> v Control.<*> upcast (reclaim' lend)
 
 reborrowing ::
   Mut α a %1 ->
@@ -255,7 +256,7 @@ modifyBO v lin k = DataFlow.do
   runBO lin Control.do
     let %1 !(mut, lend) = borrow v lin'
     r <- k mut
-    Control.pure $ (r,) Control.<$> reclaim lend
+    Control.pure $ (r,) Control.<$> reclaim' lend
 
 -- | Modifies linear resources in-place, without results.
 modifyBO_ ::
@@ -268,7 +269,7 @@ modifyBO_ v lin k = DataFlow.do
   runBO lin Control.do
     let %1 !(mut, lend) = borrow v lin'
     k mut
-    Control.pure $ reclaim lend
+    Control.pure $ reclaim' lend
 
 -- | Modifies linear resources in-place, together with results.
 modifyLinearOnlyBO ::
@@ -281,7 +282,7 @@ modifyLinearOnlyBO v k = DataFlow.do
   runBO lin Control.do
     let %1 !(mut, lend) = borrowLinearOnly v
     !r <- k mut
-    Control.pure $ (r,) Control.<$> reclaim lend
+    Control.pure $ (r,) Control.<$> reclaim' lend
 
 -- | Modifies linear resources in-place, together with results.
 modifyLinearOnlyBO_ ::
@@ -294,7 +295,7 @@ modifyLinearOnlyBO_ v k = DataFlow.do
   runBO lin Control.do
     let %1 !(mut, lend) = borrowLinearOnly v
     k mut
-    Control.pure (reclaim lend)
+    Control.pure (reclaim' lend)
 
 asksLinearlyM :: (Linearly %1 -> BO α r) %1 -> BO α r
 {-# INLINE asksLinearlyM #-}

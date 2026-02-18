@@ -35,7 +35,7 @@ qsortVec v = unur $ linearly \lin -> DataFlow.do
     borrow (VL.fromVector v l2) l3
       & \(v, lend) -> Control.do
         VL.qsort 8 v
-        Control.pure $ \end -> VL.toVector (reclaim lend end)
+        pureAfter $ VL.toVector (reclaim lend)
 
 divideList :: [Int] -> (Int, [Int])
 divideList [] = (0, [])
@@ -52,8 +52,7 @@ divideList xs =
                 VL.size lo & \(Ur n, lo) -> DataFlow.do
                   consume lo
                   consume hi
-                  Control.pure \end ->
-                    (n, VL.toList $ reclaim lend end)
+                  pureAfter (n, VL.toList $ reclaim lend)
 
 test_divideList :: TestTree
 test_divideList =

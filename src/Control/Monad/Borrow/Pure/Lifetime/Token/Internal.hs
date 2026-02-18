@@ -44,13 +44,13 @@ newtype After α a = After ((End α) => a)
 instance (α <= β, a <: b) => After α a <: After β b where
   subtype = UnsafeSubtype
 
-ending :: ((End α) => a) %1 -> After α a
-{-# INLINE ending #-}
-ending = After
+unAfter :: (End α) => After α a %1 -> a
+{-# INLINE unAfter #-}
+unAfter (After r) = r
 
-ended :: (End α) => After α a %1 -> a
-{-# INLINE ended #-}
-ended (After r) = r
+pureAfter :: (Control.Monad m) => ((End α) => a) %1 -> m (After α a)
+{-# INLINE pureAfter #-}
+pureAfter a = Control.pure (After a)
 
 instance {-# INCOHERENT #-} (End β) => End (β /\ α) where
   endToken = upcast (endToken @β)
@@ -80,7 +80,7 @@ instance Control.Applicative (After α) where
   {-# INLINE (<*>) #-}
 
 instance Control.Monad (After α) where
-  After r >>= k = After (ended (k r))
+  After r >>= k = After (unAfter (k r))
   {-# INLINE (>>=) #-}
 
 data Linearly = UnsafeLinearly

@@ -56,4 +56,4 @@ qsortDCVec v = unur $ linearly \lin -> DataFlow.do
     borrow (VL.fromVector v l2) l3
       & \(v, lend) -> Control.do
         Control.void $ qsortDC 10 16 v
-        Control.pure $ \end -> VL.toVector (reclaim lend end)
+        Control.pure $ After (VL.toVector (reclaim lend))

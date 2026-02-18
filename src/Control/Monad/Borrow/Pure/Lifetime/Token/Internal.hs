@@ -46,7 +46,7 @@ instance (α <= β, a <: b) => After α a <: After β b where
 
 ending :: ((End α) => a) %1 -> After α a
 {-# INLINE ending #-}
-ending = Unsafe.toLinear After
+ending = After
 
 ended :: (End α) => After α a %1 -> a
 {-# INLINE ended #-}

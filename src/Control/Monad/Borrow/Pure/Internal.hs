@@ -3,12 +3,14 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
@@ -306,8 +308,12 @@ share :: Borrow k α a %1 -> Ur (Share α a)
 share = Unsafe.toLinear \(UnsafeAlias !a) -> Ur (UnsafeAlias a)
 
 -- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
-reclaim :: Lend α a %1 -> End α -> a
-reclaim = \(UnsafeAlias !a) !_ -> a
+reclaim :: Lend α a %1 -> Ending α a
+reclaim l = ending (reclaim' l)
+
+-- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
+reclaim' :: (End α) => Lend α a %1 -> a
+reclaim' = \(UnsafeAlias !a) -> a
 
 -- | Reborrow a mutable borrow into a sublifetime
 reborrow :: (β <= α) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))

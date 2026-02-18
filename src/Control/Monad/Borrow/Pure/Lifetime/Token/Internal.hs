@@ -2,10 +2,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ExplicitNamespaces #-}
+{-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnliftedNewtypes #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# OPTIONS_HADDOCK hide #-}
@@ -14,22 +16,72 @@ module Control.Monad.Borrow.Pure.Lifetime.Token.Internal (
   module Control.Monad.Borrow.Pure.Lifetime.Token.Internal,
 ) where
 
+import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Lifetime.Internal
-import Data.Coerce.Directed (SubtypeWitness (UnsafeSubtype), type (<:) (..))
+import Data.Coerce.Directed (SubtypeWitness (UnsafeSubtype), upcast, type (<:) (..))
+import Data.Functor.Linear qualified as Data
 import Data.Kind (Constraint)
 import Data.Unrestricted.Linear
-import GHC.Base (TYPE, UnliftedType, noinline)
+import GHC.Base (TYPE, UnliftedType, noinline, withDict)
 import GHC.Exts qualified as GHC
 import GHC.Stack (HasCallStack)
+import Unsafe.Linear qualified as Unsafe
 
 type role Now nominal
 
 data Now (α :: Lifetime) = UnsafeNow
 
-type role End nominal
+type role EndToken nominal
 
-data End (α :: Lifetime) = UnsafeEnd
+data EndToken (α :: Lifetime) = UnsafeEnd
+
+class End (α :: Lifetime) where
+  endToken :: EndToken α
+
+newtype Ending α a = Ending ((End α) => a)
+
+instance (α <= β, a <: b) => Ending α a <: Ending β b where
+  subtype = UnsafeSubtype
+
+ending :: ((End α) => a) %1 -> Ending α a
+{-# INLINE ending #-}
+ending = Unsafe.toLinear Ending
+
+ended :: (End α) => Ending α a %1 -> a
+{-# INLINE ended #-}
+ended (Ending r) = r
+
+instance {-# INCOHERENT #-} (End β) => End (β /\ α) where
+  endToken = upcast (endToken @β)
+
+withEnd :: forall α r. EndToken α -> ((End α) => r) %1 -> r
+{-# INLINE withEnd #-}
+withEnd end = Unsafe.toLinear (withDict @(End α) end)
+
+instance Data.Functor (Ending α) where
+  fmap f (Ending r) = Ending (f r)
+  {-# INLINE fmap #-}
+
+instance Control.Functor (Ending α) where
+  fmap f (Ending r) = Ending (f r)
+  {-# INLINE fmap #-}
+
+instance Data.Applicative (Ending α) where
+  pure a = Ending a
+  {-# INLINE pure #-}
+  Ending f <*> Ending r = Ending (f r)
+  {-# INLINE (<*>) #-}
+
+instance Control.Applicative (Ending α) where
+  pure a = Ending a
+  {-# INLINE pure #-}
+  Ending f <*> Ending r = Ending (f r)
+  {-# INLINE (<*>) #-}
+
+instance Control.Monad (Ending α) where
+  Ending r >>= k = Ending (ended (k r))
+  {-# INLINE (>>=) #-}
 
 data Linearly = UnsafeLinearly
 
@@ -81,29 +133,13 @@ instance LinearOnly (Now α) where
   linearOnly = UnsafeLinearOnly
   {-# INLINE linearOnly #-}
 
-instance Affine (End α) where
-  aff UnsafeEnd = UnsafeAff UnsafeEnd
-  {-# INLINE aff #-}
-
-instance Consumable (End α) where
-  consume UnsafeEnd = ()
-  {-# INLINE consume #-}
-
-instance Dupable (End α) where
-  dup2 UnsafeEnd = (UnsafeEnd, UnsafeEnd)
-  {-# INLINE dup2 #-}
-
-instance Movable (End α) where
-  move UnsafeEnd = Ur UnsafeEnd
-  {-# INLINE move #-}
-
-endLifetime :: Now (Al i) %1 -> (Ur (End (Al i)))
+endLifetime :: Now (Al i) %1 -> (Ur (EndToken (Al i)))
 endLifetime UnsafeNow = Ur UnsafeEnd
 
 data SomeNow where
   MkSomeNow :: Now (Al i) %1 -> SomeNow
 
-instance (β <= α) => End α <: End β where
+instance (β <= α) => EndToken α <: EndToken β where
   subtype = UnsafeSubtype
 
 newLifetime :: Linearly %1 -> SomeNow
@@ -119,5 +155,5 @@ nowStatic :: Now Static
 nowStatic = UnsafeNow
 
 -- | Static lifetime lasts forever
-neverEnds :: (HasCallStack) => End Static %1 -> a
-neverEnds UnsafeEnd = error "Unreachable: if you see this, you created an End Static in the internal code!"
+neverEnds :: (HasCallStack, End Static) => a
+neverEnds = error "Unreachable: if you see this, you created an End Static in the internal code!"

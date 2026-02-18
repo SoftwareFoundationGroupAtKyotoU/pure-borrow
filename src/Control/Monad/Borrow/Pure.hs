@@ -91,6 +91,7 @@ module Control.Monad.Borrow.Pure (
   -- * Re-exports
   module Control.Monad.Borrow.Pure.Lifetime,
   module Control.Monad.Borrow.Pure.Lifetime.Token,
+  pureAfter,
 ) where
 
 import Control.Functor.Linear qualified as Control
@@ -307,3 +308,7 @@ asksLinearlyM k = Control.do
 asksLinearly :: (Linearly %1 -> r) %1 -> BO α r
 {-# INLINE asksLinearly #-}
 asksLinearly k = asksLinearlyM $ Control.pure . k
+
+pureAfter :: ((End α) => a) %1 -> BO α (After α a)
+{-# INLINE pureAfter #-}
+pureAfter a = Control.pure (After a)

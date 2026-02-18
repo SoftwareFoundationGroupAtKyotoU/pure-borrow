@@ -48,10 +48,6 @@ unAfter :: (End α) => After α a %1 -> a
 {-# INLINE unAfter #-}
 unAfter (After r) = r
 
-pureAfter :: (Control.Monad m) => ((End α) => a) %1 -> m (After α a)
-{-# INLINE pureAfter #-}
-pureAfter a = Control.pure (After a)
-
 instance {-# INCOHERENT #-} (End β) => End (β /\ α) where
   endToken = upcast (endToken @β)
 

@@ -11,7 +11,6 @@ module Control.Monad.Borrow.Pure.Lifetime.Token (
   EndToken,
   After (..),
   unAfter,
-  pureAfter,
   withEnd,
   LinearOnly,
   withLinearly,

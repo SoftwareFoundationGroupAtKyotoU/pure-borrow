@@ -57,7 +57,6 @@ module Control.Monad.Borrow.Pure (
   reclaim,
   reborrow,
   joinMut,
-  joinLend,
   Copyable (),
   copy,
   copyMut,
@@ -111,7 +110,7 @@ runBO lin bo =
     MkSomeNow (now :: Now α) -> DataFlow.do
       (now, f) <- execBO @α @(After α a) bo now
       case endLifetime now of
-        Ur end -> withEnd @α end $ unAfter f
+        Ur end -> withEnd @α end f
 
 runBOLend :: Linearly %1 -> (forall α. BO α (Lend α a)) %1 -> a
 {-# INLINE runBOLend #-}
@@ -136,7 +135,7 @@ srunBO bo = asksLinearlyM \lin ->
   newLifetime' lin \now -> Control.do
     (now, f) <- sexecBO (bo Proxy) now
     Ur end <- Control.pure (endLifetime now)
-    Control.pure (withEnd end $ unAfter f)
+    Control.pure (withEnd end f)
 
 -- | A variant of 'borrow' that obtains 'Linearly' viar 'LinearOnly'.
 borrowLinearOnly :: (LinearOnly a) => a %1 -> (Mut α a, Lend α a)

@@ -324,9 +324,6 @@ reborrow = Unsafe.toLinear \ !mutA ->
 joinMut :: Borrow bk α (Mut β a) %1 -> Borrow bk (α /\ β) a
 joinMut = coerceLin
 
-joinLend :: Lend α (Lend α a) %1 -> Lend α a
-joinLend = coerceLin
-
 -- | Distribute an alias over a functor.
 class DistributesAlias f where
   split_ :: Alias ak (f x) %1 -> f (Alias ak x)

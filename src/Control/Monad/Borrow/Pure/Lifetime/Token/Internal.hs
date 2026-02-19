@@ -51,9 +51,9 @@ unAfter (After r) = r
 instance {-# INCOHERENT #-} (End β) => End (β /\ α) where
   endToken = upcast (endToken @β)
 
-withEnd :: forall α r. EndToken α -> ((End α) => r) %1 -> r
+withEnd :: forall α r. EndToken α -> After α r %1 -> r
 {-# INLINE withEnd #-}
-withEnd end = Unsafe.toLinear (withDict @(End α) end)
+withEnd end (After a) = Unsafe.toLinear (withDict @(End α) end) a
 
 instance Data.Functor (After α) where
   fmap f (After r) = After (f r)

@@ -2,15 +2,18 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module Main (main) where
 
 import Control.Applicative ((<**>), (<|>))
 import Control.Concurrent (getNumCapabilities)
-import Control.Concurrent.DivideConquer.Linear (divideAndConquer, qsortDC)
+import Control.Concurrent.DivideConquer.Linear (qsortDC)
 import Control.DeepSeq (force)
 import Control.Exception (evaluate)
 import qualified Control.Functor.Linear as Control
@@ -64,7 +67,7 @@ qsortWith (Parallel bud) v =
       runBO lin Control.do
         (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
         VL.qsort bud v
-        Control.pure PL.$ \end -> VL.toVector (reclaim lend end)
+        pureAfter (VL.toVector PL.$ reclaim lend)
 qsortWith Sequential v =
   unur PL.$ linearly \lin ->
     DataFlow.do
@@ -72,7 +75,7 @@ qsortWith Sequential v =
       runBO lin Control.do
         (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
         VL.qsort 0 v
-        Control.pure PL.$ \end -> VL.toVector (reclaim lend end)
+        pureAfter (VL.toVector PL.$ reclaim lend)
 qsortWith (Worksteal workers thresh) v =
   unur PL.$ linearly \lin ->
     DataFlow.do
@@ -80,7 +83,7 @@ qsortWith (Worksteal workers thresh) v =
       runBO lin Control.do
         (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
         Control.void PL.$ qsortDC workers thresh v
-        Control.pure PL.$ \end -> VL.toVector (reclaim lend end)
+        pureAfter (VL.toVector PL.$ reclaim lend)
 
 main :: IO ()
 main = do

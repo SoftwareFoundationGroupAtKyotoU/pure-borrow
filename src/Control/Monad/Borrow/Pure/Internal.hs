@@ -3,12 +3,14 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
@@ -291,7 +293,7 @@ type Lend α = Alias ('Lend α)
 instance (α <= β, a <: b) => Lend α a <: Lend β b where
   subtype = UnsafeSubtype
 
--- | Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim' the resource to lend at the 'End' of the lifetime.
+-- | Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim the resource to lend at the 'End' of the lifetime.
 borrow :: a %1 -> Linearly %1 -> (Mut α a, Lend α a)
 borrow = Unsafe.toLinear2 \ !a !_ ->
   (UnsafeAlias a, UnsafeAlias a)
@@ -306,8 +308,12 @@ share :: Borrow k α a %1 -> Ur (Share α a)
 share = Unsafe.toLinear \(UnsafeAlias !a) -> Ur (UnsafeAlias a)
 
 -- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
-reclaim :: Lend α a %1 -> End α -> a
-reclaim = \(UnsafeAlias !a) !_ -> a
+reclaim' :: Lend α a %1 -> After α a
+reclaim' l = After (reclaim l)
+
+-- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
+reclaim :: (End α) => Lend α a %1 -> a
+reclaim = \(UnsafeAlias !a) -> a
 
 -- | Reborrow a mutable borrow into a sublifetime
 reborrow :: (β <= α) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))

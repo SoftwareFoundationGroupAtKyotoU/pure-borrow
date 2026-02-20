@@ -57,6 +57,7 @@ module Control.Monad.Borrow.Pure (
   reclaim,
   reborrow,
   joinMut,
+  joinLend,
   Copyable (),
   copy,
   copyMut,

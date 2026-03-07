@@ -37,4 +37,4 @@ RUN mkdir -p /workspace
 WORKDIR /workspace
 COPY --from=build /opt/pure-borrow /opt/pure-borrow
 
-ENTRYPOINT ["/opt/pure-borrow/artifact-runner", "quick"]
+ENTRYPOINT ["/opt/pure-borrow/artifact-runner"]

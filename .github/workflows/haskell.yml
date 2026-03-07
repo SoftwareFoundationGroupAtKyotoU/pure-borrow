@@ -251,3 +251,49 @@ jobs:
           cabal-version: 3.16.1.0
           ghc-version: latest
       - run: cabal check
+
+  sdist:
+    name: Create Source Distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{github.event.pull_request.head.sha || github.sha}}
+      - name: Setup Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          cabal-version: 3.16.1.0
+          ghc-version: latest
+      - name: Create Source Distribution
+        run: |
+          cabal sdist -o pure-borrow-src.tar.gz
+      - name: Upload Source Distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: pure-borrow-sdist
+          path: pure-borrow-src.tar.gz
+
+  build-docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{github.event.pull_request.head.sha || github.sha}}
+      - name: Build and export OCI image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-args: |
+            PURE_BORROW_COMMIT=${{github.ref}}
+          platforms: linux/amd64,linux/arm64
+          tags: pure-borrow:latest
+          push: false
+          outputs: type=oci,dest=pure-borrow-container.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Upload Docker Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: pure-borrow-docker-image
+          path: pure-borrow-container.tar

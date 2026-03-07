@@ -267,7 +267,7 @@ jobs:
           ghc-version: latest
       - name: Create Source Distribution
         run: |
-          cabal sdist -o pure-borrow-src.tar.gz
+          cabal sdist -o .
           tar xzvf pure-borrow-src.tar.gz
           cp cabal.project* pure-borrow-0.1.0.0/
           tar caf pure-borrow-src.tar.gz pure-borrow-0.1.0.0

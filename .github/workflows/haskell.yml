@@ -268,7 +268,7 @@ jobs:
       - name: Create Source Distribution
         run: |
           cabal sdist -o .
-          tar xzvf pure-borrow-src.tar.gz
+          tar xzvf pure-borrow-0.1.0.0.tar.gz
           cp cabal.project* pure-borrow-0.1.0.0/
           tar caf pure-borrow-src.tar.gz pure-borrow-0.1.0.0
       - name: Upload Source Distribution
@@ -335,7 +335,6 @@ jobs:
           regctl index create ocidir://pure-borrow:latest \
             --ref $(regctl image inspect ocidir://pure-borrow --format '{{range.Manifests}}ocidir://pure-borrow@{{.Digest}} {{end}}')
 
-          # 統合されたレイアウトを単一のtarとしてエクスポート
           regctl image export ocidir://pure-borrow:latest ./pure-borrow-container-image.tar
 
       - name: Upload final multi-platform image

@@ -328,7 +328,7 @@ jobs:
 
       - name: Merge OCI layouts and Export
         run: |
-          for f in./tars/*.tar; do
+          for f in ./tars/*.tar; do
             regctl image import ocidir://pure-borrow "$f"
           done
 

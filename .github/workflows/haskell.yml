@@ -303,6 +303,7 @@ jobs:
           outputs: type=oci,dest=./image-${{ matrix.arch }}.tar
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
       - name: Upload intermediate tar
         uses: actions/upload-artifact@v4
         with:
@@ -322,21 +323,24 @@ jobs:
           pattern: image-*
           merge-multiple: true
 
-      # OCIレイアウトを直接操作・統合できる regctl をインストール
       - name: Install regctl
         uses: regclient/actions/regctl-installer@main
+      - name: "Set up skopeo"
+        uses: warjiang/setup-skopeo@main
+        with:
+          version: latest
 
       - name: Merge OCI layouts and Export
         run: |
-          for f in ./tars/*.tar; do
-            regctl image import ocidir://pure-borrow "$f"
-          done
+          regctl image import ocidir://pure-borrow:arm64 ./tars/image-arm64.tar
+          regctl image import ocidir://pure-borrow:amd64 ./tars/image-amd64.tar
 
-          REF=$(regctl image inspect ocidir://pure-borrow --format '{{range.Manifests}}ocidir://pure-borrow@{{.Digest}} {{end}}')
           echo "${REF}"
-          regctl index create ocidir://pure-borrow:latest --ref "${REF}"
+          regctl index create ocidir://pure-borrow:latest \
+            --ref ocidir://pure-borrow:amd64 --platform linux/amd64 \
+            --ref ocidir://pure-borrow:arm64 --platform linux/arm64
 
-          regctl image export ocidir://pure-borrow:latest ./pure-borrow-container-image.tar
+          skopeo copy --all ocidir://pure-borrow:latest docker-archive:./pure-borrow-container-image.tar:latest
 
       - name: Upload final multi-platform image
         uses: actions/upload-artifact@v4

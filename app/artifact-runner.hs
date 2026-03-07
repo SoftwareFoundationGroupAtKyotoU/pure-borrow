@@ -44,7 +44,7 @@ import System.Environment (withArgs)
 import System.Exit (ExitCode)
 import Text.Read (readEither)
 
-data Cmd = Bench BenchOpts | QSortDemo QS.CLIOpts
+data Cmd = Bench BenchOpts | QuickBench | QSortDemo QS.CLIOpts
   deriving (Show, Eq, Ord, Generic)
 
 optionsP :: Int -> Opts.ParserInfo Cmd
@@ -58,13 +58,19 @@ optionsP numCapa =
       Opts.hsubparser $
         fold1 $
           Opts.command "bench" (Bench <$> Bench.optionsP)
-            :| [Opts.command "demo" $ QSortDemo <$> QS.optionsP numCapa]
+            :| [ Opts.command "demo" $ QSortDemo <$> QS.optionsP numCapa
+               , Opts.command "quick" $
+                   Opts.info (pure QuickBench) $
+                     Opts.progDesc $
+                       "Run quick benchmarks with numcpu = 4 for sizes 0 and " <> show Bench.kMAX_SIZE
+               ]
 
 main :: IO ()
 main = do
   numCap <- getNumCapabilities
   Opts.customExecParser (Opts.prefs Opts.subparserInline) (optionsP numCap) >>= \case
     Bench benchOpts -> runBench benchOpts
+    QuickBench -> runBench Bench.BenchOpts {numThreads = 4, sampleSize = 2}
     QSortDemo cliOpts -> QS.defaultMainWith cliOpts
 
 runBench :: BenchOpts -> IO ()

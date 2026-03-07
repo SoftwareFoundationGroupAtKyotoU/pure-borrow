@@ -11,6 +11,7 @@ module PureBorrow.Internal.Bench.QSort (
   rawOptsP,
   BenchOpts (..),
   benches,
+  kMAX_SIZE,
 ) where
 
 import Control.Applicative

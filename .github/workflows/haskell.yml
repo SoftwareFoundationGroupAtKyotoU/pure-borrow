@@ -347,3 +347,30 @@ jobs:
         with:
           name: pure-borrow-reference
           path: pure-borrow-reference.tar.gz
+
+  artifacts:
+    name: Upload Artifacts
+    runs-on: ubuntu-latest
+    needs: [sdist, build-docker, build-reference]
+    steps:
+      - name: Download Source Distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: pure-borrow-sdist
+          path: ./pure-borrow-artifacts
+      - name: Download Docker Images
+        uses: actions/download-artifact@v4
+        with:
+          pattern: docker-image-*
+          merge-multiple: true
+          path: ./pure-borrow-artifacts
+      - name: Download API Reference
+        uses: actions/download-artifact@v4
+        with:
+          name: pure-borrow-reference
+          path: ./pure-borrow-artifacts
+      - name: Upload All Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts
+          path: ./pure-borrow-artifacts

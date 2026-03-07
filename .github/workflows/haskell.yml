@@ -332,8 +332,9 @@ jobs:
             regctl image import ocidir://pure-borrow "$f"
           done
 
-          regctl index create ocidir://pure-borrow:latest \
-            --ref $(regctl image inspect ocidir://pure-borrow --format '{{range.Manifests}}ocidir://pure-borrow@{{.Digest}} {{end}}')
+          REF=$(regctl image inspect ocidir://pure-borrow --format '{{range.Manifests}}ocidir://pure-borrow@{{.Digest}} {{end}}')
+          echo "${REF}"
+          regctl index create ocidir://pure-borrow:latest --ref "${REF}"
 
           regctl image export ocidir://pure-borrow:latest ./pure-borrow-container-image.tar
 

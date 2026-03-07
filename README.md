@@ -105,12 +105,16 @@ The module `Control.Monad.Borrow.Pure` exports all the user-facing API.
 
 API Reference is attached as `pure-borrow-reference.tar.gz` in Zenodo, so you can skim through it to check what kind of API is provided.
 
-#### Benchmarking Code
+#### Benchmarking
 
 The code used to generate the Plot of Quicksort Benchmark (Fig. 13) is located under `internal-src/qsort-bench-suites/PureBorrow/Internal/Bench/QSort.hs`.
-Because the raw output CSV of the benchmark is not suited for the use with our plotting library (pgfplot), we 
+Then we apply `app/convert-qsort-bench-csv.hs` is used to generate the final CSV so that it can be fed into pgfplots.
 
-## Step-by-step instructions
+As these two-step procedure gets tedious and `convert-qsort-bench-csv` hard-codes the parameters (e.g. # of cores or plotting points), we devised `artifact-runner` app (`app/artifact-runner.hs`), which automates this process and is capable of treating parametrized benchmarks.
+
+#
+
+In Option (1), `docker run pure-borrow` 
 
 ### Run benchmarks
 

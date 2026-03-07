@@ -290,7 +290,7 @@ jobs:
         with:
           context: "dockerfiles/artifact"
           build-args: |
-            PURE_BORROW_COMMIT=${{github.ref}}
+            PURE_BORROW_COMMIT=${{github.event.pull_request.head.sha || github.sha}}
           platforms: linux/amd64,linux/arm64
           tags: pure-borrow:latest
           outputs: type=oci,dest=pure-borrow-container.tar

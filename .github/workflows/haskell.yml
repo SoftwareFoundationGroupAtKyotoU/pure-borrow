@@ -356,7 +356,7 @@ jobs:
         uses: haskell-actions/setup@v2
         with:
           cabal-version: 3.16.1.0
-          ghc-version: latest
+          ghc-version: 9.10.3
       - name: Cache Cabal Store
         uses: actions/cache@v3
         with:

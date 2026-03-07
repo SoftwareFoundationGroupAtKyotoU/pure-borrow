@@ -306,6 +306,8 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           cache-from: type=gha
           load: true
+          build-args: |
+            PURE_BORROW_COMMIT=${{github.event.pull_request.head.sha || github.sha}}
           cache-to: type=gha,mode=max
           provenance: false
       - name: Save Docker Image as Tar

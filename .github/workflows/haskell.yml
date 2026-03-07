@@ -289,8 +289,9 @@ jobs:
             PURE_BORROW_COMMIT=${{github.ref}}
           platforms: linux/amd64,linux/arm64
           tags: pure-borrow:latest
-          push: false
           outputs: type=oci,dest=pure-borrow-container.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: Upload Docker Image
         uses: actions/upload-artifact@v4
         with:

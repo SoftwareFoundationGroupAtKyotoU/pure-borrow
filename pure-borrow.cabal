@@ -15,6 +15,8 @@ extra-doc-files:
   CHANGELOG.md
   README.md
 
+data-files: dockerfiles/artifact/Dockerfile
+
 source-repository head
   type: git
   location: https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow

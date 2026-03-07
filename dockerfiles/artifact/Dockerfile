@@ -13,7 +13,7 @@ ARG CABAL=3.14.2.0
 RUN ghcup install cabal --isolate /usr/local/bin --force ${CABAL}
 
 RUN mkdir -p /workspace
-ARG PURE_BORROW_COMMIT=75a96849ad97b69bf71ea4f571bdee77b16c1091
+ARG PURE_BORROW_COMMIT=e5b027fb84663d2fc2b92956bbc32a09dfeda272
 RUN git clone https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow.git /workspace/pure-borrow && \
   cd /workspace/pure-borrow && \
   git checkout ${PURE_BORROW_COMMIT}
@@ -28,18 +28,13 @@ RUN cabal configure --enable-static --enable-executable-static --enable-tests --
 RUN cabal build all --only-dependencies
 RUN cabal build all
 RUN mkdir -p /opt/pure-borrow
-RUN for bin in pure-borrow-test qsort-bench convert-qsort-bench-csv qsort ; do \
-      cp "$(cabal list-bin $bin)" /opt/pure-borrow/ ; \
-    done
+RUN cp "$(cabal list-bin artifact-runner)" /opt/pure-borrow
 
 FROM debian:trixie-slim
 
-COPY --from=build /opt/pure-borrow/ /opt/pure-borrow
-COPY run.sh /opt/pure-borrow/run.sh
-RUN chmod +x /opt/pure-borrow/run.sh
-RUN mkdir -p /workspace
-
 ENV PATH="/opt/pure-borrow:${PATH}"
+RUN mkdir -p /workspace
 WORKDIR /workspace
+COPY --from=build /opt/pure-borrow /opt/pure-borrow
 
-ENTRYPOINT ["/opt/pure-borrow/run.sh"]
+ENTRYPOINT ["/opt/pure-borrow/artifact-runner", "quick"]

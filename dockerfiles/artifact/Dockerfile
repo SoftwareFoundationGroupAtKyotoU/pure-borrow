@@ -16,6 +16,7 @@ RUN mkdir -p /workspace
 ARG PURE_BORROW_COMMIT=e5b027fb84663d2fc2b92956bbc32a09dfeda272
 RUN git clone https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow.git /workspace/pure-borrow && \
   cd /workspace/pure-borrow && \
+  git fetch --all && \
   git checkout ${PURE_BORROW_COMMIT}
 
 WORKDIR /workspace/pure-borrow

@@ -286,6 +286,8 @@ jobs:
             runner: ubuntu-24.04
           - arch: arm64
             runner: ubuntu-24.04-arm
+      fail-fast: false
+
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
@@ -303,6 +305,7 @@ jobs:
           context: "dockerfiles/artifact"
           platforms: linux/${{ matrix.arch }}
           cache-from: type=gha
+          load: true
           cache-to: type=gha,mode=max
           provenance: false
       - name: Save Docker Image as Tar

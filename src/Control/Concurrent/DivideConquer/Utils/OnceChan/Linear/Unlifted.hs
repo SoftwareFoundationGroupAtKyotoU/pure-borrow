@@ -6,7 +6,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
-module Data.OnceChan.Linear.Unlifted (
+module Control.Concurrent.DivideConquer.Utils.OnceChan.Linear.Unlifted (
   Sink#,
   Source#,
   new#,

@@ -29,10 +29,19 @@ You can also use the option (2) if you want to try it locally, or to run the ben
 
 ## Option A: Using Container Image
 
-First, you need to install container runtime.
-The description below assumes `docker` CLI, but you can use any OCI-compatible runtime as you like.
+First, you need to install docker-compatible container runtime which can run Linux images.
+The description below assumes `docker` CLI, but you can use any Docker-compatible runtime as you like.
 
-TODO: Write it down
+Depending on the host architecture, you can download one of the following from the Zenodo:
+
+- ARM64: `pure-borrow-docker-image-arm64.tar`
+- x86_64: `pure-borrow-docker-image-amd64.tar`
+
+After download, you can load the image as follows (replace `ARCH` with appropriate one):
+
+```bash
+docker image import pure-borrow-docker-image-ARCH.tar pure-borrow:latest
+```
 
 After you imported the image, you can run the following for a quick check, which should finish within a second:
 

@@ -301,3 +301,32 @@ jobs:
         with:
           name: pure-borrow-docker-image
           path: pure-borrow-container.tar
+
+  build-reference:
+    name: Build API Reference
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{github.event.pull_request.head.sha || github.sha}}
+      - name: Setup Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          cabal-version: 3.16.1.0
+          ghc-version: latest
+      - name: Cache Cabal Store
+        uses: actions/cache@v3
+        with:
+          key: ${{ runner.os }}-haddock-cabal-store-${{ hashFiles('**/cabal.project*', '**/*.cabal') }}
+          path: |
+            ~/.cabal/store
+      - name: Build Documentation
+        run: |
+          cabal configure --disable-optimization --disable-tests --disable-benchmarks
+          cabal haddock-project --output=pure-borrow-reference
+          tar caf pure-borrow-reference.tar.gz pure-borrow-reference
+      - name: Upload API Reference
+        uses: actions/upload-artifact@v4
+        with:
+          name: pure-borrow-reference
+          path: pure-borrow-reference.tar.gz

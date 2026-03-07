@@ -45,6 +45,13 @@ Sorting 256 elements with mode: Parallel 8
   Productivity  XX.X% of total user, XX.X% of total elapsed
 ```
 
+Default entrypoint of `pure-borrow` image is set to run `artifact-runner` executable and the current working directory is set to /workspace.
+So, in what follows, if you are asked to "run `artifact-runner` with cli arguments...", you can just call:
+
+```bash
+mkdir -p workspace
+docker run --cpus 10 -v $(pwd):/workspace --rm -it pure-borrow ARG1 ARG2 ...
+```
 
 ## Option B: Using GHC installed locally
 
@@ -86,6 +93,41 @@ Sorting 256 elements with mode: Parallel 8
 
   Productivity  XX.X% of total user, XX.X% of total elapsed
 ```
+
+You can run executables provided by our implementation throuh `cabal run`.
+So, in what follows, if you are asked to "run `artifact-runner` with cli arguments...", you can just call:
+
+```bash
+# Beware standalone "--" to delimit the context!
+cabal run -- artifact-runner ARG1 ARG2 ...
+```
+
+## Instruction for Benchmarking
+
+To reproduce the benchmarking result (Fig. 13) in §4.2, you can just run `artifact-runner` without any CLI options.
+The results will be saved as `qsort-raw.csv` and `qsort.csv`.
+
+So, if you are using (1) Docker, you can just run:
+
+```bash
+docker run --cpus 10 -v $(pwd):/workspace --rm -it pure-borrow
+```
+
+
+Or, if you are (2) running locally, you can run:
+
+```bash
+cabal run -- artifact-runner
+```
+
+After everything is done, there should be two outputs: `qsort-raw.csv` and `qsort.csv`.
+The file `qsort-raw.csv` is the raw output CSV file which is emitted by benchmarking framework.
+Then, `qsort.csv` is the final product that was generated from `qsort-raw.csv` so that it can be directly fed into plotting library (pgfplots for our case).
+We plot selected columns of form `*Mean`, `*Alloc` in Fig. 13.
+Suffices
+
+If you are running Docker on non-Linux environment, it can contain
+
 
 ## Overview of Artifacts
 

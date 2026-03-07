@@ -123,13 +123,25 @@ cabal run -- artifact-runner
 After everything is done, there should be two outputs: `qsort-raw.csv` and `qsort.csv`.
 The file `qsort-raw.csv` is the raw output CSV file which is emitted by benchmarking framework.
 Then, `qsort.csv` is the final product that was generated from `qsort-raw.csv` so that it can be directly fed into plotting library (pgfplots for our case).
-We plot selected columns of form `*Mean`, `*Alloc` in Fig. 13.
-Suffices
+In each column, suffices `Mean`, `Stddev`, `Alloc`, `Copied` and `Peak` means "Mean CPU Time [ms]", "Standard Deviation of CPU Time [ms]", "Total Allocation [MB]", "Total Memory Copied during GC [MB]", and "Peak Allocation [MB]" (resp).
+Prefix `intro` means "intro sort from vector-algorithms", `sequential` means "sequential quicksort", `parallelN` means "Naïve parallel quicksort with budget $N$", and `workStealN` means "work-stealing quicksort with $N$ workers", respectively.
+Fig. 13 plots "Mean CPU Time" and "Total Allocation".
 
-If you are running Docker on non-Linux environment, it can contain
+### Notes on benchmark parameters
 
+You can run benchmark with smaller # of cases by `artifact-runner quick` (or `docker run ... pure-borrow quick`).
+It runs only five inputs with and uses only four cores.
+
+To control the # of cases, you can run `artifact-runner bench` with the following CLI options:
+
+| Option | Description |
+| :----: | :---------: |
+| `-N NUM` or `--threads NUM` | Runs with `NUM` cores. Default: 10. |
+| `-s NUM` or `--size NUM` | Takes benchmark against `NUM + 1` cases, each of size `32768 * i/NUM` for i = 0, .., NUM |
 
 ## Overview of Artifacts
+
+
 
 - `pure-borrow-container.tar`: OCI Image for Option (1).
   + Built from `dockerfiles/artifact/Dockerfile` in `pure-borrow-src.tar.gz`.
@@ -143,9 +155,28 @@ Source Distribution contains a cabal project of Pure Borrow implementation.
 #### Library Code
 
 The library code is located under `src` directory.
-The module `Control.Monad.Borrow.Pure` exports all the user-facing API.
-
 API Reference is attached as `pure-borrow-reference.tar.gz` in Zenodo, so you can skim through it to check what kind of API is provided.
+
+Here are some important modules:
+
+- `Control.Monad.Borrow.Pure` exports the user-facing API of Pure Borrow, including the API described in §3.
+- `Data.Ref.Linear` provides a Pure Borrow-based interface to mutable reference, as described in §3.
+- `Data.Vector.Mutable.Linear.Borrow` provides a Pure Borrow-based interface to a mutable vector, as described in §3. This is extensively used in Case Study section (§4).
+- `Control.Syntax.DataFlow` provides a function that is needed to use `do`-notations with Linear Monads under [`QualifiedDo` extension][qdo]. The code is almost verbatim copy from [Linear Constraints GHC proposal][lc-proposal].
+- The `*.Internal` modules contain implementation details and are for library implementors, exposing unsafe internal definitions.
+
+[qdo]: https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/qualified_do.html
+[lc-proposal]: https://github.com/tweag/ghc-proposals/blob/linear-constraints/proposals/0621-linear-constraints.rst#do-notation
+
+#### Case Study Codes
+
+Here are some modules related to Quicksort example in Case Study section (§4):
+
+- `Data.Vector.Mutable.Linear.Borrow`: `qsort` of this module is indeed a "Naïve" parallel quicksort described in the first half of §4.1.
+- `Control.Concurrent.DivideConquer.Linear` provides a divide-and-conquer parallel array processing API based on top of Pure Borrow, which is used to implement the "work-stealing" version of quicksort.
+  + Under the hood, it uses some unsafe datatypes (such as OnceChan or Queue) that can break purity without care.
+    This doesn't sacrifice the value of our framework, as those primitives are carefully used in the implementation, and library user CAN use the API to write pure parallel array programs using Pure Borrow.
+  + `qsortDC` implements the work-stealing quicksort algorithm.
 
 #### Benchmarking
 
@@ -154,17 +185,16 @@ Then we apply `app/convert-qsort-bench-csv.hs` is used to generate the final CSV
 
 As these two-step procedure gets tedious and `convert-qsort-bench-csv` hard-codes the parameters (e.g. # of cores or plotting points), we devised `artifact-runner` app (`app/artifact-runner.hs`), which automates this process and is capable of treating parametrized benchmarks.
 
-#
+#### Other components
 
-In Option (1), `docker run pure-borrow` 
+`app/qsort.hs` just sorts a random array of the specified length, and can also be called via `artifact-runner demo` (or `docker run pure-borrow demo`).
+It accepts the following CLI arguments:
 
-### Run benchmarks
+| Option | Description |
+| :----: | :---------: |
+| `-n NUM` | Sort the array of length `NUM` (default: 8) |
+| `-s NUM` | Random seed. (default: random) |
+| `-p N` / `-S` / `-w` | Sorting algorithm. `-p N` means Naïve parallel sort with budget `N`; `-S` means sequential quicksort; `-w` uses works-stealing  |
 
-#### Option 1
-
-#### Option 2
-
-### Source Code Layout
-
-The implementation is located under `src` directory.
-This provides
+It doesn't print neither of original and sorted arrays, just evaluates the output array into normal form.
+Hence, for the small input size, the command seems doing nothing. But if you increase the size to large number, say `4096124`, you can feel the difference between sorting algorithms.

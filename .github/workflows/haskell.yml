@@ -288,7 +288,7 @@ jobs:
       - name: Build and export OCI image
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: "dockerfiles/artifact"
           build-args: |
             PURE_BORROW_COMMIT=${{github.ref}}
           platforms: linux/amd64,linux/arm64

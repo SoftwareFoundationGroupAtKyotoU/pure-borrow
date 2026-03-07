@@ -277,8 +277,8 @@ jobs:
           name: pure-borrow-sdist
           path: pure-borrow-src.tar.gz
 
-  build-oci:
-    name: Build OCI Image (${{matrix.arch}})
+  build-docker:
+    name: Build Docker Image (${{matrix.arch}})
     strategy:
       matrix:
         include:
@@ -297,57 +297,22 @@ jobs:
       - name: Build and export OCI tar
         uses: docker/build-push-action@v6
         with:
+          tags: |
+            pure-borrow:${{ matrix.arch }}
+            pure-borrow:latest
           context: "dockerfiles/artifact"
           platforms: linux/${{ matrix.arch }}
-          # OCI形式で出力。マルチプラットフォーム統合のために不可欠
-          outputs: type=oci,dest=./image-${{ matrix.arch }}.tar
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
+      - name: Save Docker Image as Tar
+        run: |
+          docker save pure-borrow:latest -o pure-borrow-docker-image-${{ matrix.arch }}.tar
       - name: Upload intermediate tar
         uses: actions/upload-artifact@v4
         with:
-          name: image-${{ matrix.arch }}
-          path: ./image-${{ matrix.arch }}.tar
-          retention-days: 1
-
-  merge-oci:
-    name: Build Multi-Arch OCI Image
-    runs-on: ubuntu-latest
-    needs: [build-oci]
-    steps:
-      - name: Download all tars
-        uses: actions/download-artifact@v4
-        with:
-          path: ./tars
-          pattern: image-*
-          merge-multiple: true
-
-      - name: Install regctl
-        uses: regclient/actions/regctl-installer@main
-      - name: "Set up skopeo"
-        uses: warjiang/setup-skopeo@main
-        with:
-          version: latest
-
-      - name: Merge OCI layouts and Export
-        run: |
-          regctl image import ocidir://pure-borrow:arm64 ./tars/image-arm64.tar
-          regctl image import ocidir://pure-borrow:amd64 ./tars/image-amd64.tar
-
-          echo "${REF}"
-          regctl index create ocidir://pure-borrow:latest \
-            --ref ocidir://pure-borrow:amd64 --platform linux/amd64 \
-            --ref ocidir://pure-borrow:arm64 --platform linux/arm64
-
-          skopeo copy --all ocidir://pure-borrow:latest docker-archive:./pure-borrow-container-image.tar:latest
-
-      - name: Upload final multi-platform image
-        uses: actions/upload-artifact@v4
-        with:
-          name: oci-image
-          path: ./pure-borrow-container-image.tar
-          compression-level: 0 # すでにgzip済みのため再圧縮を無効化 [3, 4]
+          name: docker-image-${{ matrix.arch }}
+          path: ./pure-borrow-docker-image-${{ matrix.arch }}.tar
 
   build-reference:
     name: Build API Reference

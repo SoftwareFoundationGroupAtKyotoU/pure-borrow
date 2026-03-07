@@ -10,6 +10,7 @@ import Control.Concurrent.DivideConquer.Linear (divideAndConquer, qsortDC)
 import qualified Control.Functor.Linear as Control
 import Control.Monad.Borrow.Pure
 import qualified Control.Syntax.DataFlow as DataFlow
+import Data.Proxy (Proxy (..))
 import Data.Unrestricted.Linear (dup3)
 import qualified Data.Vector as V
 import qualified Data.Vector.Algorithms.Intro as AI
@@ -17,7 +18,12 @@ import qualified Data.Vector.Mutable.Linear.Borrow as VL
 import Prelude.Linear (unur)
 import qualified Prelude.Linear as PL
 import System.Random.Stateful
+import Test.Tasty (askOption, defaultMainWithIngredients)
 import Test.Tasty.Bench
+import Test.Tasty.Ingredients.Basic (includingOptions)
+import Test.Tasty.Options
+import Test.Tasty.Runners (parseOptions)
+import Text.Read (readMaybe)
 
 data Mode = Parallel Word | Worksteal Int | Sequential | IntroSort
   deriving (Show, Eq, Ord)
@@ -49,32 +55,54 @@ qsortWith (Worksteal p) v =
         Control.void PL.$ qsortDC p 16 v
         pureAfter (VL.toVector PL.$ reclaim lend)
 
+data SampleSize = SampleSize Int
+  deriving (Show, Eq, Ord)
+
+instance IsOption SampleSize where
+  defaultValue = SampleSize 32
+  parseValue s =
+    case readMaybe s of
+      Just n | kMAX_SIZE `rem` n == 0 -> Just (SampleSize n)
+      _ -> Nothing
+  optionName = return "size"
+  optionHelp = return "Step size to take a sample (must divide 32768)"
+
 main :: IO ()
 main = do
   numCap <- getNumCapabilities
-  defaultMain
-    [ bgroup
-        "qsort"
-        [ env
-            ( pure $ runStateGen_ (mkStdGen 42) \g -> do
-                V.replicateM size (uniformM g)
-            )
-            \vec ->
-              bgroup
-                (show size)
-                ( [ bench "intro" $ nf (qsortWith IntroSort) vec
-                  , bench "sequential" $ nf (qsortWith Sequential) vec
-                  ]
-                    ++ [ bench ("parallel (budget = " <> show n <> ")") $
-                           nf (qsortWith $ Parallel n) vec
-                       | n <- [4, 8, 16, 32]
-                       ]
-                    ++ [ bench ("worksteal (workers = " <> show n <> ")") $
-                           nf (qsortWith $ Worksteal n) vec
-                       | n <- [2, 4 .. numCap]
-                       ]
-                )
-        | i <- [0 .. 32]
-        , let size = i * 1024
-        ]
+  let customOpts = [Option (Proxy :: Proxy SampleSize)]
+      ingredients = includingOptions customOpts : benchIngredients
+  defaultMainWithIngredients ingredients $ benches numCap
+
+benches :: Int -> Benchmark
+benches numCap =
+  bgroup "All" $
+    [ askOption \(SampleSize n) ->
+        bgroup
+          "qsort"
+          [ env
+              ( pure $ runStateGen_ (mkStdGen 42) \g -> do
+                  V.replicateM size (uniformM g)
+              )
+              \vec ->
+                bgroup
+                  (show size)
+                  ( [ bench "intro" $ nf (qsortWith IntroSort) vec
+                    , bench "sequential" $ nf (qsortWith Sequential) vec
+                    ]
+                      ++ [ bench ("parallel (budget = " <> show n <> ")") $
+                             nf (qsortWith $ Parallel n) vec
+                         | n <- [4, 8, 16, 32]
+                         ]
+                      ++ [ bench ("worksteal (workers = " <> show n <> ")") $
+                             nf (qsortWith $ Worksteal n) vec
+                         | n <- [2, 4 .. numCap]
+                         ]
+                  )
+          | i <- [0 .. n]
+          , let size = i * kMAX_SIZE `quot` n
+          ]
     ]
+
+kMAX_SIZE :: Int
+kMAX_SIZE = 32 * 1024

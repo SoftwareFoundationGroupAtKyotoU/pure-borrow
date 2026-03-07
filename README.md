@@ -87,6 +87,29 @@ Sorting 256 elements with mode: Parallel 8
   Productivity  XX.X% of total user, XX.X% of total elapsed
 ```
 
+## Overview of Artifacts
+
+- `pure-borrow-container.tar`: OCI Image for Option (1).
+  + Built from `dockerfiles/artifact/Dockerfile` in `pure-borrow-src.tar.gz`.
+- `pure-borrow-src.tar.gz`: a complete source distribution, to be used with Option (2).
+- `pure-borrow-reference.tar.gz`: An HTML API Reference of Pure Borrow.
+
+### Structure of Source Distribution
+
+Source Distribution contains a cabal project of Pure Borrow implementation.
+
+#### Library Code
+
+The library code is located under `src` directory.
+The module `Control.Monad.Borrow.Pure` exports all the user-facing API.
+
+API Reference is attached as `pure-borrow-reference.tar.gz` in Zenodo, so you can skim through it to check what kind of API is provided.
+
+#### Benchmarking Code
+
+The code used to generate the Plot of Quicksort Benchmark (Fig. 13) is located under `internal-src/qsort-bench-suites/PureBorrow/Internal/Bench/QSort.hs`.
+Because the raw output CSV of the benchmark is not suited for the use with our plotting library (pgfplot), we 
+
 ## Step-by-step instructions
 
 ### Run benchmarks

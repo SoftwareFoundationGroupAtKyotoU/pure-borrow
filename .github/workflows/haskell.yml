@@ -268,39 +268,82 @@ jobs:
       - name: Create Source Distribution
         run: |
           cabal sdist -o pure-borrow-src.tar.gz
+          tar xzvf pure-borrow-src.tar.gz
+          cp cabal.project* pure-borrow-0.1.0.0/
+          tar caf pure-borrow-src.tar.gz pure-borrow-0.1.0.0
       - name: Upload Source Distribution
         uses: actions/upload-artifact@v4
         with:
           name: pure-borrow-sdist
           path: pure-borrow-src.tar.gz
 
-  build-docker:
-    name: Build Docker Image
-    runs-on: ubuntu-latest
+  build-oci:
+    name: Build OCI Image (${{matrix.arch}})
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v3
-        with:
-          ref: ${{github.event.pull_request.head.sha || github.sha}}
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Build and export OCI image
+
+      - name: Build and export OCI tar
         uses: docker/build-push-action@v6
         with:
           context: "dockerfiles/artifact"
-          build-args: |
-            PURE_BORROW_COMMIT=${{github.event.pull_request.head.sha || github.sha}}
-          platforms: linux/amd64,linux/arm64
-          tags: pure-borrow:latest
-          outputs: type=oci,dest=pure-borrow-container.tar
+          platforms: linux/${{ matrix.arch }}
+          # OCI形式で出力。マルチプラットフォーム統合のために不可欠
+          outputs: type=oci,dest=./image-${{ matrix.arch }}.tar
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Upload Docker Image
+      - name: Upload intermediate tar
         uses: actions/upload-artifact@v4
         with:
-          name: pure-borrow-docker-image
-          path: pure-borrow-container.tar
+          name: image-${{ matrix.arch }}
+          path: ./image-${{ matrix.arch }}.tar
+          retention-days: 1
+
+  merge-oci:
+    name: Build Multi-Arch OCI Image
+    runs-on: ubuntu-latest
+    needs: [build-oci]
+    steps:
+      - name: Download all tars
+        uses: actions/download-artifact@v4
+        with:
+          path: ./tars
+          pattern: image-*
+          merge-multiple: true
+
+      # OCIレイアウトを直接操作・統合できる regctl をインストール
+      - name: Install regctl
+        uses: regclient/actions/regctl-installer@main
+
+      - name: Merge OCI layouts and Export
+        run: |
+          for f in./tars/*.tar; do
+            regctl image import ocidir://pure-borrow "$f"
+          done
+
+          regctl index create ocidir://pure-borrow:latest \
+            --ref $(regctl image inspect ocidir://pure-borrow --format '{{range.Manifests}}ocidir://pure-borrow@{{.Digest}} {{end}}')
+
+          # 統合されたレイアウトを単一のtarとしてエクスポート
+          regctl image export ocidir://pure-borrow:latest ./pure-borrow-container-image.tar
+
+      - name: Upload final multi-platform image
+        uses: actions/upload-artifact@v4
+        with:
+          name: oci-image
+          path: ./pure-borrow-container-image.tar
+          compression-level: 0 # すでにgzip済みのため再圧縮を無効化 [3, 4]
 
   build-reference:
     name: Build API Reference

@@ -13,7 +13,7 @@ ARG CABAL=3.14.2.0
 RUN ghcup install cabal --isolate /usr/local/bin --force ${CABAL}
 
 RUN mkdir -p /workspace
-ARG PURE_BORROW_COMMIT=ca9987b4f5704e722672a9801305545660729dd2
+ARG PURE_BORROW_COMMIT=75a96849ad97b69bf71ea4f571bdee77b16c1091
 RUN git clone https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow.git /workspace/pure-borrow && \
   cd /workspace/pure-borrow && \
   git checkout ${PURE_BORROW_COMMIT}

@@ -14,7 +14,7 @@ module Main (main) where
 
 import Control.Applicative
 import Control.Concurrent (getNumCapabilities, setNumCapabilities)
-import Control.Exception (SomeAsyncException (SomeAsyncException), throwIO, try)
+import Control.Exception (throwIO, try)
 import Control.Monad (forM_)
 import Control.Monad.Trans.Writer.CPS (execWriter, tell)
 import Data.ByteString.Builder qualified as BB
@@ -41,8 +41,7 @@ import PureBorrow.Demo.QSort qualified as QS
 import PureBorrow.Internal.Bench.QSort (BenchOpts)
 import PureBorrow.Internal.Bench.QSort qualified as Bench
 import System.Environment (withArgs)
-import System.Exit (ExitCode (ExitSuccess))
-import System.Posix (forkProcess, getProcessStatus)
+import System.Exit (ExitCode)
 import Text.Read (readEither)
 
 data Cmd = Bench BenchOpts | QSortDemo QS.CLIOpts

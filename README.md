@@ -40,7 +40,7 @@ Depending on the host architecture, you can download one of the following from t
 After download, you can load the image as follows (replace `ARCH` with appropriate one):
 
 ```bash
-docker load pure-borrow-docker-image-ARCH.tar
+docker load -i pure-borrow-docker-image-ARCH.tar
 ```
 
 After you imported the image, you can run the following for a quick check, which should finish within a second:

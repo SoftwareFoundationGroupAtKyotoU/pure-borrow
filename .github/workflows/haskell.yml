@@ -365,8 +365,8 @@ jobs:
           docker image import ./pure-borrow-docker-image-${{ matrix.arch }}.tar pure-borrow:latest
       - name: Test Docker Image
         run: |
-          docker run --rm -it pure-borrow:latest demo
-          docker run --cpus 4 --rm -it -v $(pwd):/workspace pure-borrow:latest quick
+          docker run --rm pure-borrow:latest demo
+          docker run --cpus 4 --rm -v $(pwd):/workspace pure-borrow:latest quick
 
   build-reference:
     name: Build API Reference

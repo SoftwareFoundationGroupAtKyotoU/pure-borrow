@@ -362,7 +362,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
       - name: Load Docker Image
         run: |
-          docker image import ./pure-borrow-docker-image-${{ matrix.arch }}.tar pure-borrow:latest
+          docker load ./pure-borrow-docker-image-${{ matrix.arch }}.tar
       - name: Test Docker Image
         run: |
           docker run --rm pure-borrow:latest demo

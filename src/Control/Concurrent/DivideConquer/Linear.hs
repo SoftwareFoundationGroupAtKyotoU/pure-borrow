@@ -45,9 +45,12 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty.Linear qualified as NE
 import Data.Proxy (Proxy (..))
 import Data.Unrestricted.Linear (AsMovable (..))
+import Data.V.Linear (V, theLength)
+import Data.V.Linear.Internal (V (..))
+import Data.Vector qualified as V
 import Data.Vector.Mutable.Linear.Borrow qualified as LV
 import GHC.Generics qualified as GHC
-import GHC.TypeNats (SomeNat (..), someNatVal)
+import GHC.TypeNats (KnownNat, SomeNat (..), someNatVal)
 import Generics.Linear.TH (deriveGeneric, deriveGenericAnd1)
 import Prelude.Linear
 import Prelude.Linear.Generically (Generically, Generically1)
@@ -157,16 +160,13 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
         Control.do
           rootCounter <- asksLinearly $ Counter.withCapacity 1
           q <- MQ.writeMQueue q $ Divide ini (Switch rootCounter (Just rootSink) :| [])
-          chs <- concurrentMap worker qs
+          concurrentMap_ worker qs
           case conquer of
             NoOp -> Control.do
               Once.take rootSource
               MQ.closeMQueue q
-              -- Safety Note:
-              -- 1. closing MQueue should make all workers eventually halt,
-              -- 2. @chs@ are entirely allocated on GC heap
-              -- Hence, leaking @chs@ here is not a problem.
-              Control.pure $ Unsafe.toLinear (\_ -> ()) chs
+              -- Closing MQueue just ensures all workers are done eventually
+              Control.pure ()
           Control.pure (upcast @_ @(After _ ()) (consume Control.<$> reclaim' lend))
   where
     worker :: (β <= α) => Mut β (MQ.MQueue (Work β a t ())) %1 -> BO β ()
@@ -200,6 +200,26 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
               Once.put sink res
               Control.pure q
   -}
+
+unsafeUnV :: V n a %1 -> V.Vector a
+{-# INLINE unsafeUnV #-}
+unsafeUnV (V v) = v
+
+concurrentMap_ ::
+  forall n a α.
+  (KnownNat n) =>
+  (a %1 -> BO α ()) ->
+  V n a %1 ->
+  BO α ()
+concurrentMap_ k = Unsafe.toLinear \(V vec) -> Control.do
+  let !n = theLength @n
+      go :: Int -> BO α ()
+      go i
+        | i == n = Control.pure ()
+        | otherwise = Control.do
+            Control.void $ forkBO $ k (V.unsafeIndex vec i)
+            go (i + 1)
+   in go 0
 
 concurrentMap ::
   (Data.Traversable t) =>

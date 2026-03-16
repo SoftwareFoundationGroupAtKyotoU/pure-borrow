@@ -23,6 +23,8 @@ module Control.Concurrent.DivideConquer.Utils.AtomicCounter.Linear (
   new,
   increment,
   decrement,
+  addToCounter,
+  subFromCounter,
 ) where
 
 import Control.Monad qualified as P
@@ -34,7 +36,7 @@ import Foreign (free)
 import Foreign.Marshal.Array
 import GHC.Base qualified as GHC
 import GHC.Exts
-import GHC.IO (uninterruptibleMask_)
+import GHC.IO (noDuplicate, uninterruptibleMask_)
 import Prelude.Linear
 import System.IO.Unsafe (unsafePerformIO)
 import Unsafe.Linear qualified as Unsafe
@@ -109,3 +111,15 @@ decrement = Unsafe.toLinear \c@(Counter ptr) ->
   unsafeSystemIOToBO do
     i <- fetchSubWordOffset ptr 1 1
     P.pure (c, Ur i)
+
+addToCounter :: Counter %1 -> Word -> BO α (Counter, Ur Word)
+addToCounter = Unsafe.toLinear \c@(Counter ptr) val ->
+  unsafeSystemIOToBO do
+    i <- fetchAddWordOffset ptr val 1
+    P.pure (c, Ur $! i + val)
+
+subFromCounter :: Counter %1 -> Word -> BO α (Counter, Ur Word)
+subFromCounter = Unsafe.toLinear \c@(Counter ptr) val ->
+  unsafeSystemIOToBO do
+    i <- fetchSubWordOffset ptr val 1
+    P.pure (c, Ur $! i - val)

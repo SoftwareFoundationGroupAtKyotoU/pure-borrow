@@ -167,7 +167,11 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
             NoOp -> Control.do
               Once.take rootSource
               MQ.closeMQueue q
-              Control.void $ Data.traverse wait chs
+              -- Safety Note:
+              -- 1. closing MQueue should make all workers eventually halt,
+              -- 2. @chs@ are entirely allocated on GC heap
+              -- Hence, leaking @chs@ here is not a problem.
+              Control.pure $ Unsafe.toLinear (\_ -> ()) chs
           Control.pure (upcast @_ @(After _ ()) (consume Control.<$> reclaim' lend))
   where
     worker :: (β <= α) => Mut β (MQ.MQueue (Work β a t ())) %1 -> BO β ()

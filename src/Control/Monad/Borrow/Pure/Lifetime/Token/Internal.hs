@@ -93,6 +93,9 @@ type LinearOnly :: forall rep. TYPE rep -> Constraint
 class LinearOnly a where
   linearOnly :: LinearOnlyWitness a
 
+instance {-# OVERLAPS #-} (LinearOnly a, LinearOnly b) => LinearOnly (a, b) where
+  linearOnly = UnsafeLinearOnly
+
 withLinearly :: (LinearOnly a) => a %1 -> (Linearly, a)
 {-# NOINLINE withLinearly #-}
 withLinearly = noinline \ !a -> (UnsafeLinearly, a)

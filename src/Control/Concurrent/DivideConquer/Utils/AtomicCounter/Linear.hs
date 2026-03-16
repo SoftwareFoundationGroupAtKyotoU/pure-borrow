@@ -34,7 +34,7 @@ import Foreign (free)
 import Foreign.Marshal.Array
 import GHC.Base qualified as GHC
 import GHC.Exts
-import GHC.IO (noDuplicate, uninterruptibleMask_)
+import GHC.IO (uninterruptibleMask_)
 import Prelude.Linear
 import System.IO.Unsafe (unsafePerformIO)
 import Unsafe.Linear qualified as Unsafe
@@ -55,14 +55,14 @@ fetchSubWordOffset :: Ptr Word -> Word -> Int -> IO Word
 fetchSubWordOffset ptr (W# val) off =
   let !(Ptr addr#) = ptr `advancePtr` off
    in GHC.IO \s -> do
-        case fetchSubWordAddr# addr# val (noDuplicate# s) of
+        case fetchSubWordAddr# addr# val s of
           (# !s, !r #) -> (# s, W# r #)
 
 fetchAddWordOffset :: Ptr Word -> Word -> Int -> IO Word
 fetchAddWordOffset ptr (W# val) off =
   let !(Ptr addr#) = ptr `advancePtr` off
    in GHC.IO \s -> do
-        case fetchAddWordAddr# addr# val (noDuplicate# s) of
+        case fetchAddWordAddr# addr# val s of
           (# !s, !r #) -> (# s, W# r #)
 
 instance Consumable Counter where

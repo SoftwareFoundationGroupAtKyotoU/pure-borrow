@@ -1,6 +1,6 @@
-# Pure Borrow: Linear Haskell Meets Rust-Style Borrows
+# Pure Borrow: Linear Haskell Meets Rust-Style Borrowing
 
-Pure Borrow achieves Rust-style borrows in Linear Haskell with purity.
+Pure Borrow achieves Rust-style borrowing in Linear Haskell with purity.
 
 ## Getting Started
 

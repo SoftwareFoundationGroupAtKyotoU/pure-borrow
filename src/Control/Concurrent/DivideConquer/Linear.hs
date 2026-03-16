@@ -26,12 +26,11 @@ module Control.Concurrent.DivideConquer.Linear (
 ) where
 
 import Control.Concurrent (ThreadId, forkIO)
-import Control.Concurrent qualified as Conc
 import Control.Concurrent.DivideConquer.Utils.AtomicCounter.Linear (Counter)
 import Control.Concurrent.DivideConquer.Utils.AtomicCounter.Linear qualified as Counter
 import Control.Concurrent.DivideConquer.Utils.MQueue.Linear (newMQueue)
 import Control.Concurrent.DivideConquer.Utils.MQueue.Linear qualified as MQ
-import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (Sink, Source)
+import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (Sink)
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear qualified as Once
 import Control.Functor.Linear (runState, runStateT)
 import Control.Functor.Linear qualified as Control
@@ -39,7 +38,6 @@ import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Affine (Affine, GenericallyAffine (..))
 import Control.Monad.Borrow.Pure.Internal
 import Control.Syntax.DataFlow qualified as DataFlow
-import Data.Coerce qualified as NonLinear
 import Data.Coerce.Directed
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
@@ -74,10 +72,7 @@ newtype ThreadId_ = ThreadId_ ThreadId
 instance Movable ThreadId_ where
   move = Unsafe.toLinear Ur
 
-wait :: Thread %1 -> BO α ()
-wait (Thread tid source) = tid `lseq` Once.take source
-
-data Thread = Thread !ThreadId_ !(Source ())
+newtype Thread = Thread ThreadId_
   deriving stock (GHC.Generic)
 
 deriveGeneric ''Thread
@@ -151,7 +146,7 @@ divideAndConquer ::
   BO α (Mut α a)
 divideAndConquer n DivideConquer {..} ini = DataFlow.do
   (lin, ini) <- withLinearly ini
-  (lin, lin', lin'') <- dup3 lin
+  (lin, lin') <- dup lin
   uncurry lseq Control.<$> reborrowing' ini \(ini :: Mut γ a) ->
     someNatVal (fromIntegral n) & \(SomeNat (_ :: Proxy n)) -> Control.do
       (q, lend) <- newMQueue lin
@@ -162,7 +157,7 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
         Control.do
           rootCounter <- asksLinearly $ Counter.withCapacity 1
           q <- MQ.writeMQueue q $ Divide ini (Switch rootCounter (Just rootSink) :| [])
-          chs <- concurrentMap lin'' worker qs
+          chs <- concurrentMap worker qs
           case conquer of
             NoOp -> Control.do
               Once.take rootSource
@@ -206,28 +201,12 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
               Control.pure q
   -}
 
--- Named with underscore, as it is not used for now
-_killThreadBO :: Thread %1 -> BO α ()
-_killThreadBO = Unsafe.toLinear \(Thread tid _) ->
-  unsafeSystemIOToBO (Conc.killThread $ NonLinear.coerce tid)
-
 concurrentMap ::
   (Data.Traversable t) =>
-  Linearly %1 ->
   (a %1 -> BO α ()) ->
   t a %1 ->
   BO α (t Thread)
-concurrentMap lin k ts = flip Control.runReaderT lin do
-  Data.traverse
-    ( \a -> Control.do
-        lin <- Control.ask
-        Control.lift DataFlow.do
-          (sink, source) <- Once.new lin
-          Control.do
-            tid <- forkBO (k a Control.>> Once.put sink ())
-            Control.pure (Thread tid source)
-    )
-    ts
+concurrentMap k = Data.traverse (Control.fmap Thread . forkBO . k)
 
 forkBO :: BO α () %1 -> BO α ThreadId_
 forkBO = Unsafe.toLinear \bo ->

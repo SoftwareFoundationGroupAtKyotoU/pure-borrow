@@ -1,7 +1,7 @@
 cabal-version: 3.4
 name: pure-borrow
 version: 0.1.0.0
-synopsis: Pure realization of Rust-style borrows
+synopsis: Rust-style borrowing in Linear Haskell with purity
 description: Please see README.md.
 license: BSD-3-Clause
 license-file: LICENSE

@@ -32,7 +32,7 @@ import Control.Concurrent.DivideConquer.Utils.MQueue.Linear (newMQueue)
 import Control.Concurrent.DivideConquer.Utils.MQueue.Linear qualified as MQ
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (Sink, Source)
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear qualified as Once
-import Control.Functor.Linear (StateT (..), evalStateT, get, lift, modify, runState, runStateT)
+import Control.Functor.Linear (StateT (..), runState, runStateT)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Affine (Affine, GenericallyAffine (..))
@@ -132,7 +132,7 @@ instance Consumable (Work α a t r) where
   consume = Unsafe.toLinear \case
     Divide inp -> consume inp `lseq` ()
 
-lengthT :: (Data.Traversable t) => t a -> (t a, Ur Word)
+lengthT :: (Data.Traversable t) => t a %1 -> (t a, Ur Word)
 lengthT =
   flip runState (Ur 0)
     . Data.traverse (\x -> Control.state \s -> (x, Data.fmap (+ 1) s))

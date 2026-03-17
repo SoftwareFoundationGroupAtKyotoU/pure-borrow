@@ -248,14 +248,14 @@ We have discovered the correctness bug in the implementation of Work-Stealing AP
 Fortunately, the bug lies in the concurrency logic only specific to the work-stealing scheduler rather than in the core APIs of Pure Borrow.
 Indeed, in "fixed" version, the code changes are only made to `Control.Concurrent.DivideConquer.Linear` module and its submodules, and no fix to the Pure Borrow API was needed.
 
-Roughly speaking, the old code assumes the wrong invariant on the timings of synchronizing the concurrent computation, resulting in partially non-sorted array when tested non-deterministically.
+Roughly speaking, the old code assumes the wrong invariant on the timings of synchronizing the concurrent computation, resulting in partially non-sorted array non-deterministically.
 The attached "fixed" version quickly addresses this issue by using atomic counter for sanity check.
 We have tested the new implementation under many circumstances, and we are pretty sure that the fix indeed works.
 
 However, the introduction of a global atomic counter sacrificed the performance greatly.
-The current (fixed) implementation runs faster than sequential / naïve implementations only when ran with four worker threads, and cannot win introsort anymore.
+The current (fixed) implementation runs faster than sequential / naïve implementations only when run with four worker threads, and cannot win introsort anymore.
 
-We don't think this situation DOES NOT sacrifice the value of our contribution - after all, the Work-Stealing API was just meant to be a proof-of-concept demonstrating that our Pure Borrow can also be a useful basic building block to construct more practical and complex API.
+We don't think this situation sacrifices the value of our contribution - after all, the Work-Stealing API was just meant to be a proof-of-concept demonstrating that our Pure Borrow can also be a useful basic building block to construct more practical and complex API.
 Indeed, Review C gently noted, even before the discovery of the bug, that:
 
 > I don’t really care about the performance results for this work; especially not for just a single benchmark, but as a ”sanity check” they are leaning in the right direction.

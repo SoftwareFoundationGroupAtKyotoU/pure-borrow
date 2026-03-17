@@ -9,9 +9,6 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Data.Vector.Mutable.Linear.Borrow (
-  -- $header
-
-  -- * Borrow-based APIs for mutable vectors.
   Vector,
   empty,
   constant,
@@ -61,29 +58,25 @@ import Data.Vector qualified as V
 import Data.Vector.Mutable (RealWorld)
 import Data.Vector.Mutable qualified as MV
 import GHC.Exts qualified as GHC
-import GHC.IO (unsafePerformIO)
+import GHC.IO (noDuplicate, unsafePerformIO)
 import GHC.Stack (HasCallStack)
 import Prelude.Linear hiding (head, last, splitAt)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
-{- $header
-This module provides a borrowing-based API for mutable vectors, built on top of "Control.Monad.Borrow.Pure".
-With this API, you can now safely split and later reunite mutable vectors without worrying about aliasing and ownership issues.
--}
-
 newtype Vector a = Vector {content :: MV.MVector RealWorld a}
 
 empty :: Linearly %1 -> Vector a
 {-# NOINLINE empty #-}
-empty l =
-  l `lseq` GHC.noinline do
-    Vector (unsafePerformEvaluateUndupableBO (unsafeSystemIOToBO $ MV.new 0))
+empty =
+  GHC.noinline \l ->
+    l `lseq` do
+      Vector (unsafePerformEvaluateUndupableBO (unsafeSystemIOToBO $ MV.new 0))
 
 constant :: Int -> a -> Linearly %1 -> Vector a
 {-# NOINLINE constant #-}
-constant n a l =
-  l `lseq` GHC.noinline do
+constant = GHC.noinline \n a l ->
+  l `lseq` do
     Vector $!
       unsafePerformEvaluateUndupableBO $!
         unsafeSystemIOToBO $!
@@ -91,29 +84,32 @@ constant n a l =
 
 fromList :: [a] %1 -> Linearly %1 -> Vector a
 {-# NOINLINE fromList #-}
-fromList = Unsafe.toLinear \as l ->
-  l `lseq` GHC.noinline do
+fromList = GHC.noinline $ Unsafe.toLinear \as l ->
+  l `lseq` do
     Vector $!
       unsafePerformEvaluateUndupableBO $!
         unsafeSystemIOToBO $!
-          V.unsafeThaw $!
-            V.fromList as
+          Unsafe.toLinear V.unsafeThaw $!
+            Unsafe.toLinear V.fromList as
 
 -- | Convert a 'V.Vector' (from @vector@ package) to a 'Vector'
 fromVector :: V.Vector a -> Linearly %1 -> Vector a
 {-# NOINLINE fromVector #-}
-fromVector v l =
-  l `lseq` GHC.noinline do
+fromVector = GHC.noinline $ Unsafe.toLinear \v l ->
+  l `lseq` do
     Vector $!
       unsafePerformEvaluateUndupableBO $!
         unsafeSystemIOToBO $!
-          V.thaw v
+          Unsafe.toLinear V.thaw v
 
 fromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
 {-# NOINLINE fromMutable #-}
-fromMutable = Unsafe.toLinear \v l ->
-  l `lseq` GHC.noinline do
-    Vector (unsafePerformIO (MV.clone (Unsafe.coerce v)))
+fromMutable = GHC.noinline $ Unsafe.toLinear \v l ->
+  l `lseq` do
+    Vector $!
+      unsafePerformEvaluateUndupableBO $!
+        unsafeSystemIOToBO $!
+          Unsafe.toLinear MV.clone (Unsafe.coerce v)
 
 unsafeFromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
 unsafeFromMutable v lin =
@@ -150,7 +146,7 @@ size =
 -- | Get without bounds check.
 unsafeGet :: Int -> Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
 {-# INLINE unsafeGet #-}
-unsafeGet = GHC.noinline \i ->
+unsafeGet i =
   Unsafe.toLinear \v ->
     unsafeUnalias v
       NonLinear.& \(Vector v) ->
@@ -194,12 +190,11 @@ get i v = DataFlow.do
         else unsafeGet i v
 
 unsafeUpdate :: (β <= α) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))
-{-# INLINE unsafeUpdate #-}
 unsafeUpdate i = Unsafe.toLinear2 \k (UnsafeAlias v) -> Control.do
-  !a <- unsafeSystemIOToBO $ MV.unsafeRead (content v) i
-  (!b, !a') <- k a
-  !() <- unsafeSystemIOToBO $ Unsafe.toLinear3 MV.unsafeWrite (content v) i a'
-  Control.pure (b, UnsafeAlias v)
+  a <- unsafeSystemIOToBO $ MV.unsafeRead (content v) i
+  (b, a') <- k a
+  () <- unsafeSystemIOToBO $ Unsafe.toLinear3 MV.unsafeWrite (content v) i a'
+  Control.pure $ (b, UnsafeAlias v)
 
 update :: (β <= α) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))
 update i k v = DataFlow.do
@@ -260,9 +255,7 @@ swap v i j = DataFlow.do
         else unsafeSwap v i j
 
 copyAt :: (Copyable a) => Int -> Share α (Vector a) -> BO α (Ur a)
-copyAt i v = Control.do
-  Ur s <- move Control.<$> get i v
-  Control.pure $ Ur $ copy s
+copyAt i v = Control.do Ur s <- move Control.<$> get i v; Control.pure $ Ur $ copy s
 
 copyAtMut :: (Copyable a) => Int -> Mut α (Vector a) %1 -> BO α (Ur a, Mut α (Vector a))
 copyAtMut i v = sharing v $ copyAt i

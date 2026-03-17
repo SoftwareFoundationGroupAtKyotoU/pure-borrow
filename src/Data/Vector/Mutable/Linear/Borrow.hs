@@ -9,6 +9,9 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Data.Vector.Mutable.Linear.Borrow (
+  -- $header
+
+  -- * Borrow-based APIs for mutable vectors.
   Vector,
   empty,
   constant,
@@ -63,6 +66,11 @@ import GHC.Stack (HasCallStack)
 import Prelude.Linear hiding (head, last, splitAt)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
+
+{- $header
+This module provides a borrowing-based API for mutable vectors, built on top of "Control.Monad.Borrow.Pure".
+With this API, you can now safely split and later reunite mutable vectors without worrying about aliasing and ownership issues.
+-}
 
 newtype Vector a = Vector {content :: MV.MVector RealWorld a}
 
@@ -142,13 +150,12 @@ size =
 -- | Get without bounds check.
 unsafeGet :: Int -> Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
 {-# INLINE unsafeGet #-}
-unsafeGet i =
+unsafeGet = GHC.noinline \i ->
   Unsafe.toLinear \v ->
-    GHC.noinline $
-      unsafeUnalias v
-        NonLinear.& \(Vector v) ->
-          UnsafeAlias
-            Control.<$> unsafeSystemIOToBO (MV.unsafeRead v i)
+    unsafeUnalias v
+      NonLinear.& \(Vector v) ->
+        UnsafeAlias
+          Control.<$> unsafeSystemIOToBO (MV.unsafeRead v i)
 
 head :: (HasCallStack) => Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
 {-# INLINE head #-}
@@ -189,10 +196,10 @@ get i v = DataFlow.do
 unsafeUpdate :: (β <= α) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))
 {-# INLINE unsafeUpdate #-}
 unsafeUpdate i = Unsafe.toLinear2 \k (UnsafeAlias v) -> Control.do
-  a <- unsafeSystemIOToBO $ MV.unsafeRead (content v) i
-  (b, a') <- k a
-  () <- unsafeSystemIOToBO $ Unsafe.toLinear3 MV.unsafeWrite (content v) i a'
-  Control.pure $ (b, UnsafeAlias v)
+  !a <- unsafeSystemIOToBO $ MV.unsafeRead (content v) i
+  (!b, !a') <- k a
+  !() <- unsafeSystemIOToBO $ Unsafe.toLinear3 MV.unsafeWrite (content v) i a'
+  Control.pure (b, UnsafeAlias v)
 
 update :: (β <= α) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))
 update i k v = DataFlow.do
@@ -253,7 +260,9 @@ swap v i j = DataFlow.do
         else unsafeSwap v i j
 
 copyAt :: (Copyable a) => Int -> Share α (Vector a) -> BO α (Ur a)
-copyAt i v = Control.do Ur s <- move Control.<$> get i v; Control.pure $ Ur $ copy s
+copyAt i v = Control.do
+  Ur s <- move Control.<$> get i v
+  Control.pure $ Ur $ copy s
 
 copyAtMut :: (Copyable a) => Int -> Mut α (Vector a) %1 -> BO α (Ur a, Mut α (Vector a))
 copyAtMut i v = sharing v $ copyAt i

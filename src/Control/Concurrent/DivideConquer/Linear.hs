@@ -39,14 +39,16 @@ import Control.Monad.Borrow.Pure.Internal
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce qualified as NonLinear
 import Data.Coerce.Directed
+import Data.Functor.Identity (Identity (..))
 import Data.Functor.Linear qualified as Data
+import Data.Functor.Product qualified as Prod
 import Data.Kind (Type)
 import Data.Proxy (Proxy (..))
 import Data.Unrestricted.Linear (AsMovable (..))
 import Data.Vector.Mutable.Linear.Borrow qualified as LV
 import GHC.Generics qualified as GHC
 import GHC.TypeNats (SomeNat (..), someNatVal)
-import Generics.Linear.TH (deriveGeneric, deriveGenericAnd1)
+import Generics.Linear.TH (deriveGeneric, deriveGeneric1, deriveGenericAnd1)
 import Prelude.Linear
 import Prelude.Linear.Generically (Generically, Generically1)
 import Unsafe.Linear qualified as Unsafe
@@ -74,9 +76,22 @@ data Work α a (t :: Type -> Type) (r :: Type) where
   Divide :: Mut α a %1 -> Sink r %1 -> Work α a t r
   Unite :: t (Source r) %1 -> Sink r %1 -> Work α a t r
 
+data WithOne f a = WithOne !(f a) !a
+  deriving stock (GHC.Generic)
+
+deriveGenericAnd1 ''WithOne
+
+deriving via Generically (WithOne f a) instance (Consumable (f a), Consumable a) => Consumable (WithOne f a)
+
+instance (Data.Functor f) => Data.Functor (WithOne f) where
+  fmap h (WithOne fa ga) = WithOne (Data.fmap h fa) (h ga)
+
+instance (Data.Traversable f) => Data.Traversable (WithOne f) where
+  traverse h (WithOne fa ga) = WithOne Data.<$> Data.traverse h fa Data.<*> h ga
+
 divideAndConquer ::
   forall α t a r.
-  (Data.Traversable t) =>
+  (Data.Traversable t, Consumable (t ())) =>
   -- | The # of workers
   Int ->
   DivideConquer α t a r ->
@@ -126,19 +141,18 @@ divideAndConquer n DivideConquer {..} ini = DataFlow.do
               Once.put sink r
               Control.pure q
             Continue ts -> Control.do
-              (sources, q) <- flip runStateT q Control.do
+              (sources, works) <- flip runStateT [] Control.do
                 Data.for ts \work -> Control.do
-                  lin <- Control.state withLinearly
-                  Once.new lin & \(sink, source) -> Control.do
-                    Control.StateT \q ->
-                      ((),) Control.<$> MQ.writeMQueue q (Divide work sink)
-                    Control.pure source
-              MQ.writeMQueue q (Unite sources sink)
+                  (sink, source) <- Control.lift $ asksLinearly Once.new
+                  Control.modify (Divide work sink :)
+                  Control.pure source
+              MQ.unGetMQueueMany q (WithOne works (Unite sources sink))
         Unite sources sink -> Control.do
           case conquer of
             NoOp -> Control.do
+              Control.void $ Data.traverse Once.take sources
               Once.put sink ()
-              Control.pure $ Unsafe.toLinear (\_ -> ()) sources `lseq` q
+              Control.pure q
 
 {-
             -- NOTE: To handle conquer correctly, we need to be more careful

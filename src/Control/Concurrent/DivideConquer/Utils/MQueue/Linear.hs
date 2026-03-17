@@ -29,6 +29,7 @@ module Control.Concurrent.DivideConquer.Utils.MQueue.Linear (
   unsafeCloneN,
   writeMQueue,
   writeMQueueMany,
+  unGetMQueueMany,
   readMQueue,
   closeMQueue,
 ) where
@@ -52,6 +53,7 @@ import Prelude.Linear
 import Prelude.Linear.Unsatisfiable
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
+import Prelude qualified as P
 
 -- | A closable queue
 newtype MQueue a = MkMQ (TMQueue a)
@@ -85,6 +87,34 @@ writeMQueue ::
   BO α (Mut α (MQueue a))
 writeMQueue = Unsafe.toLinear2 \q a -> Control.do
   unsafeSystemIOToBO $ q NonLinear.<$ atomically (TMQ.writeTMQueue (NonLinear.coerce q) a)
+
+{- | Push to the front of the queue.
+The first element comes at the top of the queue.
+-}
+unGetMQueueMany ::
+  (Data.Traversable t, Consumable (t ())) =>
+  Mut α (MQueue a) %1 ->
+  t a %1 ->
+  BO α (Mut α (MQueue a))
+unGetMQueueMany = Unsafe.toLinear2 \q as ->
+  Control.fmap (`lseq` q) $
+    unsafeAtomically $
+      runBackwards $
+        Data.traverse (Backwards . unsafeSTMToBO . Unsafe.toLinear (TMQ.unGetTMQueue (NonLinear.coerce q))) as
+
+newtype Backwards f a = Backwards (f a)
+  deriving newtype (Data.Functor, Control.Functor)
+
+runBackwards :: Backwards f a %1 -> f a
+runBackwards (Backwards x) = x
+
+instance (Data.Applicative f) => Data.Applicative (Backwards f) where
+  pure = Backwards P.. Data.pure
+  Backwards f <*> Backwards x = Backwards ((&) Data.<$> x Data.<*> f)
+
+instance (Control.Applicative f) => Control.Applicative (Backwards f) where
+  pure = Backwards . Control.pure
+  Backwards f <*> Backwards x = Backwards ((&) Control.<$> x Control.<*> f)
 
 writeMQueueMany ::
   (Data.Traversable t, Consumable (t ())) =>

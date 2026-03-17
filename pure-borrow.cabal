@@ -1,13 +1,13 @@
 cabal-version: 3.4
 name: pure-borrow
 version: 0.1.0.0
-synopsis: Pure realization of Rust-style borrows
+synopsis: Rust-style borrowing in Linear Haskell with purity
 description: Please see README.md.
 license: BSD-3-Clause
 license-file: LICENSE
 author: Yusuke Matsushita and Hiromi Ishii
 maintainer: ysk.m24t@gmail.com
-copyright: Copyright (c) 2025, Yusuke Matsushita and Hiromi Ishii
+copyright: Copyright (c) 2025-2026, Yusuke Matsushita and Hiromi Ishii
 category: Linear Haskell
 build-type: Simple
 homepage: https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow

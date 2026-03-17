@@ -204,6 +204,8 @@ The library code is located under the `src` directory. Its API reference, genera
 Here we list important modules:
 
 - `Control.Monad.Borrow.Pure` exports the user-facing API functions of Pure Borrow, including:
+  + The header of the module contains code fragments corresponding to the code examples in Figs. 4-6.
+    The same code is also tested in `Data.Vector.Mutable.Linear.BorrowSpec` under `test` dir.
   + General Core APIs in Fig. 4: `BO α a`, `Mut α a`, `runBO`, `borrow`, `share`, and `reclaim`.
   + Parallelism primitives in Fig. 5: `parBO`
   + `reborrowing` combinator in Fig. 6.

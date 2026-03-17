@@ -58,7 +58,7 @@ import Data.Vector qualified as V
 import Data.Vector.Mutable (RealWorld)
 import Data.Vector.Mutable qualified as MV
 import GHC.Exts qualified as GHC
-import GHC.IO (noDuplicate, unsafePerformIO)
+import GHC.IO (unsafePerformIO)
 import GHC.Stack (HasCallStack)
 import Prelude.Linear hiding (head, last, splitAt)
 import Unsafe.Linear qualified as Unsafe

@@ -40,6 +40,17 @@ The files uploaded to Zenodo are as follows:
 - `pure-borrow-src.tar.gz`: The complete source distribution of our Pure Borrow. It can be used for Option B.
 - `pure-borrow-reference.tar.gz`: An HTML API Reference of Pure Borrow. It was generated with Haddock from the source above.
 
+Also, we have recently discovered subtle bug in the implementation of "Work-stealing API".
+Fortunately, the work-stealing API is just a proof of concept demonstrating that our Pure Borrow framework can also be a good basis to construct more practical API on top it, and bug was unrelated to Pure Borrow itself.
+See "Notes on the Bug in Work-Stealing API" section for more discussion.
+For the sake of completeness, we have also included the "fixed" versions of the above:
+
+- `pure-borrow-docker-image-fixed-arm64/amd64.tar`: OCI images that can be used for Option A.
+  + It was built using `dockerfiles/artifact/Dockerfile` in the source `pure-borrow-src.tar.gz`.
+- `pure-borrow-src-fixed.tar.gz`: The complete source distribution of our Pure Borrow. It can be used for Option B.
+
+The bug just lies in the details, so API reference remains untouched.
+
 ### Option A: Using a Container Image
 
 First, you need to install a Docker-compatible container runtime that can run Linux images. The description below assumes `docker` CLI, but you can use any Docker-compatible runtime as you like.
@@ -230,3 +241,23 @@ It accepts the following CLI arguments:
 | `-p N` / `-S` / `-w` | Sorting algorithm. `-p N` means Naïve parallel sort with budget `N`; `-S` means sequential quicksort; `-w` uses works-stealing  |
 
 It prints neither the original nor the sorted arrays, just evaluates the output array into normal form. Hence, for small input sizes, the command may appear to be doing nothing. But if you increase the size to a large number (e.g., `4096124`), you can observe the difference between sorting algorithms.
+
+## Notes on the Bug in Work-Stealing API
+
+We have discovered the correctness bug in the implementation of Work-Stealing API implementation after the submission.
+Fortunately, the bug lies in the concurrency logic only specific to the work-stealing scheduler rather than in the core APIs of Pure Borrow.
+Indeed, in "fixed" version, the code changes are only made to `Control.Concurrent.DivideConquer.Linear` module and its submodules, and no fix to the Pure Borrow API was needed.
+
+Roughly speaking, the old code assumes the wrong invariant on the timings of synchronizing the concurrent computation, resulting in partially non-sorted array when tested non-deterministically.
+The attached "fixed" version quickly addresses this issue by using atomic counter for sanity check.
+We have tested the new implementation under many circumstances, and we are pretty sure that the fix indeed works.
+
+However, the introduction of a global atomic counter sacrificed the performance greatly.
+The current (fixed) implementation runs faster than sequential / naïve implementations only when ran with four worker threads, and cannot win introsort anymore.
+
+We don't think this situation DOES NOT sacrifice the value of our contribution - after all, the Work-Stealing API was just meant to be a proof-of-concept demonstrating that our Pure Borrow can also be a useful basic building block to construct more practical and complex API.
+Indeed, Review C gently noted, even before the discovery of the bug, that:
+
+> I don’t really care about the performance results for this work; especially not for just a single benchmark, but as a ”sanity check” they are leaning in the right direction.
+
+Of course, we consider more sophisticated and optimized scheduler API as a good future work, and eagerly working on it.

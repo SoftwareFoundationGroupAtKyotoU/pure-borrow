@@ -290,9 +290,9 @@ Notably, the fix only changes the implementation in the `Control.Concurrent.Divi
 
 The old code assumed an incorrect invariant about the timing of synchronization of the concurrent computation, resulting in a partially non-sorted array with a low probability, depending on thread scheduling.
 
-The attached "fixed" version quickly addresses this issue by using a global atomic counter for a sanity check. We have tested the new implementation under various conditions to confirm that it works correctly.
+The attached "fixed" version quickly addresses this issue by using a global atomic counter for synchronization. We have tested the new implementation under various conditions to confirm that it works correctly.
 
-However, the introduction of a global atomic counter reduced the performance significantly. For the new benchmark results, please see `new-benchmark-results.png` included in the Zenodo record. The good news is that the fixed implementation still runs faster than the sequential and naïve implementations when run with four worker threads.
+However, the introduction of a global atomic counter reduced the performance significantly. For the new benchmark results, please see `new-benchmark-results.png` included in the Zenodo record. The good news is that the fixed implementation still runs faster than the sequential and naïve implementations, when run with four worker threads.
 
 We are working on the work-stealing API implementation to achieve better performance while avoiding bugs.
 
@@ -304,4 +304,4 @@ Indeed, no reviews highlighted the performance results in §4.2 as a strength of
 
 > I don’t really care about the performance results for this work; especially not for just a single benchmark, but as a ”sanity check” they are leaning in the right direction.
 
-Also, this change regarding the work-stealing API has already been communicated to the paper's reviewers on HotCRP.
+This change regarding the work-stealing API has already been communicated to the paper's reviewers on HotCRP.

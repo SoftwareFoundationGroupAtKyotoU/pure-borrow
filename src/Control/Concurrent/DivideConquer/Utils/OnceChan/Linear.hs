@@ -7,7 +7,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
-module Data.OnceChan.Linear (
+module Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (
   Sink,
   Source,
   new,
@@ -15,10 +15,10 @@ module Data.OnceChan.Linear (
   take,
 ) where
 
+import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear.Unlifted
 import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Internal
 import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
-import Data.OnceChan.Linear.Unlifted
 import Data.Unrestricted.Linear
 import Prelude.Linear hiding (take)
 import Unsafe.Linear qualified as Unsafe

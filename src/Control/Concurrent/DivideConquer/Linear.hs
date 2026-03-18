@@ -29,6 +29,8 @@ import Control.Concurrent (ThreadId, forkIO)
 import Control.Concurrent qualified as Conc
 import Control.Concurrent.DivideConquer.Utils.MQueue.Linear (newMQueue)
 import Control.Concurrent.DivideConquer.Utils.MQueue.Linear qualified as MQ
+import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (Sink, Source)
+import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear qualified as Once
 import Control.Functor.Linear (runStateT)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
@@ -39,8 +41,6 @@ import Data.Coerce qualified as NonLinear
 import Data.Coerce.Directed
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
-import Data.OnceChan.Linear (Sink, Source)
-import Data.OnceChan.Linear qualified as Once
 import Data.Proxy (Proxy (..))
 import Data.Unrestricted.Linear (AsMovable (..))
 import Data.Vector.Mutable.Linear.Borrow qualified as LV

@@ -5,6 +5,7 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
 
 jobs:
   ci-enumerate:
@@ -251,3 +252,181 @@ jobs:
           cabal-version: 3.16.1.0
           ghc-version: latest
       - run: cabal check
+
+  sdist:
+    name: Create Source Distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{github.event.pull_request.head.sha || github.sha}}
+      - name: Setup Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          cabal-version: 3.16.1.0
+          ghc-version: latest
+      - name: Create Source Distribution
+        run: |
+          cabal sdist -o .
+          tar xzvf pure-borrow-0.1.0.0.tar.gz
+          cp cabal.project* pure-borrow-0.1.0.0/
+          tar caf pure-borrow-src.tar.gz pure-borrow-0.1.0.0
+      - name: Upload Source Distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: pure-borrow-sdist
+          path: pure-borrow-src.tar.gz
+
+  test-sdist:
+    name: Dry Run Source Distribution
+    needs: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Source Distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: pure-borrow-sdist
+      - name: Decompress
+        run: tar xzvf pure-borrow-src.tar.gz
+      - name: Setup Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          cabal-version: 3.16.1.0
+          ghc-version: 9.10.3
+      - name: Build and Test
+        run: |
+          cd pure-borrow-0.1.0.0
+          cabal run -- artifact-runner demo
+
+  build-docker:
+    name: Build Docker Image (${{matrix.arch}})
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+      fail-fast: false
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and export OCI tar
+        uses: docker/build-push-action@v6
+        with:
+          tags: |
+            pure-borrow:${{ matrix.arch }}
+            pure-borrow:latest
+          context: "dockerfiles/artifact"
+          platforms: linux/${{ matrix.arch }}
+          cache-from: type=gha
+          load: true
+          build-args: |
+            PURE_BORROW_COMMIT=${{github.event.pull_request.head.sha || github.sha}}
+          cache-to: type=gha,mode=max
+          provenance: false
+      - name: Save Docker Image as Tar
+        run: |
+          docker save pure-borrow:latest -o pure-borrow-docker-image-${{ matrix.arch }}.tar
+      - name: Upload intermediate tar
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-${{ matrix.arch }}
+          path: ./pure-borrow-docker-image-${{ matrix.arch }}.tar
+
+  test-docker:
+    name: Test Docker Image
+    needs: build-docker
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+      fail-fast: false
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Download Docker Image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image-${{ matrix.arch }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Load Docker Image
+        run: |
+          docker load -i ./pure-borrow-docker-image-${{ matrix.arch }}.tar
+      - name: Test Docker Image
+        run: |
+          docker run --rm pure-borrow:latest demo
+          docker run --cpus 4 --rm -v $(pwd):/workspace pure-borrow:latest quick
+
+  build-reference:
+    name: Build API Reference
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{github.event.pull_request.head.sha || github.sha}}
+      - name: Setup Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          cabal-version: 3.16.1.0
+          ghc-version: 9.10.3
+      - name: Cache Cabal Store
+        uses: actions/cache@v3
+        with:
+          key: ${{ runner.os }}-haddock-cabal-store-${{ hashFiles('**/cabal.project*', '**/*.cabal') }}
+          path: |
+            ~/.cabal/store
+      - name: Build Documentation
+        run: |
+          cabal configure --disable-optimization --disable-tests --disable-benchmarks
+          cabal haddock-project --output=pure-borrow-reference
+          tar caf pure-borrow-reference.tar.gz pure-borrow-reference
+      - name: Upload API Reference
+        uses: actions/upload-artifact@v4
+        with:
+          name: pure-borrow-reference
+          path: pure-borrow-reference.tar.gz
+
+  artifacts:
+    name: Upload Artifacts
+    runs-on: ubuntu-latest
+    needs: [sdist, build-docker, build-reference]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{github.event.pull_request.head.sha || github.sha}}
+      - name: Prepare Artifacts Directory
+        run: mkdir -p pure-borrow-artifacts
+      - name: Copy README
+        run: cp README.md pure-borrow-artifacts/
+      - name: Download Source Distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: pure-borrow-sdist
+          path: ./pure-borrow-artifacts
+      - name: Download Docker Images
+        uses: actions/download-artifact@v4
+        with:
+          pattern: docker-image-*
+          merge-multiple: true
+          path: ./pure-borrow-artifacts
+      - name: Download API Reference
+        uses: actions/download-artifact@v4
+        with:
+          name: pure-borrow-reference
+          path: ./pure-borrow-artifacts
+      - name: Upload All Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts
+          path: ./pure-borrow-artifacts

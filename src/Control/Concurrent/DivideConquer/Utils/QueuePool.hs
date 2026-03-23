@@ -130,7 +130,6 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
                   let (!i, !g') = R.randomR (0, n P.- 1) g
                   writeIORef gen g'
                   atomically (tryPopBackTMDeque (V.unsafeIndex others i)) P.>>= \case
-                    Just Nothing -> P.pure Nothing
                     Just mx -> P.pure $ (,qs) P.<$!> mx
                     Nothing -> do
                       g <- readIORef gen

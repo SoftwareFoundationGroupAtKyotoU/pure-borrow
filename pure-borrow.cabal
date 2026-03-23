@@ -111,6 +111,7 @@ test-suite pure-borrow-test
     falsify,
     inspection-testing,
     pure-borrow,
+    random,
     tasty,
     tasty-discover,
     tasty-expected-failure,

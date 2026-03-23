@@ -48,53 +48,48 @@ import GHC.TypeNats (SomeNat (..), someNatVal)
 import Generics.Linear.TH (deriveGeneric, deriveGenericAnd1)
 import Prelude.Linear
 import Prelude.Linear.Generically (Generically, Generically1)
-import System.Random (mkStdGen)
+import System.Random (RandomGen)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
-data DivideConquer α t a r = DivideConquer
-  { divide :: forall β. (β <= α) => Mut β a %1 -> BO β (Result β t a r)
-  , conquer :: Conquer α t r
+data DivideConquer α t a = DivideConquer
+  { divide :: forall β. (β <= α) => Mut β a %1 -> BO β (Result β t a)
   }
 
-data Result β t a r = Done r | Continue (t (Mut β a))
+data Result β t a = Done | Continue (t (Mut β a))
 
-data Conquer α t r where
-  NoOp :: Conquer α t ()
+data Work α a (t :: Type -> Type) where
+  Process :: Mut α a %1 -> Sink () %1 -> Work α a t %1 -> Work α a t
+  Unite :: t (Source ()) %1 -> Sink () %1 -> Work α a t
+  Final :: Work α a t
 
-data Work α a (t :: Type -> Type) (r :: Type) where
-  Process :: Mut α a %1 -> Sink r %1 -> Work α a t r %1 -> Work α a t r
-  Unite :: t (Source r) %1 -> Sink r %1 -> Work α a t r
-  Final :: Work α a t r
+-- TODO: perhaps we can use atomic counter here again?
 
 divideAndConquer ::
-  forall α t a r.
-  (Data.Traversable t, Consumable (t ())) =>
+  forall α t a g.
+  (RandomGen g, Data.Traversable t, Consumable (t ())) =>
   -- | The # of workers
   Int ->
-  DivideConquer α t a r ->
+  DivideConquer α t a ->
+  g ->
   Mut α a %1 ->
-  BO α (r, Mut α a)
-divideAndConquer n DivideConquer {..} ini
+  BO α (Mut α a)
+divideAndConquer n DivideConquer {..} g ini
   | n == 0 = error ("divideAndConquer: # of workers must be positive, but got: " <> show n) ini
-  | otherwise = DataFlow.do
-      reborrowing' ini \(ini :: Mut γ a) ->
+  | otherwise =
+      uncurry (lseq @()) Control.<$> reborrowing' ini \(ini :: Mut γ a) ->
         someNatVal (fromIntegral n) & \(SomeNat (_ :: Proxy n)) -> Control.do
-          (workers, master) <- newQueuePool @n (mkStdGen 42)
+          (workers, master) <- newQueuePool @n g
           (masterQ, masterLend) <- asksLinearly $ borrow master
           (rootSink, rootSource) <- asksLinearly Once.new
 
           Control.void $ pushWorkMaster masterQ $ Process ini rootSink Final
 
           concurrentMap_ worker workers
-          r <-
-            ( case conquer of
-                NoOp -> Once.take rootSource
-            ) ::
-              BO γ r
-          Control.pure (upcast $ (`lseq` r) Control.<$> reclaim' masterLend)
+          Once.take rootSource
+          Control.pure (upcast $ consume Control.<$> reclaim' masterLend)
   where
-    worker :: (β <= α) => Mut β (QueuePool (Work β a t r)) %1 -> BO β ()
+    worker :: (β <= α) => Mut β (QueuePool (Work β a t)) %1 -> BO β ()
     worker q =
       whileJust_ q popWork \q -> \case
         Final -> Control.pure q
@@ -102,8 +97,8 @@ divideAndConquer n DivideConquer {..} ini
           q <- pushWork q next
           resl <- divide ini
           case resl of
-            Done !r -> Control.do
-              Once.put sink r
+            Done -> Control.do
+              Once.put sink ()
               Control.pure q
             Continue ts -> Control.do
               (sources, k) <-
@@ -113,11 +108,9 @@ divideAndConquer n DivideConquer {..} ini
                   Control.pure source
               pushWork q $ appEndo k $ Unite sources sink
         Unite children sink -> Control.do
-          case conquer of
-            NoOp -> Control.do
-              Control.void $ Data.traverse Once.take children
-              Once.put sink ()
-              Control.pure q
+          Control.void $ Data.traverse Once.take children
+          Once.put sink ()
+          Control.pure q
 
 newtype ThreadId_ = ThreadId_ ThreadId
   deriving stock (GHC.Generic)
@@ -205,33 +198,33 @@ instance Data.Traversable Pair where
   {-# INLINE traverse #-}
 
 qsortDC ::
-  (Ord a, Copyable a) =>
+  (RandomGen g, Ord a, Copyable a) =>
   -- | The # of workers
   Int ->
   -- | Threshold for the length of vector to switch to sequential sort
   Int ->
+  g ->
   Mut α (LV.Vector a) %1 ->
-  BO α ((), Mut α (LV.Vector a))
+  BO α (Mut α (LV.Vector a))
 qsortDC nwork thresh = divideAndConquer nwork (qsortDC' thresh)
 
 qsortDC' ::
   (Ord a, Copyable a) =>
   -- | Threshold for the length of vector to switch to sequential sort
   Int ->
-  DivideConquer α Pair (LV.Vector a) ()
+  DivideConquer α Pair (LV.Vector a)
 qsortDC' thresh =
   DivideConquer
     { divide = \vs ->
         case LV.size vs of
           (Ur n, v)
             | n <= 1 ->
-                v `lseq` Control.pure (Done ())
+                v `lseq` Control.pure Done
             | n <= thresh ->
-                Done Control.<$> LV.qsort 0 v
+                Done Control.<$ LV.qsort 0 v
             | otherwise -> Control.do
                 let i = n `quot` 2
                 (Ur pivot, v) <- LV.copyAtMut i v
                 (lo, hi) <- LV.divide pivot v 0 n
                 Control.pure $ Continue $ Pair lo hi
-    , conquer = NoOp
     }

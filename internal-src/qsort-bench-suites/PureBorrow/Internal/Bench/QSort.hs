@@ -35,6 +35,7 @@ import qualified Test.Tasty.Bench as Bench
 import Test.Tasty.Ingredients.Basic (includingOptions)
 import Test.Tasty.Options
 import Text.Read (readMaybe)
+import Prelude as P
 
 data Mode = Parallel Word | Worksteal Int | Sequential | IntroSort
   deriving (Show, Eq, Ord)
@@ -110,7 +111,7 @@ qsortWith (Worksteal p) v =
       (lin, l2, l3) <- dup3 lin
       runBO lin Control.do
         (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
-        Control.void PL.$ qsortDC p 16 v
+        Control.void PL.$ qsortDC p 16 (mkStdGen 42) v
         pureAfter (VL.toVector PL.$ reclaim lend)
 
 data SampleSize = SampleSize Int

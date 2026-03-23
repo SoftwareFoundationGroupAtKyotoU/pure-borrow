@@ -28,17 +28,17 @@ module Control.Concurrent.DivideConquer.Utils.QueuePool (
   pushWorkMaster,
 ) where
 
-import Control.Concurrent (threadDelay)
-import Control.Concurrent.STM (atomically)
+import Control.Applicative ((<|>))
+import Control.Concurrent.STM (STM, atomically, retry)
 import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Internal
 import Data.Coerce (coerce)
-import Data.Function (fix)
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.Foldable qualified as P
 import Data.List qualified as L
+import Data.Monoid (Alt (..))
 import Data.V.Linear (V, theLength)
 import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
@@ -46,20 +46,17 @@ import GHC.Exts qualified as GHC
 import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownNat)
 import Prelude.Linear
-import System.Random (RandomGen)
-import System.Random qualified as R
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as P
 
-data QueuePool a = forall g. (RandomGen g) => QueuePool
+data QueuePool a = QueuePool
   { mine :: !(TMDeque a)
   , others :: !(V.Vector (TMDeque a))
-  , gen :: !(IORef g)
   }
 
 instance Consumable (QueuePool a) where
   consume (QueuePool {..}) = do
-    Unsafe.toLinear (\_ -> ()) gen `lseq` consumeTMDQ mine `lseq` map consumeTMDQ (V.toList others) `lseq` ()
+    consumeTMDQ mine `lseq` map consumeTMDQ (V.toList others) `lseq` ()
 
 newtype MasterQueuePool a = MasterQueuePool [TMDeque a]
 
@@ -74,25 +71,21 @@ consumeTMDQ = GHC.noinline $ Unsafe.toLinear \q -> GHC.unsafePerformIO do
   P.pure ()
 
 newQueuePool ::
-  forall n a α g.
-  (KnownNat n, RandomGen g) =>
-  g ->
+  forall n a α.
+  (KnownNat n) =>
   BO α (V n (Mut α (QueuePool a)), MasterQueuePool a)
-newQueuePool g = unsafeSystemIOToBO do
+newQueuePool = unsafeSystemIOToBO do
   let n = theLength @n
 
   qs <- NonLinear.replicateM n newTMDequeIO
-  pools <-
-    P.mapM
-      ( \(ini, mine, tl, gen) -> do
-          gen <- newIORef gen
-          P.pure P.$ QueuePool {others = V.fromList $ ini <> tl, ..}
-      )
-      P.$ L.zip4
-        (L.inits qs)
-        qs
-        (P.drop 1 $ L.tails qs)
-        (P.take n $ L.unfoldr (Just P.. R.split) g)
+  let pools =
+        P.zipWith3
+          ( \ini mine tl -> do
+              QueuePool {others = V.fromList $ ini <> tl, ..}
+          )
+          (L.inits qs)
+          qs
+          (P.drop 1 $ L.tails qs)
   let master = MasterQueuePool $ P.map (mine P.. coerce) pools
   P.pure (V $ V.fromList $ map UnsafeAlias pools, master)
 
@@ -115,26 +108,12 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
   unsafeSystemIOToBO do
     atomically (tryPopFrontTMDeque mine) P.>>= \case
       Just mx -> P.pure $ (,qs) P.<$!> mx
-      Nothing ->
-        let !n = V.length others
-         in fix \go -> do
-              done <- atomically $ isClosedTMDeque mine
-              if done
-                then P.pure Nothing
-                else do
-                  -- NOTE: as each thread posseses its own rng,
-                  -- we don't need to use 'atomicModifyIORef' here
-                  -- that imposes unnecessary memory barrier
-                  -- and just read and write back the new generator value
-                  g <- readIORef gen
-                  let (!i, !g') = R.randomR (0, n P.- 1) g
-                  writeIORef gen g'
-                  atomically (tryPopBackTMDeque (V.unsafeIndex others i)) P.>>= \case
-                    Just Nothing -> P.pure Nothing
-                    Just mx -> P.pure $ (,qs) P.<$!> mx
-                    Nothing -> do
-                      g <- readIORef gen
-                      let (!i, !g') = R.randomR (10, 100) g
-                      writeIORef gen g'
-                      threadDelay i
-                      go
+      Nothing -> do
+        P.fmap (,qs) P.<$!> atomically do
+          ( isClosedTMDeque mine P.>>= \closed ->
+              if closed then P.pure Nothing else retry
+            )
+            <|> getAlt (P.foldMap' (Alt P.. (fromJustSTM P.<=< tryPopBackTMDeque)) others)
+
+fromJustSTM :: Maybe a -> STM a
+fromJustSTM = P.maybe retry P.pure

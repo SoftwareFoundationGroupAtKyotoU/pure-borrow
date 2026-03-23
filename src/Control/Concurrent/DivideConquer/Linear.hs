@@ -48,7 +48,6 @@ import GHC.TypeNats (SomeNat (..), someNatVal)
 import Generics.Linear.TH (deriveGeneric, deriveGenericAnd1)
 import Prelude.Linear
 import Prelude.Linear.Generically (Generically, Generically1)
-import System.Random (RandomGen)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
@@ -66,20 +65,19 @@ data Work α a (t :: Type -> Type) where
 -- TODO: perhaps we can use atomic counter here again?
 
 divideAndConquer ::
-  forall α t a g.
-  (RandomGen g, Data.Traversable t, Consumable (t ())) =>
+  forall α t a.
+  (Data.Traversable t, Consumable (t ())) =>
   -- | The # of workers
   Int ->
   DivideConquer α t a ->
-  g ->
   Mut α a %1 ->
   BO α (Mut α a)
-divideAndConquer n DivideConquer {..} g ini
+divideAndConquer n DivideConquer {..} ini
   | n == 0 = error ("divideAndConquer: # of workers must be positive, but got: " <> show n) ini
   | otherwise =
       uncurry (lseq @()) Control.<$> reborrowing' ini \(ini :: Mut γ a) ->
         someNatVal (fromIntegral n) & \(SomeNat (_ :: Proxy n)) -> Control.do
-          (workers, master) <- newQueuePool @n g
+          (workers, master) <- newQueuePool @n
           (masterQ, masterLend) <- asksLinearly $ borrow master
           (rootSink, rootSource) <- asksLinearly Once.new
 
@@ -198,12 +196,11 @@ instance Data.Traversable Pair where
   {-# INLINE traverse #-}
 
 qsortDC ::
-  (RandomGen g, Ord a, Copyable a) =>
+  (Ord a, Copyable a) =>
   -- | The # of workers
   Int ->
   -- | Threshold for the length of vector to switch to sequential sort
   Int ->
-  g ->
   Mut α (LV.Vector a) %1 ->
   BO α (Mut α (LV.Vector a))
 qsortDC nwork thresh = divideAndConquer nwork (qsortDC' thresh)

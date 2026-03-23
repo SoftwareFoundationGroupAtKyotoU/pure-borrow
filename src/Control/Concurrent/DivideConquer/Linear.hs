@@ -27,28 +27,28 @@ module Control.Concurrent.DivideConquer.Linear (
 
 import Control.Concurrent (ThreadId, forkIO)
 import Control.Concurrent qualified as Conc
-import Control.Concurrent.DivideConquer.Utils.MQueue.Linear (newMQueue)
-import Control.Concurrent.DivideConquer.Utils.MQueue.Linear qualified as MQ
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (Sink, Source)
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear qualified as Once
-import Control.Functor.Linear (runStateT)
+import Control.Concurrent.DivideConquer.Utils.QueuePool (QueuePool, newQueuePool, popWork, pushWork, pushWorkMaster)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Affine (Affine, GenericallyAffine (..))
 import Control.Monad.Borrow.Pure.Internal
-import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce qualified as NonLinear
 import Data.Coerce.Directed
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
 import Data.Proxy (Proxy (..))
 import Data.Unrestricted.Linear (AsMovable (..))
+import Data.V.Linear (V)
+import Data.V.Linear.Internal (V (..))
 import Data.Vector.Mutable.Linear.Borrow qualified as LV
 import GHC.Generics qualified as GHC
 import GHC.TypeNats (SomeNat (..), someNatVal)
 import Generics.Linear.TH (deriveGeneric, deriveGenericAnd1)
 import Prelude.Linear
 import Prelude.Linear.Generically (Generically, Generically1)
+import System.Random (mkStdGen)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
@@ -62,95 +62,62 @@ data Result β t a r = Done r | Continue (t (Mut β a))
 data Conquer α t r where
   NoOp :: Conquer α t ()
 
-{-
-  -- NOTE: To handle conquer correctly, we need to be more careful
-  -- with the dependency between tasks and easily deadlocks / starvation.
-  --
-  -- Meanwhile, qsort requires no postprocesses so we just handle No-Op.
-  Conquer :: (forall β. (β <= α) => t r %1 -> BO β r) -> Conquer α t r
--}
-
 data Work α a (t :: Type -> Type) (r :: Type) where
-  Divide :: Mut α a %1 -> Sink r %1 -> Work α a t r
+  Process :: Mut α a %1 -> Sink r %1 -> Work α a t r %1 -> Work α a t r
   Unite :: t (Source r) %1 -> Sink r %1 -> Work α a t r
+  Final :: Work α a t r
 
 divideAndConquer ::
   forall α t a r.
-  (Data.Traversable t) =>
+  (Data.Traversable t, Consumable (t ())) =>
   -- | The # of workers
   Int ->
   DivideConquer α t a r ->
   Mut α a %1 ->
   BO α (r, Mut α a)
-divideAndConquer n DivideConquer {..} ini = DataFlow.do
-  (lin, ini) <- withLinearly ini
-  (lin, lin', lin'') <- dup3 lin
-  reborrowing' ini \(ini :: Mut γ a) ->
-    someNatVal (fromIntegral n) & \(SomeNat (_ :: Proxy n)) -> Control.do
-      (q, lend) <- newMQueue lin
-      DataFlow.do
-        (q, q') <- MQ.unsafeClone q
-        (rootSink, rootSource) <- Once.new lin'
-        qs <- MQ.unsafeCloneN @n q'
-        Control.do
-          q <- MQ.writeMQueue q $ Divide ini rootSink
-          chs <- concurrentMap lin'' worker qs
+divideAndConquer n DivideConquer {..} ini
+  | n == 0 = error ("divideAndConquer: # of workers must be positive, but got: " <> show n) ini
+  | otherwise = DataFlow.do
+      reborrowing' ini \(ini :: Mut γ a) ->
+        someNatVal (fromIntegral n) & \(SomeNat (_ :: Proxy n)) -> Control.do
+          (workers, master) <- newQueuePool @n (mkStdGen 42)
+          (masterQ, masterLend) <- asksLinearly $ borrow master
+          (rootSink, rootSource) <- asksLinearly Once.new
+
+          Control.void $ pushWorkMaster masterQ $ Process ini rootSink Final
+
+          concurrentMap_ worker workers
           r <-
             ( case conquer of
-                NoOp -> Control.do
-                  Once.take rootSource
-                  MQ.closeMQueue q
-                  Control.void $ Data.traverse wait chs
-                  Control.pure ()
+                NoOp -> Once.take rootSource
             ) ::
               BO γ r
-          {-
-            -- NOTE: To handle conquer correctly, we need to be more careful
-            -- with the dependency between tasks and easily deadlocks / starvation.
-            --
-            -- Meanwhile, qsort requires no postprocesses so we just handle No-Op.
-            Conquer -> Control.do
-              !r <- Once.take rootSource
-              MQ.closeMQueue q
-              Control.void $ forkBO $ Control.void $ Data.traverse killThreadBO chs
-          -}
-          Control.pure (upcast $ (`lseq` r) Control.<$> reclaim' lend)
+          Control.pure (upcast $ (`lseq` r) Control.<$> reclaim' masterLend)
   where
-    worker :: (β <= α) => Mut β (MQ.MQueue (Work β a t r)) %1 -> BO β ()
+    worker :: (β <= α) => Mut β (QueuePool (Work β a t r)) %1 -> BO β ()
     worker q =
-      whileJust_ q MQ.readMQueue \q -> \case
-        Divide !inp !sink -> Control.do
-          resl <- divide inp
+      whileJust_ q popWork \q -> \case
+        Final -> Control.pure q
+        Process ini sink next -> Control.do
+          q <- pushWork q next
+          resl <- divide ini
           case resl of
             Done !r -> Control.do
               Once.put sink r
               Control.pure q
             Continue ts -> Control.do
-              (sources, q) <- flip runStateT q Control.do
-                Data.for ts \work -> Control.do
-                  lin <- Control.state withLinearly
-                  Once.new lin & \(sink, source) -> Control.do
-                    Control.StateT \q ->
-                      ((),) Control.<$> MQ.writeMQueue q (Divide work sink)
-                    Control.pure source
-              MQ.writeMQueue q (Unite sources sink)
-        Unite sources sink -> Control.do
+              (sources, k) <-
+                flip Control.runStateT mempty $ Data.for ts \work -> Control.do
+                  (sink, source) <- Control.lift $ asksLinearly Once.new
+                  Control.modify (<> Endo (Process work sink))
+                  Control.pure source
+              pushWork q $ appEndo k $ Unite sources sink
+        Unite children sink -> Control.do
           case conquer of
             NoOp -> Control.do
+              Control.void $ Data.traverse Once.take children
               Once.put sink ()
-              Control.pure $ Unsafe.toLinear (\_ -> ()) sources `lseq` q
-
-{-
-            -- NOTE: To handle conquer correctly, we need to be more careful
-            -- with the dependency between tasks and easily deadlocks / starvation.
-            --
-            -- Meanwhile, qsort requires no postprocesses so we just handle No-Op.
-            Conquer k ->
-              pieces <- Data.traverse Once.take sources
-              !res <- k pieces
-              Once.put sink res
               Control.pure q
-  -}
 
 newtype ThreadId_ = ThreadId_ ThreadId
   deriving stock (GHC.Generic)
@@ -158,9 +125,6 @@ newtype ThreadId_ = ThreadId_ ThreadId
 
 instance Movable ThreadId_ where
   move = Unsafe.toLinear Ur
-
-wait :: Thread %1 -> BO α ()
-wait (Thread tid source) = tid `lseq` Once.take source
 
 data Thread = Thread !ThreadId_ !(Source ())
   deriving stock (GHC.Generic)
@@ -170,21 +134,17 @@ _killThreadBO :: Thread %1 -> BO α ()
 _killThreadBO = Unsafe.toLinear \(Thread tid _) ->
   unsafeSystemIOToBO (Conc.killThread $ NonLinear.coerce tid)
 
-concurrentMap ::
-  (Data.Traversable t) =>
-  Linearly %1 ->
+concurrentMap_ ::
+  forall n a α.
   (a %1 -> BO α ()) ->
-  t a %1 ->
-  BO α (t Thread)
-concurrentMap lin k ts = flip Control.runReaderT lin do
-  Data.traverse
-    ( \a -> Control.do
-        lin <- Control.ask
-        Control.lift DataFlow.do
-          (sink, source) <- Once.new lin
-          Control.do
-            tid <- forkBO (k a Control.>> Once.put sink ())
-            Control.pure (Thread tid source)
+  V n a %1 ->
+  BO α ()
+concurrentMap_ k = Unsafe.toLinear \(V ts) -> unsafeSystemIOToBO do
+  NonLinear.mapM_
+    ( \a -> unsafeBOToSystemIO Control.do
+        (sink, source) <- asksLinearly Once.new
+        tid <- forkBO (k a Control.>> Once.put sink ())
+        Control.pure (Thread tid source)
     )
     ts
 

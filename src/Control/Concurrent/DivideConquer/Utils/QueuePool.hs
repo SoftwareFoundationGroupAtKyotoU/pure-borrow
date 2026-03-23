@@ -28,8 +28,9 @@ module Control.Concurrent.DivideConquer.Utils.QueuePool (
   pushWorkMaster,
 ) where
 
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, tryPopFrontTMDeque)
+import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
 import Control.Monad qualified as NonLinear
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Internal
@@ -127,7 +128,12 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
                   g <- readIORef gen
                   let (!i, !g') = R.randomR (0, n P.- 1) g
                   writeIORef gen g'
-                  atomically (tryPopFrontTMDeque (others V.! i)) P.>>= \case
+                  atomically (tryPopBackTMDeque (others V.! i)) P.>>= \case
                     Just Nothing -> P.pure Nothing
                     Just mx -> P.pure $ (,qs) P.<$> mx
-                    Nothing -> go
+                    Nothing -> do
+                      g <- readIORef gen
+                      let (!i, !g') = R.randomR (10, 1_000) g
+                      writeIORef gen g'
+                      threadDelay i
+                      go

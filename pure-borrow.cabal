@@ -47,11 +47,13 @@ library
   build-depends:
     containers,
     deepseq,
+    hybrid-vectors,
     linear-generics,
     random,
     stm,
     stm-chans,
     vector,
+    vector-algorithms,
 
   hs-source-dirs: src
   -- cabal-gild: discover src --exclude src/**/Utils.hs --exclude src/**/Utils/**/*.hs

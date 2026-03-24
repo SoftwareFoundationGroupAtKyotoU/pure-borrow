@@ -31,8 +31,9 @@ module Control.Concurrent.DivideConquer.Utils.QueuePool (
 
 import Control.Applicative (Alternative (..))
 import Control.Applicative qualified as P
+import Control.Concurrent (yield)
 import Control.Concurrent.STM (STM, atomically, retry)
-import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
+import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, countTMDequeIO, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure
@@ -40,17 +41,20 @@ import Control.Monad.Borrow.Pure.Internal
 import Data.Coerce (coerce)
 import Data.Foldable qualified as P
 import Data.Function (fix)
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.IORef (IORef, newIORef)
 import Data.List qualified as L
 import Data.Monoid (Alt (..))
+import Data.Ord (Down (..))
+import Data.Ord qualified as P
 import Data.V.Linear (V, theLength)
 import Data.V.Linear.Internal (V (..))
-import Data.Vector (MVector)
 import Data.Vector qualified as V
+import Data.Vector.Algorithms.Intro qualified as AI
+import Data.Vector.Generic qualified as GV
+import Data.Vector.Hybrid qualified as HV
+import Data.Vector.Hybrid.Mutable qualified as HMV
 import Data.Vector.Mutable (RealWorld)
-import Data.Vector.Mutable qualified as MV
 import GHC.Exts qualified as GHC
-import GHC.IO (unsafePerformIO)
 import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownNat)
 import Prelude.Linear
@@ -61,15 +65,10 @@ import Prelude qualified as P
 
 data QueuePool a = forall g. (RandomGen g) => QueuePool
   { mine :: !(TMDeque a)
-  , others :: !(V.MVector RealWorld (TMDeque a))
+  , others :: !(V.Vector (TMDeque a))
   , gen :: !(IORef g)
+  , num :: !Int
   }
-
-instance Consumable (QueuePool a) where
-  {-# NOINLINE consume #-}
-  consume = Unsafe.toLinear \(QueuePool {..}) -> unsafePerformIO do
-    P.mapM_ (atomically P.. closeTMDeque) P.. V.toList P.=<< V.unsafeFreeze others
-    atomically $ closeTMDeque mine
 
 newtype MasterQueuePool a = MasterQueuePool [TMDeque a]
 
@@ -79,7 +78,6 @@ instance Consumable (MasterQueuePool a) where
 consumeTMDQ :: TMDeque a %1 -> ()
 {-# NOINLINE consumeTMDQ #-}
 consumeTMDQ = GHC.noinline $ Unsafe.toLinear \q -> GHC.unsafePerformIO do
-  GHC.noDuplicate
   !() <- atomically $ closeTMDeque q
   P.pure ()
 
@@ -94,12 +92,13 @@ newQueuePool g = unsafeSystemIOToBO do
   qs <- NonLinear.replicateM n newTMDequeIO
   pools <-
     P.mapM
-      ( \(ini, mine, tl, gen) -> do
+      ( \(num, ini, mine, tl, gen) -> do
           gen <- newIORef gen
-          others <- V.unsafeThaw $ V.fromList $ ini <> tl
+          let others = V.fromList $ tl <> ini
           P.pure P.$ QueuePool {others, ..}
       )
-      P.$ L.zip4
+      P.$ L.zip5
+        [0 ..]
         (L.inits qs)
         qs
         (P.drop 1 $ L.tails qs)
@@ -141,26 +140,21 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
     atomically (tryPopFrontTMDeque mine) P.>>= \case
       Nothing -> P.pure Nothing
       Just (Just x) -> P.pure $ Just (x, qs)
-      Just Nothing -> do
-        shuffle gen others
-        !others' <- V.unsafeFreeze others
-        P.fmap (,qs) P.<$!> atomically do
-          ( isClosedTMDeque mine P.>>= \closed ->
-              if closed then P.pure Nothing else retry
-            )
-            <|> getAlt (P.foldMap' (Alt P.. (fromJustSTM P.<=< tryPopBackTMDeque)) P.$ others')
+      Just Nothing -> fix \self -> do
+        !ranks <- V.mapM countTMDequeIO others
+        let ranked = HV.unsafeZip ranks others
+            (_, target) = GV.maximumOn fst ranked
+
+        progress <-
+          atomically do
+            ( isClosedTMDeque mine P.>>= \closed ->
+                if closed then P.pure Nothing else retry
+              )
+              <|> tryPopFrontTMDeque target
+        case progress of
+          Nothing -> P.pure Nothing
+          Just Nothing -> yield P.*> self
+          Just (Just x) -> P.pure $ Just (x, qs)
 
 fromJustSTM :: Maybe (Maybe a) -> STM (Maybe a)
 fromJustSTM = P.maybe (P.pure Nothing) $ P.maybe retry (P.pure P.. Just)
-
-shuffle :: (RandomGen g) => IORef g -> MVector RealWorld a -> IO ()
-shuffle g mv =
-  MV.length mv - 1 & fix \self !n ->
-    if n == 0
-      then P.pure ()
-      else do
-        gen <- readIORef g
-        let (!k, !g') = R.randomR (0, n) gen
-        writeIORef g g'
-        MV.swap mv n k
-        self $! n P.- 1

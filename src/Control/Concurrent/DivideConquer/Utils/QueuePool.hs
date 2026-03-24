@@ -33,7 +33,7 @@ import Control.Applicative (Alternative (..))
 import Control.Applicative qualified as P
 import Control.Concurrent (yield)
 import Control.Concurrent.STM (STM, atomically, retry)
-import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, countTMDequeIO, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
+import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, countTMDeque, countTMDequeIO, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure
@@ -50,8 +50,6 @@ import Data.V.Linear (V, theLength)
 import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
 import Data.Vector.Algorithms.Intro qualified as AI
-import Data.Vector.Generic qualified as GV
-import Data.Vector.Hybrid qualified as HV
 import Data.Vector.Hybrid.Mutable qualified as HMV
 import Data.Vector.Mutable (RealWorld)
 import GHC.Exts qualified as GHC
@@ -65,7 +63,7 @@ import Prelude qualified as P
 
 data QueuePool a = forall g. (RandomGen g) => QueuePool
   { mine :: !(TMDeque a)
-  , others :: !(V.Vector (TMDeque a))
+  , others :: !(V.MVector RealWorld (TMDeque a))
   , gen :: !(IORef g)
   , num :: !Int
   }
@@ -94,7 +92,7 @@ newQueuePool g = unsafeSystemIOToBO do
     P.mapM
       ( \(num, ini, mine, tl, gen) -> do
           gen <- newIORef gen
-          let others = V.fromList $ tl <> ini
+          others <- V.unsafeThaw $ V.fromList $ tl <> ini
           P.pure P.$ QueuePool {others, ..}
       )
       P.$ L.zip5
@@ -141,16 +139,21 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
       Nothing -> P.pure Nothing
       Just (Just x) -> P.pure $ Just (x, qs)
       Just Nothing -> fix \self -> do
-        !ranks <- V.mapM countTMDequeIO others
-        let ranked = HV.unsafeZip ranks others
-            (_, target) = GV.maximumOn fst ranked
+        !ranks <-
+          V.unsafeThaw
+            P.=<< atomically P.. (\x -> do xs <- V.mapM countTMDeque x; xs P.<$ P.unless (V.any (P.> 0) xs) retry)
+            P.=<< V.unsafeFreeze others
+        let ranked = HMV.unsafeZip ranks others
+        !() <- AI.sortBy (P.comparing P.$ Down P.. P.fst) ranked
+        others' <- V.unsafeFreeze others
 
         progress <-
           atomically do
             ( isClosedTMDeque mine P.>>= \closed ->
                 if closed then P.pure Nothing else retry
               )
-              <|> tryPopFrontTMDeque target
+              <|> getAlt (P.foldMap' (Alt P.. (P.fmap Just P.. fromJustSTM P.<=< tryPopBackTMDeque)) P.$ others')
+              <|> P.pure (Just Nothing)
         case progress of
           Nothing -> P.pure Nothing
           Just Nothing -> yield P.*> self

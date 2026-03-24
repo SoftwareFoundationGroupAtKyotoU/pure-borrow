@@ -29,10 +29,11 @@ module Control.Concurrent.DivideConquer.Utils.QueuePool (
   pushWorkMaster,
 ) where
 
+import Control.Applicative (Alternative (..))
 import Control.Applicative qualified as P
 import Control.Concurrent (threadDelay)
-import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, isClosedTMDequeIO, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
+import Control.Concurrent.STM (STM, atomically, retry)
+import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, isClosedTMDeque, isClosedTMDequeIO, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure
@@ -42,10 +43,15 @@ import Data.Foldable qualified as P
 import Data.Function (fix)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.List qualified as L
+import Data.Monoid (Alt (..))
 import Data.V.Linear (V, theLength)
 import Data.V.Linear.Internal (V (..))
+import Data.Vector (MVector)
 import Data.Vector qualified as V
+import Data.Vector.Mutable (RealWorld)
+import Data.Vector.Mutable qualified as MV
 import GHC.Exts qualified as GHC
+import GHC.IO (unsafePerformIO)
 import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownNat)
 import Prelude.Linear
@@ -56,13 +62,15 @@ import Prelude qualified as P
 
 data QueuePool a = forall g. (RandomGen g) => QueuePool
   { mine :: !(TMDeque a)
-  , others :: !(V.Vector (TMDeque a))
+  , others :: !(V.MVector RealWorld (TMDeque a))
   , gen :: !(IORef g)
   }
 
 instance Consumable (QueuePool a) where
-  consume (QueuePool {..}) = do
-    Unsafe.toLinear (\_ -> ()) gen `lseq` consumeTMDQ mine `lseq` map consumeTMDQ (V.toList others) `lseq` ()
+  {-# NOINLINE consume #-}
+  consume = Unsafe.toLinear \(QueuePool {..}) -> unsafePerformIO do
+    P.mapM_ (atomically P.. closeTMDeque) P.. V.toList P.=<< V.unsafeFreeze others
+    atomically $ closeTMDeque mine
 
 newtype MasterQueuePool a = MasterQueuePool [TMDeque a]
 
@@ -89,7 +97,8 @@ newQueuePool g = unsafeSystemIOToBO do
     P.mapM
       ( \(ini, mine, tl, gen) -> do
           gen <- newIORef gen
-          P.pure P.$ QueuePool {others = V.fromList $ ini <> tl, ..}
+          others <- V.unsafeThaw $ V.fromList $ ini <> tl
+          P.pure P.$ QueuePool {others, ..}
       )
       P.$ L.zip4
         (L.inits qs)
@@ -134,25 +143,25 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
       Nothing -> P.pure Nothing
       Just (Just x) -> P.pure $ Just (x, qs)
       Just Nothing -> do
-        let !n = V.length others
-        fix \go -> do
-          done <- isClosedTMDequeIO mine
-          if done
-            then P.pure Nothing
-            else do
-              -- NOTE: as each thread posseses its own rng,
-              -- we don't need to use 'atomicModifyIORef' here
-              -- that imposes unnecessary memory barrier
-              -- and just read and write back the new generator value
-              g <- readIORef gen
-              let (!i, !g') = R.randomR (0, n P.- 1) g
-              writeIORef gen g'
-              atomically (tryPopBackTMDeque (V.unsafeIndex others i)) P.>>= \case
-                Just (Just x) -> P.pure $ Just (x, qs)
-                Just Nothing -> do
-                  g <- readIORef gen
-                  let (!i, !g') = R.randomR (10, 20) g
-                  writeIORef gen g'
-                  threadDelay i
-                  go
-                Nothing -> P.pure Nothing
+        shuffle gen others
+        !others' <- V.unsafeFreeze others
+        P.fmap (,qs) P.<$!> atomically do
+          ( isClosedTMDeque mine P.>>= \closed ->
+              if closed then P.pure Nothing else retry
+            )
+            <|> getAlt (P.foldMap' (Alt P.. (fromJustSTM P.<=< tryPopBackTMDeque)) P.$ others')
+
+fromJustSTM :: Maybe (Maybe a) -> STM (Maybe a)
+fromJustSTM = P.maybe (P.pure Nothing) $ P.maybe retry (P.pure P.. Just)
+
+shuffle :: (RandomGen g) => IORef g -> MVector RealWorld a -> IO ()
+shuffle g mv =
+  MV.length mv - 1 & fix \self !n ->
+    if n == 0
+      then P.pure ()
+      else do
+        gen <- readIORef g
+        let (!k, !g') = R.randomR (0, n) gen
+        writeIORef g g'
+        MV.swap mv n k
+        self $! n P.- 1

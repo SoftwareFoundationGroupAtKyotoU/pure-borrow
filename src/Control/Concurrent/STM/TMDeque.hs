@@ -36,10 +36,12 @@ module Control.Concurrent.STM.TMDeque (
   -- * Closing & queries
   closeTMDeque,
   isClosedTMDeque,
+  isClosedTMDequeIO,
   isEmptyTMDeque,
 ) where
 
 import Control.Concurrent.STM (STM, TVar, newTVar, newTVarIO, readTVar, retry, writeTVar)
+import Control.Concurrent.STM.TVar (readTVarIO)
 
 {- | Reverse a non-empty list and split into head and tail.
 Precondition: the input list is non-empty.
@@ -192,6 +194,10 @@ closeTMDeque (TMDeque closedVar _ _) = writeTVar closedVar True
 -- | Check whether the deque has been closed.
 isClosedTMDeque :: TMDeque a -> STM Bool
 isClosedTMDeque (TMDeque closedVar _ _) = readTVar closedVar
+
+-- | Check whether the deque has been closed.
+isClosedTMDequeIO :: TMDeque a -> IO Bool
+isClosedTMDequeIO (TMDeque closedVar _ _) = readTVarIO closedVar
 
 -- | Check whether the deque is currently empty.
 isEmptyTMDeque :: TMDeque a -> STM Bool

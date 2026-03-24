@@ -25,8 +25,8 @@ module Control.Concurrent.DivideConquer.Linear (
   qsortDC,
 ) where
 
-import Control.Concurrent (ThreadId, forkIO)
-import Control.Concurrent qualified as Conc
+import Control.Applicative qualified as NonLinear
+import Control.Concurrent (ThreadId, forkIO, killThread)
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (Sink, Source)
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear qualified as Once
 import Control.Concurrent.DivideConquer.Utils.QueuePool (QueuePool, newQueuePool, popWork, pushWork, pushWorkMaster)
@@ -34,23 +34,26 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Affine (Affine, GenericallyAffine (..))
 import Control.Monad.Borrow.Pure.Internal
-import Data.Coerce qualified as NonLinear
 import Data.Coerce.Directed
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
+import Data.List.Linear qualified as LL
+import Data.List.NonEmpty.Linear (NonEmpty (..))
+import Data.List.NonEmpty.Linear qualified as NEL
 import Data.Proxy (Proxy (..))
-import Data.Unrestricted.Linear (AsMovable (..))
 import Data.V.Linear (V)
 import Data.V.Linear.Internal (V (..))
+import Data.Vector qualified as V
 import Data.Vector.Mutable.Linear.Borrow qualified as LV
+import GHC.Exts qualified as GHC
 import GHC.Generics qualified as GHC
 import GHC.TypeNats (SomeNat (..), someNatVal)
-import Generics.Linear.TH (deriveGeneric, deriveGenericAnd1)
+import Generics.Linear.TH (deriveGenericAnd1)
 import Prelude.Linear
 import Prelude.Linear.Generically (Generically, Generically1)
+import System.IO.Unsafe (unsafePerformIO)
 import System.Random (RandomGen)
 import Unsafe.Linear qualified as Unsafe
-import Prelude qualified as NonLinear
 
 data DivideConquer α t a = DivideConquer
   { divide :: forall β. (β <= α) => Mut β a %1 -> BO β (Result β t a)
@@ -63,7 +66,57 @@ data Work α a (t :: Type -> Type) where
   Unite :: t (Source ()) %1 -> Sink () %1 -> Work α a t
   Final :: Work α a t
 
+newtype Thread = Thread ThreadId
+
+instance Consumable Thread where
+  {-# NOINLINE consume #-}
+  consume = GHC.noinline $ Unsafe.toLinear \(Thread tid) -> unsafePerformIO $ do
+    killThread tid
+
+newtype DList a = DList ([a] %1 -> [a])
+
+instance Semigroup (DList a) where
+  DList f <> DList g = DList (f . g)
+  {-# INLINE (<>) #-}
+
+instance Monoid (DList a) where
+  mempty = DList id
+  {-# INLINE mempty #-}
+
+singletonD :: a %1 -> DList a
+singletonD = DList . (:)
+{-# INLINE singletonD #-}
+
+toListD :: DList a %1 -> [a]
+toListD (DList f) = f []
+{-# INLINE toListD #-}
+
 -- TODO: perhaps we can use atomic counter here again?
+
+data QState α a t
+  = Idle !(Mut α (QueuePool (Work α a t)))
+  | DoThen !(Work α a t) !(Mut α (QueuePool (Work α a t)))
+
+popQState ::
+  QState α a t %1 ->
+  BO α (Maybe (Work α a t, QState α a t))
+popQState = \case
+  Idle q -> Control.do
+    m <- popWork q
+    case m of
+      Nothing -> Control.pure Nothing
+      Just (work, q) -> Control.pure (Just (work, Idle q))
+  DoThen work q -> Control.pure $ Just (work, Idle q)
+
+enqueue :: QState α a t %1 -> Work α a t %1 -> BO α (QState α a t)
+enqueue q work = case q of
+  Idle q -> Idle Control.<$> pushWork q work
+  DoThen work' q -> error "Could not happen!" work q work'
+
+doAndEnqueue :: QState α a t %1 -> Work α a t %1 -> Work α a t %1 -> BO α (QState α a t)
+doAndEnqueue q work cont = case q of
+  Idle q -> DoThen work Control.<$> pushWork q cont
+  DoThen work' q -> error "Could not happen!" work cont work' q
 
 divideAndConquer ::
   forall α t a g.
@@ -87,45 +140,38 @@ divideAndConquer n DivideConquer {..} g ini
 
           concurrentMap_ worker workers
           Once.take rootSource
+
           Control.pure (upcast $ consume Control.<$> reclaim' masterLend)
   where
     worker :: (β <= α) => Mut β (QueuePool (Work β a t)) %1 -> BO β ()
     worker q =
-      whileJust_ q popWork \q -> \case
+      whileJust_ (Idle q) popQState \q -> \case
         Final -> Control.pure q
         Process ini sink next -> Control.do
-          q <- pushWork q next
+          q <- enqueue q next
           resl <- divide ini
           case resl of
             Done -> Control.do
               Once.put sink ()
               Control.pure q
             Continue ts -> Control.do
-              (sources, k) <-
+              (sources, ks) <-
                 flip Control.runStateT mempty $ Data.for ts \work -> Control.do
                   (sink, source) <- Control.lift $ asksLinearly Once.new
-                  Control.modify (<> Endo (Process work sink))
+                  Control.modify (<> singletonD (work, sink))
                   Control.pure source
-              pushWork q $ appEndo k $ Unite sources sink
+              let %1 !cont = Unite sources sink
+              case NEL.nonEmpty $ toListD ks of
+                Nothing -> enqueue q cont
+                Just ((ini, sink) :| ks) ->
+                  doAndEnqueue
+                    q
+                    (Process ini sink Final)
+                    $ LL.foldr (uncurry Process) cont ks
         Unite children sink -> Control.do
           Control.void $ Data.traverse Once.take children
           Once.put sink ()
           Control.pure q
-
-newtype ThreadId_ = ThreadId_ ThreadId
-  deriving stock (GHC.Generic)
-  deriving (Consumable, Dupable) via AsMovable ThreadId_
-
-instance Movable ThreadId_ where
-  move = Unsafe.toLinear Ur
-
-data Thread = Thread !ThreadId_ !(Source ())
-  deriving stock (GHC.Generic)
-
--- Named with underscore, as it is not used for now
-_killThreadBO :: Thread %1 -> BO α ()
-_killThreadBO = Unsafe.toLinear \(Thread tid _) ->
-  unsafeSystemIOToBO (Conc.killThread $ NonLinear.coerce tid)
 
 concurrentMap_ ::
   forall n a α.
@@ -133,17 +179,13 @@ concurrentMap_ ::
   V n a %1 ->
   BO α ()
 concurrentMap_ k = Unsafe.toLinear \(V ts) -> unsafeSystemIOToBO do
-  NonLinear.mapM_
-    ( \a -> unsafeBOToSystemIO Control.do
-        (sink, source) <- asksLinearly Once.new
-        tid <- forkBO (k a Control.>> Once.put sink ())
-        Control.pure (Thread tid source)
-    )
+  V.mapM_
+    (\a -> unsafeBOToSystemIO $ forkBO (k a))
     ts
 
-forkBO :: BO α () %1 -> BO α ThreadId_
+forkBO :: BO α () %1 -> BO α Thread
 forkBO = Unsafe.toLinear \bo ->
-  unsafeSystemIOToBO (ThreadId_ NonLinear.<$> forkIO (unsafeBOToSystemIO bo))
+  unsafeSystemIOToBO (Thread NonLinear.<$> forkIO (unsafeBOToSystemIO bo))
 
 whileJust_ ::
   (Control.Monad m) =>
@@ -160,10 +202,6 @@ whileJust_ ini next action = loop ini
         Just (!x, !cur) -> Control.do
           cur <- action cur x
           loop cur
-
-deriveGeneric ''Thread
-
-deriving via Generically Thread instance Consumable Thread
 
 data Pair a where
   Pair :: !a %1 -> !a %1 -> Pair a

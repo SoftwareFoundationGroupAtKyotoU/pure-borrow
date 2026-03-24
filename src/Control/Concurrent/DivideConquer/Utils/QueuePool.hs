@@ -24,18 +24,21 @@ module Control.Concurrent.DivideConquer.Utils.QueuePool (
   QueuePool,
   newQueuePool,
   pushWork,
+  pushWorks,
   popWork,
   pushWorkMaster,
 ) where
 
+import Control.Applicative qualified as P
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
+import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, isClosedTMDequeIO, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Internal
 import Data.Coerce (coerce)
+import Data.Foldable qualified as P
 import Data.Function (fix)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.List qualified as L
@@ -110,30 +113,46 @@ pushWork = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) work ->
     atomically $ pushFrontTMDeque mine work
     P.pure $ UnsafeAlias QueuePool {..}
 
+newtype Backwards f a = Backwards {runBackwards :: f a}
+  deriving newtype (P.Functor)
+
+instance (P.Applicative f) => P.Applicative (Backwards f) where
+  pure = Backwards P.. P.pure
+  Backwards f <*> Backwards x = Backwards (x P.<**> f)
+
+-- | Pushes works, the first element is on top.
+pushWorks :: Mut α (QueuePool a) %1 -> [a] %1 -> BO α (Mut α (QueuePool a))
+pushWorks = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) work ->
+  unsafeSystemIOToBO do
+    atomically $ runBackwards P.$ P.traverse_ (Backwards P.. pushFrontTMDeque mine) work
+    P.pure $ UnsafeAlias QueuePool {..}
+
 popWork :: Mut α (QueuePool a) %1 -> BO α (Maybe (a, Mut α (QueuePool a)))
 popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
   unsafeSystemIOToBO do
     atomically (tryPopFrontTMDeque mine) P.>>= \case
-      Just mx -> P.pure $ (,qs) P.<$!> mx
-      Nothing ->
+      Nothing -> P.pure Nothing
+      Just (Just x) -> P.pure $ Just (x, qs)
+      Just Nothing -> do
         let !n = V.length others
-         in fix \go -> do
-              done <- atomically $ isClosedTMDeque mine
-              if done
-                then P.pure Nothing
-                else do
-                  -- NOTE: as each thread posseses its own rng,
-                  -- we don't need to use 'atomicModifyIORef' here
-                  -- that imposes unnecessary memory barrier
-                  -- and just read and write back the new generator value
+        fix \go -> do
+          done <- isClosedTMDequeIO mine
+          if done
+            then P.pure Nothing
+            else do
+              -- NOTE: as each thread posseses its own rng,
+              -- we don't need to use 'atomicModifyIORef' here
+              -- that imposes unnecessary memory barrier
+              -- and just read and write back the new generator value
+              g <- readIORef gen
+              let (!i, !g') = R.randomR (0, n P.- 1) g
+              writeIORef gen g'
+              atomically (tryPopBackTMDeque (V.unsafeIndex others i)) P.>>= \case
+                Just (Just x) -> P.pure $ Just (x, qs)
+                Just Nothing -> do
                   g <- readIORef gen
-                  let (!i, !g') = R.randomR (0, n P.- 1) g
+                  let (!i, !g') = R.randomR (10, 20) g
                   writeIORef gen g'
-                  atomically (tryPopBackTMDeque (V.unsafeIndex others i)) P.>>= \case
-                    Just mx -> P.pure $ (,qs) P.<$!> mx
-                    Nothing -> do
-                      g <- readIORef gen
-                      let (!i, !g') = R.randomR (10, 100) g
-                      writeIORef gen g'
-                      threadDelay i
-                      go
+                  threadDelay i
+                  go
+                Nothing -> P.pure Nothing

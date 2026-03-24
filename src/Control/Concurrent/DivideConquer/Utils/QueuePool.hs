@@ -31,9 +31,8 @@ module Control.Concurrent.DivideConquer.Utils.QueuePool (
 
 import Control.Applicative (Alternative (..))
 import Control.Applicative qualified as P
-import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (STM, atomically, retry)
-import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, isClosedTMDeque, isClosedTMDequeIO, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
+import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure

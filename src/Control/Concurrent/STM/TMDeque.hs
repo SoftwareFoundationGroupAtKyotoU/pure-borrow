@@ -20,15 +20,10 @@ module Control.Concurrent.STM.TMDeque (
   TMDeque,
 
   -- * Construction
-  newTMDeque,
   newTMDequeIO,
 
   -- * Push operations
   pushFrontTMDeque,
-
-  -- * Pop operations (blocking)
-  popFrontTMDeque,
-  popBackTMDeque,
 
   -- * Pop operations (non-blocking)
   tryPopFrontTMDeque,
@@ -36,24 +31,14 @@ module Control.Concurrent.STM.TMDeque (
 
   -- * Closing & queries
   closeTMDeque,
-  isClosedTMDeque,
   isClosedTMDequeIO,
   isEmptyTMDeque,
-  countTMDeque,
   countTMDequeIO,
 ) where
 
-import Control.Concurrent.STM (STM, TVar, modifyTVar', newTVar, newTVarIO, readTVar, retry, writeTVar)
+import Control.Concurrent.STM (STM, TVar, newTVarIO, writeTVar)
 import Control.Concurrent.STM.TVar (readTVarIO)
-import Control.Monad (unless)
-
-{- | Reverse a non-empty list and split into head and tail.
-Precondition: the input list is non-empty.
--}
-unconsReverse :: [a] -> (a, [a])
-unconsReverse xs = case reverse xs of
-  y : ys -> (y, ys)
-  [] -> error "TMDeque.unconsReverse: impossible – called on empty list"
+import Data.Concurrent.Deque.ChaseLev (ChaseLevDeque, approxSize, newQ, nullQ, pushL, tryPopL, tryPopR)
 
 ------------------------------------------------------------------------
 -- STM two-stack queue
@@ -62,54 +47,18 @@ unconsReverse xs = case reverse xs of
 -- | A closable, STM-backed double-ended queue with amortized O(1) operations.
 data TMDeque a
   = TMDeque
-      {-# UNPACK #-} !(TVar Bool) -- closed flag (monotonic: False → True)
-      {-# UNPACK #-} !(TVar [a]) -- front (push end)
-      {-# UNPACK #-} !(TVar [a]) -- rear (pop end)
-      {-# UNPACK #-} !(TVar Int) -- size (maintained for O(1) count)
-
--- | Create a new empty 'TMDeque'.
-newTMDeque :: STM (TMDeque a)
-newTMDeque = TMDeque <$> newTVar False <*> newTVar [] <*> newTVar [] <*> newTVar 0
+      {-# UNPACK #-} !(TVar Bool)
+      !(ChaseLevDeque a)
 
 -- | IO variant of 'newTMDeque'.
 newTMDequeIO :: IO (TMDeque a)
-newTMDequeIO = TMDeque <$> newTVarIO False <*> newTVarIO [] <*> newTVarIO [] <*> newTVarIO 0
+newTMDequeIO = TMDeque <$> newTVarIO False <*> newQ
 
 {- | Push an element to the front of the deque.  Silently ignored if the
 deque is closed.
 -}
-pushFrontTMDeque :: TMDeque a -> a -> STM ()
-pushFrontTMDeque (TMDeque closedVar frontVar _rearVar sizeVar) x = do
-  closed <- readTVar closedVar
-  unless closed do
-    modifyTVar' frontVar (x :)
-    modifyTVar' sizeVar (+ 1)
-
-{- | Pop an element from the front.  Blocks if the deque is open and empty.
-Returns @Nothing@ when the deque is closed and empty (end-of-stream).
--}
-popFrontTMDeque :: TMDeque a -> STM (Maybe a)
-popFrontTMDeque (TMDeque closedVar frontVar rearVar sizeVar) = do
-  f <- readTVar frontVar
-  case f of
-    x : f' -> do
-      writeTVar frontVar f'
-      modifyTVar' sizeVar (subtract 1)
-      pure (Just x)
-    [] -> do
-      r <- readTVar rearVar
-      case r of
-        _ : _ -> do
-          let (x, f') = unconsReverse r
-          writeTVar rearVar []
-          writeTVar frontVar f'
-          modifyTVar' sizeVar (subtract 1)
-          pure (Just x)
-        [] -> do
-          closed <- readTVar closedVar
-          if closed
-            then pure Nothing
-            else retry
+pushFrontTMDeque :: TMDeque a -> a -> IO ()
+pushFrontTMDeque (TMDeque _ q) = pushL q
 
 {- | Non-blocking pop from the front.
 
@@ -117,54 +66,16 @@ popFrontTMDeque (TMDeque closedVar frontVar rearVar sizeVar) = do
   * @Just Nothing@    — open and empty (would block)
   * @Just (Just a)@   — got an element
 -}
-tryPopFrontTMDeque :: TMDeque a -> STM (Maybe (Maybe a))
-tryPopFrontTMDeque (TMDeque closedVar frontVar rearVar sizeVar) = do
-  f <- readTVar frontVar
-  case f of
-    x : f' -> do
-      writeTVar frontVar f'
-      modifyTVar' sizeVar (subtract 1)
-      pure (Just (Just x))
-    [] -> do
-      r <- readTVar rearVar
-      case r of
-        _ : _ -> do
-          let (x, f') = unconsReverse r
-          writeTVar rearVar []
-          writeTVar frontVar f'
-          modifyTVar' sizeVar (subtract 1)
-          pure (Just (Just x))
-        [] -> do
-          closed <- readTVar closedVar
-          if closed
-            then pure Nothing
-            else pure (Just Nothing)
-
-{- | Pop an element from the back.  Blocks if the deque is open and empty.
-Returns @Nothing@ when the deque is closed and empty (end-of-stream).
--}
-popBackTMDeque :: TMDeque a -> STM (Maybe a)
-popBackTMDeque (TMDeque closedVar frontVar rearVar sizeVar) = do
-  r <- readTVar rearVar
-  case r of
-    x : r' -> do
-      writeTVar rearVar r'
-      modifyTVar' sizeVar (subtract 1)
-      pure (Just x)
-    [] -> do
-      f <- readTVar frontVar
-      case f of
-        _ : _ -> do
-          let (x, r') = unconsReverse f
-          writeTVar frontVar []
-          writeTVar rearVar r'
-          modifyTVar' sizeVar (subtract 1)
-          pure (Just x)
-        [] -> do
-          closed <- readTVar closedVar
-          if closed
-            then pure Nothing
-            else retry
+tryPopFrontTMDeque :: TMDeque a -> IO (Maybe (Maybe a))
+tryPopFrontTMDeque (TMDeque closedVar q) = do
+  melt <- tryPopL q
+  case melt of
+    Nothing -> do
+      closed <- readTVarIO closedVar
+      if closed
+        then pure Nothing
+        else pure (Just Nothing)
+    may -> pure (Just may)
 
 {- | Non-blocking pop from the back.
 
@@ -172,58 +83,32 @@ popBackTMDeque (TMDeque closedVar frontVar rearVar sizeVar) = do
   * @Just Nothing@    — open and empty (would block)
   * @Just (Just a)@   — got an element
 -}
-tryPopBackTMDeque :: TMDeque a -> STM (Maybe (Maybe a))
-tryPopBackTMDeque (TMDeque closedVar frontVar rearVar sizeVar) = do
-  r <- readTVar rearVar
-  case r of
-    x : r' -> do
-      writeTVar rearVar r'
-      modifyTVar' sizeVar (subtract 1)
-      pure (Just (Just x))
-    [] -> do
-      f <- readTVar frontVar
-      case f of
-        _ : _ -> do
-          let (x, r') = unconsReverse f
-          writeTVar frontVar []
-          writeTVar rearVar r'
-          modifyTVar' sizeVar (subtract 1)
-          pure (Just (Just x))
-        [] -> do
-          closed <- readTVar closedVar
-          if closed
-            then pure Nothing
-            else pure (Just Nothing)
+tryPopBackTMDeque :: TMDeque a -> IO (Maybe (Maybe a))
+tryPopBackTMDeque (TMDeque closedVar q) = do
+  melt <- tryPopR q
+  case melt of
+    Nothing -> do
+      closed <- readTVarIO closedVar
+      if closed
+        then pure Nothing
+        else pure (Just Nothing)
+    may -> pure (Just may)
 
 {- | Close the deque.  After closing, writes are silently ignored and reads
 will drain remaining elements before signalling end-of-stream.  Closing
 is idempotent.
 -}
 closeTMDeque :: TMDeque a -> STM ()
-closeTMDeque (TMDeque closedVar _ _ _) = writeTVar closedVar True
-
--- | Check whether the deque has been closed.
-isClosedTMDeque :: TMDeque a -> STM Bool
-isClosedTMDeque (TMDeque closedVar _ _ _) = readTVar closedVar
+closeTMDeque (TMDeque closedVar _) = writeTVar closedVar True
 
 -- | Check whether the deque has been closed.
 isClosedTMDequeIO :: TMDeque a -> IO Bool
-isClosedTMDequeIO (TMDeque closedVar _ _ _) = readTVarIO closedVar
+isClosedTMDequeIO (TMDeque closedVar _) = readTVarIO closedVar
 
 -- | Check whether the deque is currently empty.
-isEmptyTMDeque :: TMDeque a -> STM Bool
-isEmptyTMDeque (TMDeque _ frontVar rearVar _) = do
-  f <- readTVar frontVar
-  case f of
-    _ : _ -> pure False
-    [] -> do
-      r <- readTVar rearVar
-      pure (null r)
-
--- | Return the number of elements currently in the deque. O(1).
-countTMDeque :: TMDeque a -> STM Int
-countTMDeque (TMDeque _ _ _ sizeVar) = readTVar sizeVar
+isEmptyTMDeque :: TMDeque a -> IO Bool
+isEmptyTMDeque (TMDeque _ q) = nullQ q
 
 -- | IO variant of 'countTMDeque'. O(1).
 countTMDequeIO :: TMDeque a -> IO Int
-countTMDequeIO (TMDeque _ _ _ sizeVar) = readTVarIO sizeVar
+countTMDequeIO (TMDeque _ q) = approxSize q

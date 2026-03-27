@@ -29,10 +29,11 @@ module Control.Concurrent.DivideConquer.Utils.QueuePool (
   pushWorkMaster,
 ) where
 
+import Control.Applicative (Alternative (..))
 import Control.Applicative qualified as P
 import Control.Concurrent (yield)
-import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, countTMDequeIO, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
+import Control.Concurrent.STM (STM, atomically, retry)
+import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, countTMDeque, countTMDequeIO, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure
@@ -42,10 +43,15 @@ import Data.Foldable qualified as P
 import Data.Function (fix)
 import Data.IORef (IORef, newIORef)
 import Data.List qualified as L
+import Data.Monoid (Alt (..))
 import Data.Ord (Down (..))
+import Data.Ord qualified as P
 import Data.V.Linear (V, theLength)
 import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
+import Data.Vector.Algorithms.Intro qualified as AI
+import Data.Vector.Hybrid.Mutable qualified as HMV
+import Data.Vector.Mutable (RealWorld)
 import GHC.Exts qualified as GHC
 import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownNat)
@@ -57,7 +63,7 @@ import Prelude qualified as P
 
 data QueuePool a = forall g. (RandomGen g) => QueuePool
   { mine :: !(TMDeque a)
-  , others :: !(V.Vector (TMDeque a))
+  , others :: !(V.MVector RealWorld (TMDeque a))
   , gen :: !(IORef g)
   , num :: !Int
   }
@@ -85,8 +91,8 @@ newQueuePool g = unsafeSystemIOToBO do
   pools <-
     P.mapM
       ( \(num, ini, mine, tl, gen) -> do
-          let others = V.fromList $ tl <> ini
           gen <- newIORef gen
+          others <- V.unsafeThaw $ V.fromList $ tl <> ini
           P.pure P.$ QueuePool {others, ..}
       )
       P.$ L.zip5
@@ -102,14 +108,14 @@ pushWorkMaster :: Mut α (MasterQueuePool a) %1 -> a %1 -> BO α (Mut α (Master
 pushWorkMaster = Unsafe.toLinear2 \(UnsafeAlias (MasterQueuePool pools)) work ->
   case pools of
     (q : qs) -> unsafeSystemIOToBO do
-      pushFrontTMDeque q work
+      atomically $ pushFrontTMDeque q work
       P.pure $ UnsafeAlias $ MasterQueuePool (q : qs)
     [] -> error "impossible: the length of pools is determined by the type-level nat n and cannot be zero"
 
 pushWork :: Mut α (QueuePool a) %1 -> a %1 -> BO α (Mut α (QueuePool a))
 pushWork = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) work ->
   unsafeSystemIOToBO do
-    pushFrontTMDeque mine work
+    atomically $ pushFrontTMDeque mine work
     P.pure $ UnsafeAlias QueuePool {..}
 
 newtype Backwards f a = Backwards {runBackwards :: f a}
@@ -123,20 +129,35 @@ instance (P.Applicative f) => P.Applicative (Backwards f) where
 pushWorks :: Mut α (QueuePool a) %1 -> [a] %1 -> BO α (Mut α (QueuePool a))
 pushWorks = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) work ->
   unsafeSystemIOToBO do
-    runBackwards P.$ P.traverse_ (Backwards P.. pushFrontTMDeque mine) work
+    atomically $ runBackwards P.$ P.traverse_ (Backwards P.. pushFrontTMDeque mine) work
     P.pure $ UnsafeAlias QueuePool {..}
 
 popWork :: Mut α (QueuePool a) %1 -> BO α (Maybe (a, Mut α (QueuePool a)))
 popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
   unsafeSystemIOToBO do
-    tryPopFrontTMDeque mine P.>>= \case
+    atomically (tryPopFrontTMDeque mine) P.>>= \case
       Nothing -> P.pure Nothing
       Just (Just x) -> P.pure $ Just (x, qs)
       Just Nothing -> fix \self -> do
-        !ranked <- V.mapM (\q -> (,q) P.<$> countTMDequeIO q) others
-        let (_, target) = V.maximumOn (Down P.. P.fst) ranked
-        progress <- tryPopBackTMDeque target
+        !ranks <-
+          V.unsafeThaw
+            P.=<< atomically P.. (\x -> do xs <- V.mapM countTMDeque x; xs P.<$ P.unless (V.any (P.> 0) xs) retry)
+            P.=<< V.unsafeFreeze others
+        let ranked = HMV.unsafeZip ranks others
+        !() <- AI.sortBy (P.comparing P.$ Down P.. P.fst) ranked
+        others' <- V.unsafeFreeze others
+
+        progress <-
+          atomically do
+            ( isClosedTMDeque mine P.>>= \closed ->
+                if closed then P.pure Nothing else retry
+              )
+              <|> getAlt (P.foldMap' (Alt P.. (P.fmap Just P.. fromJustSTM P.<=< tryPopBackTMDeque)) P.$ others')
+              <|> P.pure (Just Nothing)
         case progress of
           Nothing -> P.pure Nothing
           Just Nothing -> yield P.*> self
           Just (Just x) -> P.pure $ Just (x, qs)
+
+fromJustSTM :: Maybe (Maybe a) -> STM (Maybe a)
+fromJustSTM = P.maybe (P.pure Nothing) $ P.maybe retry (P.pure P.. Just)

@@ -147,7 +147,7 @@ benchmark qsort-bench
     -threaded
     -rtsopts
     -O2
-    "-with-rtsopts=-N1 --nonmoving-gc"
+    "-with-rtsopts=-N -s"
 
   build-depends:
     base >=4.7 && <5,

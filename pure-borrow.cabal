@@ -45,7 +45,6 @@ common defaults
 library
   import: defaults
   build-depends:
-    array,
     containers,
     deepseq,
     hybrid-vectors,
@@ -145,10 +144,10 @@ benchmark qsort-bench
   main-is: qsort.hs
   hs-source-dirs: bench
   ghc-options:
-    -O2
     -threaded
     -rtsopts
-    "-with-rtsopts=-N -s"
+    -O2
+    "-with-rtsopts=-N1 --nonmoving-gc"
 
   build-depends:
     base >=4.7 && <5,

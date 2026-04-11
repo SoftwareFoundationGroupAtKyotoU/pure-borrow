@@ -1,4 +1,4 @@
-FROM ubuntu:24.04 AS build
+FROM debian:bookworm AS build
 
 RUN apt-get update && apt-get install -y build-essential curl libffi-dev libffi8ubuntu1 libgmp-dev libgmp10 libncurses-dev gnupg2 git
 

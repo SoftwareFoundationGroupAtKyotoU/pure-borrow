@@ -121,7 +121,17 @@ jobs:
       - name: Test Docker Image
         run: |
           docker run --rm pure-borrow:latest demo
-          docker run --cpus 4 --rm -v $(pwd):/workspace pure-borrow:latest quick
+          mkdir -p workspace
+          docker run --cpus 4 --rm -v $(pwd)/workspace:/workspace pure-borrow:latest quick
+          [[ -f qsort.csv ]] || (echo "No qsort.csv found" && exit 1)
+          [[ -f qsort.png ]] || (echo "No qsort.png found" && exit 1)
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        with:
+          path: |
+            qsort.csv
+            qsort.png
+          name: docker-test-results-${{ matrix.arch }}
 
   build-reference:
     name: Build API Reference

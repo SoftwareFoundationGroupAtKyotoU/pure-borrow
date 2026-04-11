@@ -21,6 +21,7 @@ RUN git clone https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow.git
 
 WORKDIR /workspace/pure-borrow
 ENV PATH="/usr/local/bin:${PATH}"
+ENV LANG=C.UTF-8
 
 ARG CABAL_INDEX_STATE=2026-02-16T11:32:42Z
 RUN cabal update --index-state=${CABAL_INDEX_STATE}

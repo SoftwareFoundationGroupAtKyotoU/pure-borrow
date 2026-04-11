@@ -30,12 +30,14 @@ RUN cabal build all --only-dependencies
 RUN cabal build all
 RUN mkdir -p /opt/pure-borrow
 RUN cp "$(cabal list-bin artifact-runner)" /opt/pure-borrow
+RUN apt-get update && apt-get install -y gnuplot
 
-FROM debian:trixie-slim
+FROM debian:bookworm-slim
 
 ENV PATH="/opt/pure-borrow:${PATH}"
 RUN mkdir -p /workspace
 WORKDIR /workspace
 COPY --from=build /opt/pure-borrow /opt/pure-borrow
+RUN apt-get update && apt-get install -y gnuplot
 
 ENTRYPOINT ["/opt/pure-borrow/artifact-runner"]

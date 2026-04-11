@@ -280,6 +280,9 @@ instance (k ~ 'Borrow 'Share α) => Movable (Alias k a) where
   move = Unsafe.toLinear Ur
   {-# INLINE move #-}
 
+instance (β <= α, a <: b) => BO α a <: BO β b where
+  subtype = UnsafeSubtype
+
 instance (β <= α, a <: b, b <: a) => Mut α a <: Mut β b where
   subtype = UnsafeSubtype
 

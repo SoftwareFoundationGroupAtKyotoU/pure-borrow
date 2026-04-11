@@ -162,6 +162,7 @@ After everything is done, there should be two outputs, `qsort-raw.csv` and `qsor
 - The file `qsort-raw.csv` is the raw output CSV file emitted by the benchmarking framework.
 - Then, `qsort.csv` is the final product generated from `qsort-raw.csv`, ready to be fed directly into the plotting library (pgfplots in our case).
 
+It also generates `qsort.png` that corresponding to the Fig. 13 if the environment has the `gnuplot` in the PATH - in particular, Docker-based approach should generate `qsort.png`.
 Each column name consists of an algorithm name and a metric (e.g., `workSteal10Mean` consisting of `workSteal10` and `Mean`).
 
 We have the following algorithm names:

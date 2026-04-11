@@ -15,7 +15,9 @@ extra-doc-files:
   CHANGELOG.md
   README.md
 
-data-files: dockerfiles/artifact/Dockerfile
+data-files:
+  dockerfiles/artifact/Dockerfile
+  scripts/genplot.gnuplot
 
 source-repository head
   type: git
@@ -222,6 +224,7 @@ executable artifact-runner
     containers,
     deepseq,
     directory,
+    file-embed,
     monoidal-containers,
     optparse-applicative,
     process,

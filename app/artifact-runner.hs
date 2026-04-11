@@ -18,11 +18,9 @@ import Control.Concurrent (getNumCapabilities, setNumCapabilities)
 import Control.Exception (throwIO, try)
 import Control.Monad (forM_)
 import Control.Monad.Trans.Writer.CPS (execWriter, tell)
-import Data.ByteString qualified as BS
 import Data.ByteString.Builder qualified as BB
 import Data.ByteString.Lazy qualified as LBS
 import Data.Csv (FromNamedRecord (..), decodeByName, (.:))
-import Data.FileEmbed (embedFile)
 import Data.Foldable (fold)
 import Data.Foldable1 (fold1)
 import Data.Functor
@@ -39,7 +37,8 @@ import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import GHC.Generics
-import GHC.IO.Handle (hClose, hFlush)
+import Language.Haskell.TH (runIO)
+import Language.Haskell.TH.Syntax qualified as TH
 import Options.Applicative qualified as Opts
 import PureBorrow.Demo.QSort qualified as QS
 import PureBorrow.Internal.Bench.QSort (BenchOpts)
@@ -47,6 +46,7 @@ import PureBorrow.Internal.Bench.QSort qualified as Bench
 import System.Directory (canonicalizePath, findExecutable)
 import System.Environment (withArgs)
 import System.Exit (ExitCode)
+import System.IO (hClose, hFlush, hPutStr)
 import System.IO.Temp (withSystemTempFile)
 import System.Process (readProcess)
 import Text.Read (readEither)
@@ -98,14 +98,15 @@ runBench benchOpts = do
   forM_ mgp \gnuplot -> withSystemTempFile "plot.gp" \tmp h -> do
     putStrLn $ "Gnuplot found: " <> gnuplot
     pngDest <- canonicalizePath "qsort.png"
-    BS.hPut h gnuplotScript
+    hPutStr h gnuplotScript
     hFlush h
     hClose h
     !_ <- readProcess gnuplot ["-e", "input='" <> csvDest <> "'; output='" <> pngDest <> "'", tmp] ""
     putStrLn $ "Plot generated: " <> pngDest
 
-gnuplotScript :: BS.ByteString
-gnuplotScript = $(embedFile "scripts/genplot.gnuplot")
+gnuplotScript :: String
+gnuplotScript =
+  $(TH.lift =<< (runIO $ readFile "scripts/genplot.gnuplot"))
 
 buildOutput :: Statistics -> BB.Builder
 buildOutput sd = execWriter do

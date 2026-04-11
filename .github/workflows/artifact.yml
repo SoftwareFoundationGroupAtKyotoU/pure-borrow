@@ -123,8 +123,8 @@ jobs:
           docker run --rm pure-borrow:latest demo
           mkdir -p workspace
           docker run --cpus 4 --rm -v $(pwd)/workspace:/workspace pure-borrow:latest quick
-          [[ -f qsort.csv ]] || (echo "No qsort.csv found" && exit 1)
-          [[ -f qsort.png ]] || (echo "No qsort.png found" && exit 1)
+          [[ -f workspace/qsort.csv ]] || (echo "No qsort.csv found" && exit 1)
+          [[ -f workspace/qsort.png ]] || (echo "No qsort.png found" && exit 1)
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
         with:

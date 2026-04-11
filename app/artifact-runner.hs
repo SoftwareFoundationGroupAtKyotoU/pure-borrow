@@ -216,7 +216,7 @@ toHeaders stats =
       "intro"
         : "sequential"
         : [T.pack $ "parallel" <> show n | n <- IS.toList parallels]
-        ++ [T.pack $ "worksteal" <> show n | n <- IS.toList worksteals]
+        ++ [T.pack $ "workSteal" <> show n | n <- IS.toList worksteals]
         ++ [name | name <- Set.toList miscs]
 
     metrics = ["Mean", "Stddev", "Alloc", "Copied", "Peak"]

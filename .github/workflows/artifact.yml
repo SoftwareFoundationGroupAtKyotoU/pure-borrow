@@ -106,6 +106,8 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
       fail-fast: false
+    env:
+      dest-dir: docker-test-results-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
 
     steps:
@@ -121,17 +123,15 @@ jobs:
       - name: Test Docker Image
         run: |
           docker run --rm pure-borrow:latest demo
-          mkdir -p workspace
-          docker run --cpus 4 --rm -v $(pwd)/workspace:/workspace pure-borrow:latest quick
-          [[ -f workspace/qsort.csv ]] || (echo "No qsort.csv found" && exit 1)
-          [[ -f workspace/qsort.png ]] || (echo "No qsort.png found" && exit 1)
+          mkdir -p ${{env.dest-dir}}
+          docker run --cpus 4 --rm -v $(pwd)/${{env.dest-dir}}:/workspace pure-borrow:latest quick
+          [[ -f ${{env.dest-dir}}/qsort.csv ]] || (echo "No qsort.csv found" && exit 1)
+          [[ -f ${{env.dest-dir}}/qsort.png ]] || (echo "No qsort.png found" && exit 1)
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
         with:
-          path: |
-            qsort.csv
-            qsort.png
-          name: docker-test-results-${{ matrix.arch }}
+          path: ${{env.dest-dir}}
+          name: ${{env.dest-dir}}
 
   build-reference:
     name: Build API Reference

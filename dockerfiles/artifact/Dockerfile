@@ -26,7 +26,7 @@ ENV LANG=C.UTF-8
 ARG CABAL_INDEX_STATE=2026-02-16T11:32:42Z
 RUN cabal update --index-state=${CABAL_INDEX_STATE}
 ARG NUM_CPUS=8
-RUN cabal configure --enable-static --enable-executable-static --enable-tests --enable-benchmarks --semaphore -j${NUM_CPUS}
+RUN cabal configure --enable-tests --enable-benchmarks --semaphore -j${NUM_CPUS}
 RUN cabal build all --only-dependencies
 RUN cabal build all
 RUN mkdir -p /opt/pure-borrow

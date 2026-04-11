@@ -81,7 +81,6 @@ Default entrypoint of `pure-borrow` image is set to run `artifact-runner` execut
 In what follows, if you are asked to "run `artifact-runner` with cli arguments...", you can just call:
 
 ```bash
-mkdir -p workspace
 docker run --cpus 10 -v $(pwd):/workspace --rm -it pure-borrow ARG1 ARG2 ...
 ```
 

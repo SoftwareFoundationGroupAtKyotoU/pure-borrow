@@ -15,7 +15,9 @@ extra-doc-files:
   CHANGELOG.md
   README.md
 
-data-files: dockerfiles/artifact/Dockerfile
+data-files:
+  dockerfiles/artifact/Dockerfile
+  scripts/genplot.gnuplot
 
 source-repository head
   type: git
@@ -227,14 +229,18 @@ executable artifact-runner
     cassava,
     containers,
     deepseq,
+    directory,
+    file-embed,
     monoidal-containers,
     optparse-applicative,
+    process,
     pure-borrow,
     pure-borrow:qsort-bench-suites,
     pure-borrow:qsort-demo-impl,
     random,
-    shake,
     tasty,
+    template-haskell,
+    temporary,
     text,
     transformers,
     vector,

@@ -1,4 +1,4 @@
-FROM ubuntu:24.04 AS build
+FROM debian:bookworm AS build
 
 RUN apt-get update && apt-get install -y build-essential curl libffi-dev libffi8ubuntu1 libgmp-dev libgmp10 libncurses-dev gnupg2 git
 
@@ -21,21 +21,24 @@ RUN git clone https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow.git
 
 WORKDIR /workspace/pure-borrow
 ENV PATH="/usr/local/bin:${PATH}"
+ENV LANG=C.UTF-8
 
 ARG CABAL_INDEX_STATE=2026-02-16T11:32:42Z
 RUN cabal update --index-state=${CABAL_INDEX_STATE}
 ARG NUM_CPUS=8
-RUN cabal configure --enable-static --enable-executable-static --enable-tests --enable-benchmarks --disable-shared --semaphore -j${NUM_CPUS}
+RUN cabal configure --enable-tests --enable-benchmarks --semaphore -j${NUM_CPUS}
 RUN cabal build all --only-dependencies
 RUN cabal build all
 RUN mkdir -p /opt/pure-borrow
 RUN cp "$(cabal list-bin artifact-runner)" /opt/pure-borrow
+RUN apt-get update && apt-get install -y gnuplot
 
-FROM debian:trixie-slim
+FROM debian:bookworm-slim
 
 ENV PATH="/opt/pure-borrow:${PATH}"
 RUN mkdir -p /workspace
 WORKDIR /workspace
 COPY --from=build /opt/pure-borrow /opt/pure-borrow
+RUN apt-get update && apt-get install -y gnuplot
 
 ENTRYPOINT ["/opt/pure-borrow/artifact-runner"]

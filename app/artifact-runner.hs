@@ -7,6 +7,7 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NoFieldSelectors #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
@@ -17,9 +18,11 @@ import Control.Concurrent (getNumCapabilities, setNumCapabilities)
 import Control.Exception (throwIO, try)
 import Control.Monad (forM_)
 import Control.Monad.Trans.Writer.CPS (execWriter, tell)
+import Data.ByteString qualified as BS
 import Data.ByteString.Builder qualified as BB
 import Data.ByteString.Lazy qualified as LBS
 import Data.Csv (FromNamedRecord (..), decodeByName, (.:))
+import Data.FileEmbed
 import Data.Foldable (fold)
 import Data.Foldable1 (fold1)
 import Data.Functor
@@ -40,8 +43,12 @@ import Options.Applicative qualified as Opts
 import PureBorrow.Demo.QSort qualified as QS
 import PureBorrow.Internal.Bench.QSort (BenchOpts)
 import PureBorrow.Internal.Bench.QSort qualified as Bench
+import System.Directory (canonicalizePath, findExecutable)
 import System.Environment (withArgs)
 import System.Exit (ExitCode)
+import System.IO (hClose, hFlush)
+import System.IO.Temp (withSystemTempFile)
+import System.Process (readProcess)
 import Text.Read (readEither)
 
 data Cmd = Bench BenchOpts | QuickBench | QSortDemo QS.CLIOpts
@@ -84,7 +91,22 @@ runBench benchOpts = do
   (_, rawRows) <- either (throwIO . userError) pure . decodeByName =<< LBS.readFile rawDest
   let sd = foldMap fromRawRow rawRows
       builder = buildOutput sd
-  BB.writeFile "qsort.csv" builder
+  csvDest <- canonicalizePath "qsort.csv"
+  BB.writeFile csvDest builder
+
+  mgp <- findExecutable "gnuplot"
+  forM_ mgp \gnuplot -> withSystemTempFile "plot.gp" \tmp h -> do
+    putStrLn $ "Gnuplot found: " <> gnuplot
+    pngDest <- canonicalizePath "qsort.png"
+    BS.hPutStr h gnuplotScript
+    hFlush h
+    hClose h
+    !_ <- readProcess gnuplot ["-e", "input='" <> csvDest <> "'; output='" <> pngDest <> "'", tmp] ""
+    putStrLn $ "Plot generated: " <> pngDest
+
+gnuplotScript :: BS.ByteString
+gnuplotScript =
+  $(embedFile "scripts/genplot.gnuplot")
 
 buildOutput :: Statistics -> BB.Builder
 buildOutput sd = execWriter do

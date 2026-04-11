@@ -144,7 +144,7 @@ size =
     (move (MV.length v), UnsafeAlias (Vector v))
 
 -- | Get without bounds check.
-unsafeGet :: Int -> Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
+unsafeGet :: (β <= α) => Int -> Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
 {-# INLINE unsafeGet #-}
 unsafeGet i =
   Unsafe.toLinear \v ->
@@ -153,22 +153,22 @@ unsafeGet i =
         UnsafeAlias
           Control.<$> unsafeSystemIOToBO (MV.unsafeRead v i)
 
-head :: (HasCallStack) => Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
+head :: (HasCallStack, β <= α) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
 {-# INLINE head #-}
 head = get 0
 
-unsafeHead :: Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
+unsafeHead :: (β <= α) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
 {-# INLINE unsafeHead #-}
 unsafeHead = unsafeGet 0
 
-unsafeLast :: Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
+unsafeLast :: (β <= α) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
 {-# INLINE unsafeLast #-}
 unsafeLast v = DataFlow.do
   (len, v) <- size v
   case len of
     Ur len -> unsafeGet (len - 1) v
 
-last :: (HasCallStack) => Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
+last :: (HasCallStack, β <= α) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
 {-# INLINE last #-}
 last v = DataFlow.do
   (len, v) <- size v
@@ -178,8 +178,8 @@ last v = DataFlow.do
       | otherwise -> error ("last: empty vector") v
 
 get ::
-  (HasCallStack) =>
-  Int -> Borrow bk α (Vector a) %1 -> BO α (Borrow bk α a)
+  (HasCallStack, β <= α) =>
+  Int -> Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
 {-# INLINE get #-}
 get i v = DataFlow.do
   (len, v) <- size v

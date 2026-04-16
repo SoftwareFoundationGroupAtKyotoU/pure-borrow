@@ -133,16 +133,16 @@ To evaluate our artifact, you can:
 With this artifact, we establish the following claims from the submitted paper:
 
 1. Implementation:
-   + "We implement Pure Borrow simply as a library in Linear Haskell" (Abstract, Lines 12-13)
+   + "We implement Pure Borrow simply as a library in Linear Haskell" (Abstract)
 2. Application to Pure Parallelism:
-   + "[We] demonstrate its power with a case study in parallel computing." (Abstract, Lines 13-14)
-   + "In this section, we demonstrate the power with a case study: parallel quicksort implemented in our library." (§4, Lines 475-476)
-   + "We have two implementations of parallel quicksort: a naïve version and a work-stealing version" (§4.1, Line 479)
+   + "[We] demonstrate its power with a case study in parallel computing." (Abstract)
+   + "In this section, we demonstrate the power with a case study: parallel quicksort implemented in our library." (§4)
+   + "We have two implementations of parallel quicksort: a naïve version and a work-stealing version." (§4.1)
 3. Extensibility:
-   + "we develop a general, modular, safe, and efficient API for work-stealing parallelization of divide-and-conquer algorithms" (§4.1, Lines 524-525)
-4. Performance Claims (Revised)
-   a. "Neither of our parallel quicksort implementations outperforms baseline introsort"
-   b. "work-stealing versions beat the “naïve” ones in runtime"
+   + "we develop a general, modular, safe, and efficient API for _work-stealing_ parallelization of divide-and-conquer algorithms" (§4.1)
+4. Performance:
+   + "Neither of our parallel quicksort implementations outperforms baseline introsort in terms of runtime or memory allocation." (§4.2)
+   + "our work-stealing versions beat the “naïve” ones in runtime." (§4.2)
 
 ### Reproducing the Benchmark Results
 
@@ -185,7 +185,7 @@ We have the following metrics:
 - `Peak` means "Peak Allocation [MB]".
 
 Figure 13 (§4.2) in our submission plots "Mean CPU Time [ms]" and "Total Allocation [MB]".
-The generated CSV (and plots) should affirm Original Performance Claims (4), although the result can be affected by the benchmarking environment.
+The generated CSV (and plots) should support the Performance Claim (4), although the result can vary depending on the benchmarking environment.
 
 #### Notes on benchmark parameters
 
@@ -273,8 +273,8 @@ This establishes Claim (2) about applicability to pure parallelism.
 
 The code used to generate the Plot of Quicksort Benchmark (Fig. 13) is located under `internal-src/qsort-bench-suites/PureBorrow/Internal/Bench/QSort.hs`.
 Then we apply `app/convert-qsort-bench-csv.hs` to generate the final CSV so that it can be fed into pgfplots.
-Alternatively, you can use gnuplot script `scripts/genplot.gnuplot` to render plot on your environment.
-Plot should confirm the (Original) Peformance Claims (4).
+Alternatively, you can use the gnuplot script `scripts/genplot.gnuplot` to render a plot in your environment.
+The plot should confirm the Performance Claim (4).
 
 We also developed the `artifact-runner` app (`app/artifact-runner.hs`) to automate the two-step procedure above and enable parameterized benchmarks, where we can customize parameters such as the number of cores or plotting points (unlike `convert-qsort-bench-csv`, which hard-codes such parameters).
 

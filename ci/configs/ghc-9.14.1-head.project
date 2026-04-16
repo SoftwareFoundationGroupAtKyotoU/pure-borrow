@@ -1705,7 +1705,7 @@ constraints:
   lift-generics ==0.3,
   lift-type ==0.1.2.0,
   linear ==1.23.2,
-  linear-base ==0.6.0,
+  linear-base ==0.7.0,
   linear-circuit ==0.1.0.4,
   linear-generics ==0.2.3,
   linear-geo ==0.1.0.0,

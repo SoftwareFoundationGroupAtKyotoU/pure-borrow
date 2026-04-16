@@ -40,16 +40,6 @@ The main files in the Zenodo record are as follows:
 - `pure-borrow-src.tar.gz`: The complete source distribution of our Pure Borrow. It can be used for Option B.
 - `pure-borrow-reference.tar.gz`: An HTML API Reference of Pure Borrow. It was generated with Haddock from the source above.
 
-Recently, after the original submission, we discovered a subtle concurrency bug in the original implementation of our work-stealing API (not our core Pure Borrow API), introduced for the parallel quicksort case study (§4.1 in the original paper). We developed a new implementation to fix the bug. This change has already been communicated to the paper's reviewers. Please refer to the section "On the Bug in Our Original Work-Stealing API Implementation" for the details.
-
-Regarding this new version, we include the following files in the Zenodo record:
-
-- `pure-borrow-docker-image-fixed-arm64/amd64.tar`: OCI images, with the fixed implementation.
-- `pure-borrow-src-fixed.tar.gz`: The complete source distribution of our Pure Borrow, with the fixed implementation.
-- `new-benchmark-results.png`: The new benchmark results for the fixed implementation (a counterpart of Fig. 13, §4.2, of the original paper).
-
-Each file with "-fixed" is a counterpart of the file without "-fixed" for the fixed implementation. Because this fix does not change the interfaces, the HTML API reference is shared by the fixed version.
-
 ### Option A: Using a Container Image
 
 First, you need to install a Docker-compatible container runtime that can run Linux images. The description below assumes `docker` CLI, but you can use any Docker-compatible runtime as you like.
@@ -143,28 +133,16 @@ To evaluate our artifact, you can:
 With this artifact, we establish the following claims from the submitted paper:
 
 1. Implementation:
-   + "We implement Pure Borrow simply as a library in Linear Haskell" (Abstract, Lines 12-13)
+   + "We implement Pure Borrow simply as a library in Linear Haskell" (Abstract)
 2. Application to Pure Parallelism:
-   + "[We] demonstrate its power with a case study in parallel computing." (Abstract, Lines 13-14)
-   + "In this section, we demonstrate the power with a case study: parallel quicksort implemented in our library." (§4, Lines 475-476)
-   + "We have two implementations of parallel quicksort: a naïve version and a work-stealing version" (§4.1, Line 479)
+   + "[We] demonstrate its power with a case study in parallel computing." (Abstract)
+   + "In this section, we demonstrate the power with a case study: parallel quicksort implemented in our library." (§4)
+   + "We have two implementations of parallel quicksort: a naïve version and a work-stealing version." (§4.1)
 3. Extensibility:
-   + "we develop a general, modular, safe, and efficient API for work-stealing parallelization of divide-and-conquer algorithms" (§4.1, Lines 524-525)
-
-The following claims from the original paper can be verified against "non-fixed" version of artifacts:
-
-4. Performance Claims (Original)
-   a. "it [naive implementation] takes substantially more space and time than the other implementations" (§4.2, Lines 579-580)
-   b. "the work-stealing quicksort is much more efficient than the naïve one, and even outperforms introsort for larger vectors" (§4.2, Lines 582-583).
-   c. "its [work-stealing] memory allocation is almost the same as, or slightly less than, that of introsort" (§4.2, Lines 583-584)
-
-Note that, as stated in earlier in "Files" section and later in "On the Bug in Our Original Work-Stealing API Implementation", the original implementation contains a correctness bug.
-For the record, revised version of the paper claims the following as for the benchmarking:
-
-5. Performance Claims (Revised)
-   a. "Neither of our parallel quicksort implementations
-outperforms baseline introsort"
-   b. "work-stealing versions beat the “naïve” ones in runtime"
+   + "we develop a general, modular, safe, and efficient API for _work-stealing_ parallelization of divide-and-conquer algorithms" (§4.1)
+4. Performance:
+   + "Neither of our parallel quicksort implementations outperforms baseline introsort in terms of runtime or memory allocation." (§4.2)
+   + "our work-stealing versions beat the “naïve” ones in runtime." (§4.2)
 
 ### Reproducing the Benchmark Results
 
@@ -207,7 +185,7 @@ We have the following metrics:
 - `Peak` means "Peak Allocation [MB]".
 
 Figure 13 (§4.2) in our submission plots "Mean CPU Time [ms]" and "Total Allocation [MB]".
-The generated CSV (and plots) should affirm Original Performance Claims (4), although the result can be affected by the benchmarking environment.
+The generated CSV (and plots) should support the Performance Claim (4), although the result can vary depending on the benchmarking environment.
 
 #### Notes on benchmark parameters
 
@@ -295,8 +273,8 @@ This establishes Claim (2) about applicability to pure parallelism.
 
 The code used to generate the Plot of Quicksort Benchmark (Fig. 13) is located under `internal-src/qsort-bench-suites/PureBorrow/Internal/Bench/QSort.hs`.
 Then we apply `app/convert-qsort-bench-csv.hs` to generate the final CSV so that it can be fed into pgfplots.
-Alternatively, you can use gnuplot script `scripts/genplot.gnuplot` to render plot on your environment.
-Plot should confirm the (Original) Peformance Claims (4).
+Alternatively, you can use the gnuplot script `scripts/genplot.gnuplot` to render a plot in your environment.
+The plot should confirm the Performance Claim (4).
 
 We also developed the `artifact-runner` app (`app/artifact-runner.hs`) to automate the two-step procedure above and enable parameterized benchmarks, where we can customize parameters such as the number of cores or plotting points (unlike `convert-qsort-bench-csv`, which hard-codes such parameters).
 
@@ -313,30 +291,3 @@ It accepts the following CLI arguments:
 | `-p N` / `-S` / `-w` | Sorting algorithm. `-p N` means Naïve parallel sort with budget `N`; `-S` means sequential quicksort; `-w` uses works-stealing |
 
 It prints neither the original nor the sorted arrays, just evaluates the output array into normal form. Hence, for small input sizes, the command may appear to be doing nothing. But if you increase the size to a large number (e.g., `4096124`), you can observe the difference between sorting algorithms.
-
-## On the Bug in Our Original Work-Stealing API Implementation
-
-Recently, after the submission, we discovered a subtle concurrency bug in the original implementation of the Work-Stealing API. We developed a new version to fix this bug.
-
-Notably, the fix only changes the implementation in the `Control.Concurrent.DivideConquer.Linear` module and its submodules. This is not the bug of the core Pure Borrow API.
-
-### Cause of the Bug and Our Fix
-
-The old code assumed an incorrect invariant about the timing of synchronization of the concurrent computation, resulting in a partially non-sorted array with a low probability, depending on thread scheduling.
-
-The attached "fixed" version addresses this issue by introducing the local-queue based work-stealing scheduler. We have tested the new implementation under various conditions to confirm that it works correctly.
-
-However, some synchronization between multiple threads seem to reduce the performance significantly. For the new benchmark results, please see `new-benchmark-results.png` included in the Zenodo record. The good news is that the fixed implementation still runs faster than the sequential and naïve implementations.
-The plot with "fixed" artifact should affirm Revised Performance Claim (5).
-
-We are working on the work-stealing API implementation to achieve better performance while avoiding bugs.
-
-### On the Reviews
-
-We don't think this diminishes the value of our contribution. The work-stealing API was meant to be a proof of concept demonstrating that our Pure Borrow serves as a useful basic building block for constructing more practical and complex APIs.
-
-Indeed, no reviews highlighted the performance results in §4.2 as a strength of this submission. Also, Reviewer C aptly noted as follows:
-
-> I don’t really care about the performance results for this work; especially not for just a single benchmark, but as a ”sanity check” they are leaning in the right direction.
-
-This change regarding the work-stealing API has already been communicated to the paper's reviewers on HotCRP.

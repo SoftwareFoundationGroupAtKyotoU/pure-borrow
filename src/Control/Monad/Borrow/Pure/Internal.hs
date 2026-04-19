@@ -72,7 +72,7 @@ askLinearly :: BO α Linearly
 {-# NOINLINE askLinearly #-}
 askLinearly = GHC.noinline $ Control.pure UnsafeLinearly
 
--- NOTE: We want to use `TypeData` extension for 'ForBO', but it makes Haddock panic!
+-- NOTE: We want to use 'TypeData' extension for 'ForBO', but it makes Haddock panic!
 
 type ForBO :: Lifetime -> Type
 data ForBO α
@@ -217,7 +217,7 @@ data BorrowKind
   | -- | Shared
     Share
 
--- | Borrower of kind `bk` that is active during the lifetime 'α'
+-- | Borrower of kind 'bk' that is active during the lifetime 'α'
 type Borrow :: BorrowKind -> Lifetime -> Type -> Type
 type Borrow bk α = Alias ('Borrow bk α)
 

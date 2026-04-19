@@ -193,7 +193,7 @@ You can also run the benchmarks with a smaller number of cases by `artifact-runn
 To control the number of cases, you can run `artifact-runner bench` with the following CLI options:
 
 | Option | Description |
-| :----: | :---------: |
+| :----- | :---------- |
 | `-N NUM` or `--threads NUM` | Runs with `NUM` cores. Default: 10. |
 | `-s NUM` or `--size NUM` | Takes benchmark against `NUM + 1` cases, each of size `32768 * i/NUM` for i = 0, .., NUM |
 
@@ -284,7 +284,7 @@ For a simple demo, we implemented `app/qsort.hs`. It just sorts a random array o
 It accepts the following CLI arguments:
 
 | Option | Description |
-| :----: | :---------- |
+| :----- | :---------- |
 | `-n NUM` | Sort the array of length `NUM` (default: 8) |
 | `-s NUM` | Random seed. (default: random) |
 | `-p N` / `-S` / `-w` | Sorting algorithm. `-p N` means Naïve parallel sort with budget `N`; `-S` means sequential quicksort; `-w` uses works-stealing |

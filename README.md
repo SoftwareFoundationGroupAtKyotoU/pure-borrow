@@ -130,7 +130,7 @@ To evaluate our artifact, you can:
 
 ### Claims
 
-With this artifact, we establish the following claims from the submitted paper:
+With this artifact, we establish the following claims from our paper:
 
 1. Implementation:
    + "We implement Pure Borrow simply as a library in Linear Haskell" (Abstract)
@@ -145,7 +145,7 @@ With this artifact, we establish the following claims from the submitted paper:
 
 ### Reproducing the Benchmark Results
 
-To reproduce the benchmark results (Fig. 13, §4.2) in our submission, you can just run `artifact-runner` without any CLI options.
+To reproduce the benchmark results (Fig. 13, §4.2) in our paper, you can just run `artifact-runner` without any CLI options.
 
 The results will be saved as `qsort-raw.csv` and `qsort.csv`.
 
@@ -183,7 +183,7 @@ We have the following metrics:
 - `Copied` means "Total Memory Copied during GC [MB]"; and
 - `Peak` means "Peak Allocation [MB]".
 
-Figure 13 (§4.2) in our submission plots "Mean CPU Time [ms]" and "Total Allocation [MB]".
+Figure 13 (§4.2) in our paper plots "Mean CPU Time [ms]" and "Total Allocation [MB]".
 The generated CSV (and plots) should support the Performance Claim (4), although the results can vary depending on the benchmarking environment.
 
 #### Notes on benchmark parameters
@@ -199,7 +199,7 @@ To control the number of cases, you can run `artifact-runner bench` with the fol
 
 ### Reviewing the Implementations
 
-Our source distribution is published as `pure-borrow-src.tar.gz` in the Zenodo record. It contains a cabal project for our Pure Borrow library. You can review our implementations to verify the information provided in our submission.
+Our source distribution is published as `pure-borrow-src.tar.gz` in the Zenodo record. It contains a cabal project for our Pure Borrow library. You can review our implementations to verify the information provided in our paper.
 
 We have the following folders:
 - The folder `src` contains the library code for the core Pure Borrow API and the parallel quicksort case study (without benchmarking).

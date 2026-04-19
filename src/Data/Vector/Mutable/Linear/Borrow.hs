@@ -92,7 +92,7 @@ fromList = GHC.noinline $ Unsafe.toLinear \as l ->
           Unsafe.toLinear V.unsafeThaw $!
             Unsafe.toLinear V.fromList as
 
--- | Convert a 'V.Vector' (from @vector@ package) to a 'Vector'
+-- | Convert a 'V.Vector' (from @vector@ package) to a 'Vector'.
 fromVector :: V.Vector a -> Linearly %1 -> Vector a
 {-# NOINLINE fromVector #-}
 fromVector = GHC.noinline $ Unsafe.toLinear \v l ->

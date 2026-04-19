@@ -146,10 +146,10 @@ newLifetime' lin k =
   case newLifetime lin of
     MkSomeNow now -> k now
 
--- | Static Lifetime is always available
+-- | Static Lifetime is always available.
 nowStatic :: Now Static
 nowStatic = UnsafeNow
 
--- | Static lifetime lasts forever
+-- | Static lifetime lasts forever.
 neverEnds :: (HasCallStack, End Static) => a
 neverEnds = error "Unreachable: if you see this, you created an End Static in the internal code!"

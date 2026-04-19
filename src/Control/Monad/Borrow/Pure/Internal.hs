@@ -181,7 +181,7 @@ unsafePerformEvaluateUndupableBO (BO f) = runBO# \s ->
 parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
 {-# NOINLINE parBO #-}
 parBO a b = GHC.noinline
-  -- TODO: define explicit rules to when to invoke noDuplicate#
+  -- TODO: define explicit rules to when to invoke noDuplicate#.
   BO
   \s -> case Unsafe.toLinear GHC.noDuplicate# s of
     s -> case Unsafe.toLinear2 GHC.spark# (unsafePerformEvaluateUndupableBO a) s of
@@ -194,7 +194,7 @@ evaluate :: a %1 -> BO α a
 {-# INLINE evaluate #-}
 evaluate a = unsafeSystemIOToBO (Unsafe.toLinear SystemIO.evaluate a)
 
--- | Alias of kind 'ak' to a resource of type 'a'
+-- | Alias of kind 'ak' to a resource of type 'a'.
 type Alias :: AliasKind -> Type -> Type
 newtype Alias ak a = UnsafeAlias a
 
@@ -203,25 +203,25 @@ unsafeUnalias (UnsafeAlias x) = x
 
 type role Alias nominal representational
 
--- | Alias kind
+-- | Alias kind.
 data AliasKind
-  = -- | Borrower
+  = -- | Borrower.
     Borrow BorrowKind Lifetime
-  | -- | Lender
+  | -- | Lender.
     Lend Lifetime
 
--- | Borrower kind
+-- | Borrower kind.
 data BorrowKind
-  = -- | Mutable
+  = -- | Mutable.
     Mut
-  | -- | Shared
+  | -- | Shared.
     Share
 
--- | Borrower of kind 'bk' that is active during the lifetime 'α'
+-- | Borrower of kind 'bk' that is active during the lifetime 'α'.
 type Borrow :: BorrowKind -> Lifetime -> Type -> Type
 type Borrow bk α = Alias ('Borrow bk α)
 
--- | Mutable borrower, which is affine and can update the data
+-- | Mutable borrower, which is affine and can update the data.
 type Mut :: Lifetime -> Type -> Type
 type Mut α = Borrow 'Mut α
 
@@ -264,7 +264,7 @@ instance (bk ~ 'Mut) => LinearOnly (Borrow bk α a) where
 
 deriving via AsAffine (Borrow bk α a) instance Consumable (Borrow bk α a)
 
--- | Shared borrower, which is unrestricted but usually can only read from the data
+-- | Shared borrower, which is unrestricted but usually can only read from the data.
 type Share :: Lifetime -> Type -> Type
 type Share α = Borrow 'Share α
 
@@ -289,7 +289,7 @@ instance (α >= β, a <: b, b <: a) => Mut α a <: Mut β b where
 instance (α >= β, a <: b) => Share α a <: Share β b where
   subtype = UnsafeSubtype
 
--- | Lender, which can retrieve the lifetime at the lifetime 'α'
+-- | Lender, which can retrieve the lifetime at the lifetime 'α'.
 type Lend :: Lifetime -> Type -> Type
 type Lend α = Alias ('Lend α)
 
@@ -301,7 +301,7 @@ borrow :: a %1 -> Linearly %1 -> (Mut α a, Lend α a)
 borrow = Unsafe.toLinear2 \ !a !_ ->
   (UnsafeAlias a, UnsafeAlias a)
 
--- | Analogous to 'borrow', but does not return the original 'Lend' to be reclaimed
+-- | Analogous to 'borrow', but does not return the original 'Lend' to be reclaimed.
 borrow_ :: a %1 -> Linearly %1 -> Mut α a
 borrow_ = Unsafe.toLinear2 \ !a !_ ->
   UnsafeAlias a
@@ -318,12 +318,12 @@ reclaim' l = After (reclaim l)
 reclaim :: (End α) => Lend α a %1 -> a
 reclaim = \(UnsafeAlias !a) -> a
 
--- | Reborrow a mutable borrow into a sublifetime
+-- | Reborrow a mutable borrow into a sublifetime.
 reborrow :: (α >= β) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
 reborrow = Unsafe.toLinear \ !mutA ->
   (Data.Coerce.coerce mutA, Data.Coerce.coerce mutA)
 
--- | Collapse a borrower to a mutable borrower
+-- | Collapse a borrower to a mutable borrower.
 joinMut :: Borrow bk α (Mut β a) %1 -> Borrow bk (α /\ β) a
 joinMut = coerceLin
 

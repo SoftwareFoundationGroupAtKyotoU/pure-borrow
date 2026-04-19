@@ -121,7 +121,7 @@ doAndEnqueue q work cont = case q of
 divideAndConquer ::
   forall α t a g.
   (RandomGen g, Data.Traversable t, Consumable (t ())) =>
-  -- | The # of workers
+  -- | The # of workers.
   Int ->
   DivideConquer α t a ->
   g ->
@@ -237,9 +237,9 @@ instance Data.Traversable Pair where
 
 qsortDC ::
   (RandomGen g, Ord a, Copyable a) =>
-  -- | The # of workers
+  -- | The # of workers.
   Int ->
-  -- | Threshold for the length of vector to switch to sequential sort
+  -- | Threshold for the length of vector to switch to sequential sort.
   Int ->
   g ->
   Mut α (LV.Vector a) %1 ->
@@ -248,7 +248,7 @@ qsortDC nwork thresh = divideAndConquer nwork (qsortDC' thresh)
 
 qsortDC' ::
   (Ord a, Copyable a) =>
-  -- | Threshold for the length of vector to switch to sequential sort
+  -- | Threshold for the length of vector to switch to sequential sort.
   Int ->
   DivideConquer α Pair (LV.Vector a)
 qsortDC' thresh =

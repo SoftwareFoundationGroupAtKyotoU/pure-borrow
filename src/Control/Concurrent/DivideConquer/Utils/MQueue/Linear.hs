@@ -53,7 +53,7 @@ import Prelude.Linear.Unsatisfiable
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
--- | A closable queue
+-- | A closable queue.
 newtype MQueue a = MkMQ (TMDeque a)
 
 instance LinearOnly (MQueue a) where

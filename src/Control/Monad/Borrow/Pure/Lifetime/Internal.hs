@@ -71,7 +71,7 @@ class α <= β where
   -- | The witness of the relation.
   witness :: Witness α β
 
--- | Flipped version of '<='
+-- | Flipped version of '<='.
 type (>=) :: Lifetime -> Lifetime -> Constraint
 type α >= β = β <= α
 

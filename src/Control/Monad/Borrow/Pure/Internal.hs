@@ -280,13 +280,13 @@ instance (k ~ 'Borrow 'Share α) => Movable (Alias k a) where
   move = Unsafe.toLinear Ur
   {-# INLINE move #-}
 
-instance (β <= α, a <: b) => BO α a <: BO β b where
+instance (α >= β, a <: b) => BO α a <: BO β b where
   subtype = UnsafeSubtype
 
-instance (β <= α, a <: b, b <: a) => Mut α a <: Mut β b where
+instance (α >= β, a <: b, b <: a) => Mut α a <: Mut β b where
   subtype = UnsafeSubtype
 
-instance (β <= α, a <: b) => Share α a <: Share β b where
+instance (α >= β, a <: b) => Share α a <: Share β b where
   subtype = UnsafeSubtype
 
 -- | Lender, which can retrieve the lifetime at the lifetime 'α'
@@ -319,7 +319,7 @@ reclaim :: (End α) => Lend α a %1 -> a
 reclaim = \(UnsafeAlias !a) -> a
 
 -- | Reborrow a mutable borrow into a sublifetime
-reborrow :: (β <= α) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
+reborrow :: (α >= β) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
 reborrow = Unsafe.toLinear \ !mutA ->
   (Data.Coerce.coerce mutA, Data.Coerce.coerce mutA)
 

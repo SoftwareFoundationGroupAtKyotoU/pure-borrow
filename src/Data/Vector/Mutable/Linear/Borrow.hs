@@ -144,7 +144,7 @@ size =
     (move (MV.length v), UnsafeAlias (Vector v))
 
 -- | Get without bounds check.
-unsafeGet :: (β <= α) => Int -> Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
+unsafeGet :: (α >= β) => Int -> Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
 {-# INLINE unsafeGet #-}
 unsafeGet i =
   Unsafe.toLinear \v ->
@@ -153,22 +153,22 @@ unsafeGet i =
         UnsafeAlias
           Control.<$> unsafeSystemIOToBO (MV.unsafeRead v i)
 
-head :: (HasCallStack, β <= α) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
+head :: (HasCallStack, α >= β) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
 {-# INLINE head #-}
 head = get 0
 
-unsafeHead :: (β <= α) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
+unsafeHead :: (α >= β) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
 {-# INLINE unsafeHead #-}
 unsafeHead = unsafeGet 0
 
-unsafeLast :: (β <= α) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
+unsafeLast :: (α >= β) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
 {-# INLINE unsafeLast #-}
 unsafeLast v = DataFlow.do
   (len, v) <- size v
   case len of
     Ur len -> unsafeGet (len - 1) v
 
-last :: (HasCallStack, β <= α) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
+last :: (HasCallStack, α >= β) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
 {-# INLINE last #-}
 last v = DataFlow.do
   (len, v) <- size v
@@ -178,7 +178,7 @@ last v = DataFlow.do
       | otherwise -> error ("last: empty vector") v
 
 get ::
-  (HasCallStack, β <= α) =>
+  (HasCallStack, α >= β) =>
   Int -> Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
 {-# INLINE get #-}
 get i v = DataFlow.do
@@ -189,14 +189,14 @@ get i v = DataFlow.do
         then error ("get: index " <> show i <> " out of bound: " <> show len) v
         else unsafeGet i v
 
-unsafeUpdate :: (β <= α) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))
+unsafeUpdate :: (α >= β) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))
 unsafeUpdate i = Unsafe.toLinear2 \k (UnsafeAlias v) -> Control.do
   a <- unsafeSystemIOToBO $ MV.unsafeRead (content v) i
   (b, a') <- k a
   () <- unsafeSystemIOToBO $ Unsafe.toLinear3 MV.unsafeWrite (content v) i a'
   Control.pure $ (b, UnsafeAlias v)
 
-update :: (β <= α) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))
+update :: (α >= β) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))
 update i k v = DataFlow.do
   (len, v) <- size v
   case len of
@@ -205,7 +205,7 @@ update i k v = DataFlow.do
         then error ("set: index " <> show i <> " out of bound: " <> show len) v k
         else unsafeUpdate i k v
 
-modify :: (β <= α) => Int -> (a %1 -> a) %1 -> Mut α (Vector a) %1 -> BO β (Mut α (Vector a))
+modify :: (α >= β) => Int -> (a %1 -> a) %1 -> Mut α (Vector a) %1 -> BO β (Mut α (Vector a))
 modify i f v = Control.do
   ((), ma) <- update i (Control.pure . ((),) . f) v
   Control.pure ma

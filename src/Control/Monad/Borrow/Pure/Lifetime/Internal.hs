@@ -71,6 +71,10 @@ class α <= β where
   -- | The witness of the relation.
   witness :: Witness α β
 
+-- | Flipped version of '<='
+type (>=) :: Lifetime -> Lifetime -> Constraint
+type α >= β = β <= α
+
 instance (α <= β, α <= γ) => α <= β /\ γ where
   witness = Inf witness witness
   {-# NOINLINE witness #-}

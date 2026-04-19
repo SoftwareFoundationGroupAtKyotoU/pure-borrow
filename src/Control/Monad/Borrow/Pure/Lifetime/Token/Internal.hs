@@ -135,7 +135,7 @@ endLifetime UnsafeNow = Ur UnsafeEnd
 data SomeNow where
   MkSomeNow :: Now (Al i) %1 -> SomeNow
 
-instance (β <= α) => EndToken α <: EndToken β where
+instance (α >= β) => EndToken α <: EndToken β where
   subtype = UnsafeSubtype
 
 newLifetime :: Linearly %1 -> SomeNow

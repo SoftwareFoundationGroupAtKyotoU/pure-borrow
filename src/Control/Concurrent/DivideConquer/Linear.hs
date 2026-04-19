@@ -56,7 +56,7 @@ import System.Random (RandomGen)
 import Unsafe.Linear qualified as Unsafe
 
 data DivideConquer α t a = DivideConquer
-  { divide :: forall β. (β <= α) => Mut β a %1 -> BO β (Result β t a)
+  { divide :: forall β. (α >= β) => Mut β a %1 -> BO β (Result β t a)
   }
 
 data Result β t a = Done | Continue (t (Mut β a))
@@ -143,7 +143,7 @@ divideAndConquer n DivideConquer {..} g ini
 
           Control.pure (upcast $ consume Control.<$> reclaim' masterLend)
   where
-    worker :: (β <= α) => Mut β (QueuePool (Work β a t)) %1 -> BO β ()
+    worker :: (α >= β) => Mut β (QueuePool (Work β a t)) %1 -> BO β ()
     worker q =
       whileJust_ (Idle q) popQState \q -> \case
         Final -> Control.pure q

@@ -229,7 +229,7 @@ srunBO bo = asksLinearlyM \lin ->
     Control.pure (withEnd end f)
 
 -- | A variant of 'borrow' that obtains 'Linearly' viar 'LinearOnly'.
-borrowLinearOnly :: (LinearOnly a) => a %1 -> (Mut α a, Lend α a)
+borrowLinearOnly :: forall α a. (LinearOnly a) => a %1 -> (Mut α a, Lend α a)
 borrowLinearOnly !a = case withLinearly a of
   (!lin, !a) -> borrow a lin
 

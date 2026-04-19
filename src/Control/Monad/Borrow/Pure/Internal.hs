@@ -297,12 +297,12 @@ instance (α <= β, a <: b) => Lend α a <: Lend β b where
   subtype = UnsafeSubtype
 
 -- | Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim the resource to lend at the 'End' of the lifetime.
-borrow :: a %1 -> Linearly %1 -> (Mut α a, Lend α a)
+borrow :: forall α a. a %1 -> Linearly %1 -> (Mut α a, Lend α a)
 borrow = Unsafe.toLinear2 \ !a !_ ->
   (UnsafeAlias a, UnsafeAlias a)
 
 -- | Analogous to 'borrow', but does not return the original 'Lend' to be reclaimed.
-borrow_ :: a %1 -> Linearly %1 -> Mut α a
+borrow_ :: forall α a. a %1 -> Linearly %1 -> Mut α a
 borrow_ = Unsafe.toLinear2 \ !a !_ ->
   UnsafeAlias a
 
@@ -319,7 +319,7 @@ reclaim :: (End α) => Lend α a %1 -> a
 reclaim = \(UnsafeAlias !a) -> a
 
 -- | Reborrow a mutable borrow into a sublifetime.
-reborrow :: (α >= β) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
+reborrow :: forall β α a. (α >= β) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
 reborrow = Unsafe.toLinear \ !mutA ->
   (Data.Coerce.coerce mutA, Data.Coerce.coerce mutA)
 

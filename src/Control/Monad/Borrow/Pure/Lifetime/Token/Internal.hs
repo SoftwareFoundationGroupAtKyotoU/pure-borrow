@@ -115,7 +115,7 @@ instance Dupable Linearly where
   -- Such optimization can manifest when, for example, one duplicates 'Linearly'
   -- tokens multiple times and feed them to different allocation functions.
   -- Although we are not able to detect the exact situation, but we believe that
-  -- GHC optimizer then eliminates every invocation on bulk alloction functions
+  -- GHC optimizer then eliminates every invocation on bulk allocation functions
   -- into a single one, which introduces unintended reuse of linear resources.
   -- Hence, we must instruct GHC not to inline this function and force
   dup2 = GHC.noinline \UnsafeLinearly -> (UnsafeLinearly, UnsafeLinearly)

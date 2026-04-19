@@ -184,7 +184,7 @@ We have the following metrics:
 - `Peak` means "Peak Allocation [MB]".
 
 Figure 13 (§4.2) in our submission plots "Mean CPU Time [ms]" and "Total Allocation [MB]".
-The generated CSV (and plots) should support the Performance Claim (4), although the result can vary depending on the benchmarking environment.
+The generated CSV (and plots) should support the Performance Claim (4), although the results can vary depending on the benchmarking environment.
 
 #### Notes on benchmark parameters
 

@@ -141,7 +141,7 @@ With this artifact, we establish the following claims from our paper:
 3. Extensibility:
    + "we develop a general, modular, safe, and efficient API for _work-stealing_ parallelization of divide-and-conquer algorithms" (§4.1)
 4. Performance:
-   + "Overall, our parallel quicksort implementations have considerably faster runtimes than the sequential quicksort, and our work-stealing versions outperform the naïve ones in runtime." (§4.2)
+   + "Overall, our parallel quicksort implementations have considerably faster runtimes than the sequential quicksort, and our work-stealing versions largely outperform the naïve ones in runtime." (§4.2)
 
 ### Reproducing the Benchmark Results
 

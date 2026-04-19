@@ -195,7 +195,7 @@ To control the number of cases, you can run `artifact-runner bench` with the fol
 | Option | Description |
 | :----- | :---------- |
 | `-N NUM` or `--threads NUM` | Runs with `NUM` cores. Default: 10. |
-| `-s NUM` or `--size NUM` | Takes benchmark against `NUM + 1` cases, each of size `32768 * i/NUM` for i = 0, .., NUM |
+| `-s NUM` or `--size NUM` | Takes benchmark against `NUM + 1` cases, each of size `32768 * i/NUM` for i = 0, .., NUM. |
 
 ### Reviewing the Implementations
 
@@ -285,8 +285,8 @@ It accepts the following CLI arguments:
 
 | Option | Description |
 | :----- | :---------- |
-| `-n NUM` | Sort the array of length `NUM` (default: 8) |
-| `-s NUM` | Random seed. (default: random) |
-| `-p N` / `-S` / `-w` | Sorting algorithm. `-p N` means Naïve parallel sort with budget `N`; `-S` means sequential quicksort; `-w` uses works-stealing |
+| `-n NUM` | Sort the array of length `NUM` (default: 8). |
+| `-s NUM` | Random seed (default: random). |
+| `-p N` / `-S` / `-w` | Sorting algorithm. `-p N` means naïve parallel sort with budget `N`; `-S` means sequential quicksort; `-w` uses works-stealing. |
 
 It prints neither the original nor the sorted arrays, just evaluates the output array into normal form. Hence, for small input sizes, the command may appear to be doing nothing. But if you increase the size to a large number (e.g., `4096124`), you can observe the difference between sorting algorithms.

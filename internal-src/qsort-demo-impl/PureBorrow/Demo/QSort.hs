@@ -7,6 +7,8 @@
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeAbstractions #-}
+{-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module PureBorrow.Demo.QSort (
@@ -69,24 +71,24 @@ qsortWith (Parallel bud) _ v =
   unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2, l3) <- dup3 lin
-      runBO lin Control.do
-        (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
+      runBO lin \ @α -> Control.do
+        (v, lend) <- Control.pure PL.$ borrow @α (VL.fromVector v l2) l3
         VL.qsort bud v
         pureAfter (VL.toVector PL.$ reclaim lend)
 qsortWith Sequential _ v =
   unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2, l3) <- dup3 lin
-      runBO lin Control.do
-        (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
+      runBO lin \ @α -> Control.do
+        (v, lend) <- Control.pure PL.$ borrow @α (VL.fromVector v l2) l3
         VL.qsort 0 v
         pureAfter (VL.toVector PL.$ reclaim lend)
 qsortWith (Worksteal workers thresh) g v =
   unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2, l3) <- dup3 lin
-      runBO lin Control.do
-        (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
+      runBO lin \ @α -> Control.do
+        (v, lend) <- Control.pure PL.$ borrow @α (VL.fromVector v l2) l3
         Control.void PL.$ qsortDC workers thresh g v
         pureAfter (VL.toVector PL.$ reclaim lend)
 

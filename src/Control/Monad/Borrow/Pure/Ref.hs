@@ -53,7 +53,7 @@ readSharedRef :: (α >= β) => Share α (Ref a) %1 -> BO β (Ur (Share α a))
 readSharedRef = Unsafe.toLinear \(UnsafeAlias mv) ->
   Control.pure $ Ur $! UnsafeAlias NonLinear.$! NonLinear.fst $! Ref.unsafeReadRef mv
 
-copyRef :: (Copyable a) => Borrow k α (Ref a) %1 -> BO α a
+copyRef :: (Copyable a, α >= β) => Borrow k α (Ref a) %1 -> BO β a
 {-# INLINE copyRef #-}
 copyRef bor =
   share bor & \(Ur bor) -> Control.do

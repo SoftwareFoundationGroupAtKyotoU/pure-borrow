@@ -4,6 +4,7 @@
 {-# LANGUAGE LinearTypes #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeAbstractions #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
@@ -55,8 +56,8 @@ test_qsort =
 qsortDCVec :: (Ord a, Copyable a) => StdGen -> V.Vector a -> V.Vector a
 qsortDCVec g v = unur $ linearly \lin -> DataFlow.do
   (l1, l2, l3) <- dup3 lin
-  runBO l1 $
-    borrow (VL.fromVector v l2) l3
+  runBO l1 \ @α ->
+    borrow @α (VL.fromVector v l2) l3
       & \(v, lend) -> Control.do
         Control.void $ qsortDC 10 128 g v
         Control.pure $ After (VL.toVector (reclaim lend))

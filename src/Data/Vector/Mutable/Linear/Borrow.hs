@@ -50,6 +50,7 @@ import Control.Monad.Borrow.Pure.Internal
 import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
 import Control.Monad.Borrow.Pure.Utils
 import Control.Syntax.DataFlow qualified as DataFlow
+import Data.Coerce.Directed (upcast)
 import Data.Function qualified as NonLinear
 import Data.Functor.Linear qualified as Data
 import Data.IntSet qualified as IntSet
@@ -213,13 +214,13 @@ modify i f v = Control.do
 {- | Get multiple elements at the given indices without bounds and duplication check.
 For more safety, use 'indicesMut'.
 -}
-unsafeIndicesMut :: Mut α (Vector a) %1 -> [Int] %1 -> BO α [Mut α a]
+unsafeIndicesMut :: (α >= β) => Mut α (Vector a) %1 -> [Int] %1 -> BO β [Mut α a]
 unsafeIndicesMut = Unsafe.toLinear \v is ->
   Data.traverse
     (\i -> move i & \(Ur i) -> unsafeGet i v)
     is
 
-indicesMut :: (HasCallStack) => Mut α (Vector a) %1 -> [Int] %1 -> BO α [Mut α a]
+indicesMut :: (HasCallStack, α >= β) => Mut α (Vector a) %1 -> [Int] %1 -> BO β [Mut α a]
 indicesMut = Unsafe.toLinear2 \v is ->
   case size v of
     (Ur len, v) ->
@@ -240,12 +241,12 @@ instance LinearOnly (Vector a) where
   linearOnly = UnsafeLinearOnly
   {-# INLINE linearOnly #-}
 
-unsafeSwap :: Mut α (Vector a) %1 -> Int -> Int -> BO α (Mut α (Vector a))
+unsafeSwap :: (α >= β) => Mut α (Vector a) %1 -> Int -> Int -> BO β (Mut α (Vector a))
 unsafeSwap = Unsafe.toLinear3 \(UnsafeAlias v) i j -> Control.do
   () <- unsafeSystemIOToBO $ MV.unsafeSwap v.content i j
   Control.pure $ UnsafeAlias v
 
-swap :: (HasCallStack) => Mut α (Vector a) %1 -> Int -> Int -> BO α (Mut α (Vector a))
+swap :: (HasCallStack, α >= β) => Mut α (Vector a) %1 -> Int -> Int -> BO β (Mut α (Vector a))
 swap v i j = DataFlow.do
   (len, v) <- size v
   case len of
@@ -254,11 +255,11 @@ swap v i j = DataFlow.do
         then error ("swap: index out of bound: " <> show (i, j) <> " for length " <> show len) v
         else unsafeSwap v i j
 
-copyAt :: (Copyable a) => Int -> Share α (Vector a) -> BO α (Ur a)
+copyAt :: (Copyable a, α >= β) => Int -> Share α (Vector a) -> BO β (Ur a)
 copyAt i v = Control.do Ur s <- move Control.<$> get i v; Control.pure $ Ur $ copy s
 
-copyAtMut :: (Copyable a) => Int -> Mut α (Vector a) %1 -> BO α (Ur a, Mut α (Vector a))
-copyAtMut i v = sharing v $ copyAt i
+copyAtMut :: forall a α β. (Copyable a, α >= β) => Int -> Mut α (Vector a) %1 -> BO β (Ur a, Mut α (Vector a))
+copyAtMut i v = upcast $ sharing @_ @α v $ copyAt i
 
 {- | A simple parallel implementation of quicksort.
 It uses a sequential divide-and-conquer when size <8,
@@ -269,15 +270,17 @@ not practical - you need a genuine parallel scheduler
 to scale this up.
 -}
 qsort ::
-  (Ord a, Copyable a) =>
+  forall a α β.
+  (Ord a, Copyable a, α >= β) =>
   {- | Cost for using parallelism. Halved after each recursive call,
   and stops parallelizing when it reaches 1.
   -}
   Word ->
   Mut α (Vector a) %1 ->
-  BO α ()
+  BO β ()
 qsort = go
   where
+    go :: Word -> Mut α (Vector a) %1 -> BO β ()
     go budget v = case size v of
       (Ur 0, v) -> Control.pure $ consume v
       (Ur 1, v) -> Control.pure $ consume v
@@ -293,12 +296,12 @@ parIf :: Bool %1 -> BO α a %1 -> BO α b %1 -> BO α (a, b)
 parIf p = if p then parBO else Control.liftA2 (,)
 
 divide ::
-  (Ord a, Copyable a) =>
+  (Ord a, Copyable a, α >= β) =>
   a ->
   Mut α (Vector a) %1 ->
   Int ->
   Int ->
-  BO α (Mut α (Vector a), Mut α (Vector a))
+  BO β (Mut α (Vector a), Mut α (Vector a))
 divide pivot = partUp
   where
     partUp v l u

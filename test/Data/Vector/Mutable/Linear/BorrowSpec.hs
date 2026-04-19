@@ -4,6 +4,7 @@
 {-# LANGUAGE LinearTypes #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeAbstractions #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
@@ -31,8 +32,8 @@ import Prelude qualified as NonLinear
 qsortVec :: (Ord a, Copyable a) => V.Vector a -> V.Vector a
 qsortVec v = unur $ linearly \lin -> DataFlow.do
   (l1, l2, l3) <- dup3 lin
-  runBO l1 $
-    borrow (VL.fromVector v l2) l3
+  runBO l1 \ @α ->
+    borrow @α (VL.fromVector v l2) l3
       & \(v, lend) -> Control.do
         VL.qsort 8 v
         pureAfter $ VL.toVector (reclaim lend)
@@ -44,8 +45,8 @@ divideList xs =
       pivot = v0 V.! (V.length v0 `quot` 2)
    in Bi.second unur $ linearly \lin -> DataFlow.do
         (l1, l2, l3) <- dup3 lin
-        runBO l1 $
-          borrow (VL.fromList xs l2) l3
+        runBO l1 \ @α ->
+          borrow @α (VL.fromList xs l2) l3
             & \(v, lend) ->
               VL.size v & \(Ur len, v) -> Control.do
                 (lo, hi) <- VL.divide pivot v 0 len
@@ -108,8 +109,8 @@ example1 :: (Int, [Int])
 example1 = linearly \lin -> DataFlow.do
   (lin, lin') <- dup lin
   vec <- VL.fromList [0, 1, 2] lin
-  runBO lin' Control.do
-    let !(mvec, lend) = borrowLinearOnly vec
+  runBO lin' \ @α -> Control.do
+    let !(mvec, lend) = borrowLinearOnly @α vec
     mvec <- VL.modify 0 (+ 3) mvec
     mvec <- VL.modify 2 (+ 5) mvec
     mvec <- VL.modify 0 (* 4) mvec
@@ -126,8 +127,8 @@ example2 :: (Int, [Int])
 example2 = linearly \lin -> DataFlow.do
   (lin, lin') <- dup lin
   vec <- VL.fromList [0, 1, 2] lin
-  runBO lin' Control.do
-    let !(mvec, lend) = borrowLinearOnly vec
+  runBO lin' \ @α -> Control.do
+    let !(mvec, lend) = borrowLinearOnly @α vec
     let !(mvec1, mvec2) = VL.splitAt 1 mvec
     (mvec, ()) <-
       parBO
@@ -149,8 +150,8 @@ example3 :: (Int, [Int])
 example3 = linearly \lin -> DataFlow.do
   (lin, lin') <- dup lin
   vec <- VL.fromList [0, 1, 2] lin
-  runBO lin' Control.do
-    let !(mvec, lend) = borrowLinearOnly vec
+  runBO lin' \ @α -> Control.do
+    let !(mvec, lend) = borrowLinearOnly @α vec
     mvec <- reborrowing_ mvec \mvec -> Control.do
       let !(mvec1, mvec2) = VL.splitAt 1 mvec
       consume

@@ -1,6 +1,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeAbstractions #-}
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
@@ -101,16 +102,16 @@ qsortWith Sequential v =
   unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2, l3) <- dup3 lin
-      runBO lin Control.do
-        (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
+      runBO lin \ @α -> Control.do
+        (v, lend) <- Control.pure PL.$ borrow @α (VL.fromVector v l2) l3
         VL.qsort 0 v
         pureAfter (VL.toVector PL.$ reclaim lend)
 qsortWith (Worksteal p) v =
   unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2, l3) <- dup3 lin
-      runBO lin Control.do
-        (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
+      runBO lin \ @α -> Control.do
+        (v, lend) <- Control.pure PL.$ borrow @α (VL.fromVector v l2) l3
         Control.void PL.$ qsortDC p 128 (mkStdGen 42) v
         pureAfter (VL.toVector PL.$ reclaim lend)
 

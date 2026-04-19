@@ -21,7 +21,7 @@ module Control.Concurrent.DivideConquer.Linear (
   divideAndConquer,
   DivideConquer (..),
 
-  -- *  Examples
+  -- * Examples
   qsortDC,
 ) where
 

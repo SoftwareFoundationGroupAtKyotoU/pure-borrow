@@ -26,7 +26,7 @@ There are two options to run our artifact:
 
 If you want to run our benchmark suite, Option A is usually the most convenient (provided you have a container runtime, such as Docker, Podman, or Apple Container).
 
-In particular, we provide a Linux Image that can be run on amd64 and arm64. If you are using Linux on those architectures, you can just use this option without fear of the overhead.
+In particular, we provide a Linux Image that can be run on amd64 and arm64. If you are using Linux on those architectures, you can just use this option.
 
 You can also use Option B to try the artifact locally or to run the benchmark without overhead.
 

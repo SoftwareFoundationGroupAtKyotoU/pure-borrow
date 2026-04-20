@@ -23,6 +23,7 @@ import Prelude.Linear (Consumable (..), Dupable (..))
 import Prelude.Linear qualified as PL
 import Unsafe.Linear qualified as Unsafe
 
+-- | Linearly owned mutable reference.
 data Ref a = Ref (Ref# a)
 
 type role Ref nominal

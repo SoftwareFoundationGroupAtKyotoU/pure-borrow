@@ -65,6 +65,7 @@ import Prelude.Linear hiding (head, last, splitAt)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
+-- | Linearly owned mutable vector.
 newtype Vector a = Vector {content :: MV.MVector RealWorld a}
 
 empty :: Linearly %1 -> Vector a

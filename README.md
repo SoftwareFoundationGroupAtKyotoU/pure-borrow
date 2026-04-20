@@ -125,6 +125,7 @@ cabal run -- artifact-runner ARG1 ARG2 ...
 ## Step-by-Step Instructions for Evaluation
 
 To evaluate our artifact, you can:
+
 - Reproduce the benchmark results; and
 - Review the implementations.
 
@@ -170,12 +171,14 @@ It also generates `qsort.png`, which corresponds to Fig. 13 if the environment h
 Each column name consists of an algorithm name and a metric (e.g., `workSteal10Mean` consisting of `workSteal10` and `Mean`).
 
 We have the following algorithm names:
+
 - `intro` means "introsort from `vector-algorithms`";
 - `sequential` means "sequential quicksort";
 - `parallelN` means "naïve parallel quicksort with budget N"; and
 - `workStealN` means "work-stealing quicksort with N workers".
 
 We have the following metrics:
+
 - `Mean` means "Mean CPU Time [ms]";
 - `Stddev` means "Standard Deviation of CPU Time [ms]";
 - `Alloc` means "Total Allocation [MB]";
@@ -202,6 +205,7 @@ To control the number of cases, you can run `artifact-runner bench` with the fol
 Our source distribution is published as `pure-borrow-src.tar.gz` in the Zenodo record. It contains a cabal project for our Pure Borrow library. You can review our implementations to verify the information provided in our paper.
 
 We have the following folders:
+
 - The folder `src` contains the library code for the core Pure Borrow API and the parallel quicksort case study (without benchmarking).
 - The folders `internal-src`, `bench` and `app` contain code for benchmarking and a demo.
 - The folder `test` contains tests.

@@ -48,9 +48,6 @@ unAfter :: (End α) => After α a %1 -> a
 {-# INLINE unAfter #-}
 unAfter (After r) = r
 
-instance {-# INCOHERENT #-} (End β) => End (β /\ α) where
-  endToken = upcast (endToken @β)
-
 withEnd :: forall α r. EndToken α -> After α r %1 -> r
 {-# INLINE withEnd #-}
 withEnd end (After a) = Unsafe.toLinear (withDict @(End α) end) a

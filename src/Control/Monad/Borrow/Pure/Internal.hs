@@ -77,7 +77,9 @@ askLinearly = GHC.noinline $ Control.pure UnsafeLinearly
 type ForBO :: Lifetime -> Type
 data ForBO α
 
--- Morally an ST Monad, but linear!
+{- | Computation returning @a@ that can be performed only during the lifetime @α@.
+     Internally it is a linear ST monad.
+-}
 newtype BO α a = BO (State# (ForBO α) %1 -> (# State# (ForBO α), a #))
 
 assocRBO :: BO ((α /\ β) /\ γ) a %1 -> BO (α /\ (β /\ γ)) a

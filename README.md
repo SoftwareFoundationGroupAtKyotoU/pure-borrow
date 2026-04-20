@@ -134,9 +134,9 @@ With this artifact, we establish the following claims from our paper:
 
 1. Implementation:
    + "We implement Pure Borrow simply as a library in Linear Haskell" (Abstract)
+   + "Notably, our implementation compiles with the current Haskell compiler GHC 9.10+, without any modification to the compiler." (§1)
 2. Applicability to Pure Parallelism:
-   + "[We] demonstrate its power with a case study in parallel computing." (Abstract)
-   + "In this section, we demonstrate the power with a case study: parallel quicksort implemented in our library." (§4)
+   + "we demonstrate its power with a case study: _parallel_ quicksort [...] implemented in our library." (§4)
    + "We have two implementations of parallel quicksort: a naïve version and a work-stealing version." (§4.1)
    + "we develop a general, modular, safe, and efficient API for _work-stealing_ parallelization of divide-and-conquer algorithms" (§4.1)
 3. Performance:

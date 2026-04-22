@@ -23,6 +23,11 @@ source-repository head
   type: git
   location: https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow
 
+flag artifact
+  description: Build the artifact runner executable, which runs all the benchmarks and produces CSV files.
+  default: False
+  manual: True
+
 common defaults
   default-language: GHC2021
   default-extensions: LinearTypes
@@ -215,6 +220,12 @@ executable convert-qsort-bench-csv
 
 executable artifact-runner
   import: defaults
+
+  if flag(artifact)
+    buildable: True
+  else
+    buildable: False
+
   main-is: artifact-runner.hs
   hs-source-dirs: app
   ghc-options:

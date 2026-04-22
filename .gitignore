@@ -112,3 +112,5 @@ cabal.project.local~
 /bench-results
 *.png
 *.local.json
+haddocks
+*.csv

@@ -4,6 +4,7 @@
 {-# LANGUAGE LinearTypes #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeAbstractions #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
@@ -20,6 +21,7 @@ import Data.List qualified as NonLinear
 import Data.Vector qualified as V
 import Data.Vector.Mutable.Linear.Borrow qualified as VL
 import Prelude.Linear
+import System.Random (StdGen, mkStdGen, randomIO)
 import Test.Falsify.Generator qualified as G
 import Test.Falsify.Predicate qualified as P
 import Test.Falsify.Range qualified as G
@@ -34,11 +36,13 @@ test_qsort =
   testGroup
     "qsort"
     [ testCase "empty" do
-        qsortDCVec (V.empty @Int) @?= V.empty
+        seed <- randomIO
+        qsortDCVec (mkStdGen seed) (V.empty @Int) @?= V.empty
     , testProperty "coincides with Data.List.sort on Ints" do
+        seed <- F.gen $ G.int $ G.between (minBound, maxBound)
         xs <- F.gen $ G.list (G.between (1, 100)) $ G.int $ G.between (-100, 100)
         let v = V.fromList xs
-            sorted = qsortDCVec v
+            sorted = qsortDCVec (mkStdGen seed) v
         F.collect "length" [ceiling @_ @Int (fromIntegral @_ @Double (V.length v) / 10) * 10]
         F.collect "min" [NonLinear.minimum v `quot` 10 * 10]
         F.collect "max" [NonLinear.maximum v `quot` 10 * 10]
@@ -49,11 +53,11 @@ test_qsort =
             P..$ ("output", sorted)
     ]
 
-qsortDCVec :: (Ord a, Copyable a) => V.Vector a -> V.Vector a
-qsortDCVec v = unur $ linearly \lin -> DataFlow.do
+qsortDCVec :: (Ord a, Copyable a) => StdGen -> V.Vector a -> V.Vector a
+qsortDCVec g v = unur $ linearly \lin -> DataFlow.do
   (l1, l2, l3) <- dup3 lin
-  runBO l1 $
-    borrow (VL.fromVector v l2) l3
+  runBO l1 \ @α ->
+    borrow @α (VL.fromVector v l2) l3
       & \(v, lend) -> Control.do
-        Control.void $ qsortDC 10 16 v
+        Control.void $ qsortDC 10 128 g v
         Control.pure $ After (VL.toVector (reclaim lend))

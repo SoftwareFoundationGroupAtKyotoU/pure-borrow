@@ -25,26 +25,26 @@ This is because multiple existence of @'Mut' α 'MQueue'@ breaks purity!
 module Control.Concurrent.DivideConquer.Utils.MQueue.Linear (
   MQueue,
   newMQueue,
+  newRawMQueue,
   unsafeClone,
   unsafeCloneN,
-  writeMQueue,
-  writeMQueueMany,
-  readMQueue,
+  pushFrontMQueue,
+  popBackMQueue,
   closeMQueue,
+  popFrontMQueue,
 ) where
 
 import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TMQueue (TMQueue)
-import Control.Concurrent.STM.TMQueue qualified as TMQ
+import Control.Concurrent.STM.TMDeque (TMDeque)
+import Control.Concurrent.STM.TMDeque qualified as TMQ
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Internal
-import Control.Monad.STM (STM)
+import Control.Monad.Borrow.Pure.Lifetime.Token.Internal (LinearOnly (..), LinearOnlyWitness (..))
 import Data.Coerce qualified as NonLinear
 import Data.Functor.Linear qualified as Data
 import Data.V.Linear (V)
 import Data.V.Linear qualified as V
-import GHC.Conc qualified as GHC
 import GHC.Exts qualified as GHC
 import GHC.IO qualified as GHC
 import GHC.TypeLits (ErrorMessage (..), KnownNat)
@@ -53,16 +53,24 @@ import Prelude.Linear.Unsatisfiable
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
--- | A closable queue
-newtype MQueue a = MkMQ (TMQueue a)
+-- | A closable queue.
+newtype MQueue a = MkMQ (TMDeque a)
+
+instance LinearOnly (MQueue a) where
+  linearOnly = UnsafeLinearOnly
 
 newMQueue ::
   forall α a.
-  Linearly %1 ->
   BO α (Mut α (MQueue a), Lend α (MQueue a))
-newMQueue lin = Control.do
-  q <- unsafeSystemIOToBO $ MkMQ NonLinear.<$> TMQ.newTMQueueIO
-  Control.pure $ borrow q lin
+newMQueue = Control.do
+  q <- unsafeSystemIOToBO $ MkMQ NonLinear.<$> TMQ.newTMDequeIO
+  asksLinearly $ borrow q
+
+newRawMQueue ::
+  forall α a.
+  BO α (MQueue a)
+newRawMQueue = asksLinearlyM \lin ->
+  lin `lseq` unsafeSystemIOToBO (MkMQ NonLinear.<$> TMQ.newTMDequeIO)
 
 instance
   (Unsatisfiable (ShowType (MQueue a) :<>: Text " cannot be copied!")) =>
@@ -79,41 +87,31 @@ unsafeCloneN :: forall n α a. (KnownNat n) => Mut α (MQueue a) %1 -> V n (Mut 
 unsafeCloneN = Unsafe.toLinear \q ->
   V.fromReplicator (Data.pure q)
 
-writeMQueue ::
+pushFrontMQueue ::
   Mut α (MQueue a) %1 ->
   a %1 ->
   BO α (Mut α (MQueue a))
-writeMQueue = Unsafe.toLinear2 \q a -> Control.do
-  unsafeSystemIOToBO $ q NonLinear.<$ atomically (TMQ.writeTMQueue (NonLinear.coerce q) a)
+pushFrontMQueue = Unsafe.toLinear2 \q a -> Control.do
+  unsafeSystemIOToBO $ q NonLinear.<$ atomically (TMQ.pushFrontTMDeque (NonLinear.coerce q) a)
 
-writeMQueueMany ::
-  (Data.Traversable t, Consumable (t ())) =>
-  Mut α (MQueue a) %1 ->
-  t a %1 ->
-  BO α (Mut α (MQueue a))
-writeMQueueMany = Unsafe.toLinear2 \q as ->
-  Control.fmap (`lseq` q) $
-    unsafeAtomically $
-      Data.traverse (unsafeSTMToBO . Unsafe.toLinear (TMQ.writeTMQueue (NonLinear.coerce q))) as
-
-readMQueue :: Mut α (MQueue a) %1 -> BO α (Maybe (a, Mut α (MQueue a)))
-readMQueue = Unsafe.toLinear \mutq@(UnsafeAlias (MkMQ q)) ->
-  unsafeSystemIOToBO (atomically $ TMQ.readTMQueue q) Control.<&> \case
+popBackMQueue :: Mut α (MQueue a) %1 -> BO α (Maybe (a, Mut α (MQueue a)))
+popBackMQueue = Unsafe.toLinear \mutq@(UnsafeAlias (MkMQ q)) ->
+  unsafeSystemIOToBO (atomically $ TMQ.popBackTMDeque q) Control.<&> \case
     Nothing -> mutq `lseq` Nothing
     Just a -> Just (a, mutq)
 
-unsafeSTMToBO :: STM a %1 -> BO α a
-unsafeSTMToBO (GHC.STM f) = BO (Unsafe.coerce f)
-
-unsafeAtomically :: BO α a %1 -> BO α a
-unsafeAtomically = Unsafe.toLinear \(BO f) -> unsafeSystemIOToBO (atomically (GHC.STM (Unsafe.coerce f)))
+popFrontMQueue :: Mut α (MQueue a) %1 -> BO α (Maybe (a, Mut α (MQueue a)))
+popFrontMQueue = Unsafe.toLinear \mutq@(UnsafeAlias (MkMQ q)) ->
+  unsafeSystemIOToBO (atomically $ TMQ.popFrontTMDeque q) Control.<&> \case
+    Nothing -> mutq `lseq` Nothing
+    Just a -> Just (a, mutq)
 
 closeMQueue :: Mut α (MQueue a) %1 -> BO α ()
 closeMQueue = Unsafe.toLinear \(UnsafeAlias (MkMQ q)) ->
-  unsafeSystemIOToBO $ atomically $ TMQ.closeTMQueue q
+  unsafeSystemIOToBO $ atomically $ TMQ.closeTMDeque q
 
 instance Consumable (MQueue a) where
   {-# NOINLINE consume #-}
   consume = GHC.noinline $ Unsafe.toLinear \(MkMQ q) -> do
-    case GHC.runRW# (GHC.unIO (atomically $ TMQ.closeTMQueue q)) of
+    case GHC.runRW# (GHC.unIO (atomically $ TMQ.closeTMDeque q)) of
       (# _, () #) -> ()

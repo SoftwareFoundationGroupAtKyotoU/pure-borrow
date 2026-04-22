@@ -30,23 +30,23 @@ test_should_pass =
   testGroup
     "should typechecks"
     [ expectFailBecause "We don't rely on transitivity" $
-        testCase "(a <= b, b <= c) => a <= c" do
+        testCase "(α <= β, β <= γ) => α <= γ" do
           void $ evaluate $ force $ withDict l1LeqL2 $ withDict l2LeqL3 $ transitive @L1 @L2 @L3
     , expectFailBecause "Monotonicity is not guaranteed and not currently used" $
-        testCase "a <= b => a /\\ c <= b" do
+        testCase "α <= β => α /\\ γ <= β" do
           void $ evaluate $ force $ withDict l1LeqL2 $ infElimL L1 L2 L3
     , expectFailBecause "Monotonicity is not guaranteed and not currently used" $
-        testCase "a <= b => c /\\ a <= b" do
+        testCase "α <= β => γ /\\ α <= β" do
           void $ evaluate $ force $ withDict l1LeqL2 $ infElimR L1 L2 L3
     , expectFailBecause "Monotonicity is not guaranteed and not currently used" $
-        testCase "a <= b => a /\\ c <= b /\\ c" do
+        testCase "α <= β => α /\\ γ <= β /\\ γ" do
           void $ evaluate $ force $ withDict l1LeqL2 $ infMonotone L1 L2 L3
-    , testCase "(a <= b, a <= c) => a <= b /\\ c" do
+    , testCase "(α <= β, α <= γ) => α <= β /\\ γ" do
         void $ evaluate $ force $ withDict l1LeqL2 $ withDict l1LeqL3 $ infIntro L1 L2 L3
-    , testCase "a /\\ b <= b /\\ a" do
+    , testCase "α /\\ β <= β /\\ α" do
         void $ evaluate $ force $ infComm L1 L2
-    , testCase "a /\\ b <= a" do
+    , testCase "α /\\ β <= α" do
         void $ evaluate $ force $ infL L1 L2
-    , testCase "a /\\ b <= b" do
+    , testCase "α /\\ β <= β" do
         void $ evaluate $ force $ infR L1 L2
     ]

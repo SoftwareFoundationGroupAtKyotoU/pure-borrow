@@ -19,7 +19,7 @@ module Control.Monad.Borrow.Pure.Lifetime.Token.Internal (
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Lifetime.Internal
-import Data.Coerce.Directed (SubtypeWitness (UnsafeSubtype), upcast, type (<:) (..))
+import Data.Coerce.Directed (SubtypeWitness (UnsafeSubtype), type (<:) (..))
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Constraint)
 import Data.Unrestricted.Linear
@@ -30,15 +30,52 @@ import Unsafe.Linear qualified as Unsafe
 
 type role Now nominal
 
+-- | Witness that the lifetime @α@ is ongoing.
 data Now (α :: Lifetime) = UnsafeNow
+
+data SomeNow where
+  MkSomeNow :: Now (Al i) %1 -> SomeNow
+
+newLifetime :: Linearly %1 -> SomeNow
+newLifetime UnsafeLinearly = MkSomeNow UnsafeNow
+
+newLifetime' :: Linearly %1 -> (forall ι. Now (Al ι) %1 -> a) %1 -> a
+newLifetime' lin k =
+  case newLifetime lin of
+    MkSomeNow now -> k now
+
+-- | Static Lifetime is always available.
+nowStatic :: Now Static
+nowStatic = UnsafeNow
+
+instance Affine (Now α) where
+  aff UnsafeNow = UnsafeAff UnsafeNow
+  {-# INLINE aff #-}
+
+instance LinearOnly (Now α) where
+  linearOnly = UnsafeLinearOnly
+  {-# INLINE linearOnly #-}
 
 type role EndToken nominal
 
+-- | Witness that the lifetime @α@ has ended.
 data EndToken (α :: Lifetime) = UnsafeEnd
 
+instance (α >= β) => EndToken α <: EndToken β where
+  subtype = UnsafeSubtype
+
+endLifetime :: Now (Al i) %1 -> (Ur (EndToken (Al i)))
+endLifetime UnsafeNow = Ur UnsafeEnd
+
+-- | Witness that the lifetime @α@ has ended.
 class End (α :: Lifetime) where
   endToken :: EndToken α
 
+-- | Static lifetime lasts forever.
+neverEnds :: (HasCallStack, End Static) => a
+neverEnds = error "Unreachable: if you see this, you created an End Static in the internal code!"
+
+-- | Utility type to represent an object available after the lifetime @α@.
 newtype After α a = After ((End α) => a)
 
 instance (α <= β, a <: b) => After α a <: After β b where
@@ -47,9 +84,6 @@ instance (α <= β, a <: b) => After α a <: After β b where
 unAfter :: (End α) => After α a %1 -> a
 {-# INLINE unAfter #-}
 unAfter (After r) = r
-
-instance {-# INCOHERENT #-} (End β) => End (β /\ α) where
-  endToken = upcast (endToken @β)
 
 withEnd :: forall α r. EndToken α -> After α r %1 -> r
 {-# INLINE withEnd #-}
@@ -79,6 +113,7 @@ instance Control.Monad (After α) where
   After r >>= k = After (unAfter (k r))
   {-# INLINE (>>=) #-}
 
+-- | Witness that the current computation is in a linear context.
 data Linearly = UnsafeLinearly
 
 linearly :: (Movable a) => (Linearly %1 -> a) %1 -> a
@@ -89,6 +124,7 @@ linearly = GHC.noinline \f ->
 
 data LinearOnlyWitness a = UnsafeLinearOnly
 
+-- | A (non-bottom) value of the type @a@ can only live in a linear context.
 type LinearOnly :: forall rep. TYPE rep -> Constraint
 class LinearOnly a where
   linearOnly :: LinearOnlyWitness a
@@ -115,41 +151,8 @@ instance Dupable Linearly where
   -- Such optimization can manifest when, for example, one duplicates 'Linearly'
   -- tokens multiple times and feed them to different allocation functions.
   -- Although we are not able to detect the exact situation, but we believe that
-  -- GHC optimizer then eliminates every invocation on bulk alloction functions
+  -- GHC optimizer then eliminates every invocation on bulk allocation functions
   -- into a single one, which introduces unintended reuse of linear resources.
   -- Hence, we must instruct GHC not to inline this function and force
   dup2 = GHC.noinline \UnsafeLinearly -> (UnsafeLinearly, UnsafeLinearly)
   {-# NOINLINE dup2 #-}
-
-instance Affine (Now α) where
-  aff UnsafeNow = UnsafeAff UnsafeNow
-  {-# INLINE aff #-}
-
-instance LinearOnly (Now α) where
-  linearOnly = UnsafeLinearOnly
-  {-# INLINE linearOnly #-}
-
-endLifetime :: Now (Al i) %1 -> (Ur (EndToken (Al i)))
-endLifetime UnsafeNow = Ur UnsafeEnd
-
-data SomeNow where
-  MkSomeNow :: Now (Al i) %1 -> SomeNow
-
-instance (β <= α) => EndToken α <: EndToken β where
-  subtype = UnsafeSubtype
-
-newLifetime :: Linearly %1 -> SomeNow
-newLifetime UnsafeLinearly = MkSomeNow UnsafeNow
-
-newLifetime' :: Linearly %1 -> (forall ι. Now (Al ι) %1 -> a) %1 -> a
-newLifetime' lin k =
-  case newLifetime lin of
-    MkSomeNow now -> k now
-
--- | Static Lifetime is always available
-nowStatic :: Now Static
-nowStatic = UnsafeNow
-
--- | Static lifetime lasts forever
-neverEnds :: (HasCallStack, End Static) => a
-neverEnds = error "Unreachable: if you see this, you created an End Static in the internal code!"

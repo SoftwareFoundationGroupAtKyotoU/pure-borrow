@@ -10,6 +10,9 @@
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module Control.Monad.Borrow.Pure (
+  -- $header
+
+  -- * Core 'BO' monad
   BO (),
   execBO,
   runBO,
@@ -104,6 +107,93 @@ import Data.Coerce.Directed (upcast)
 import Data.Proxy (Proxy (..))
 import Prelude.Linear
 
+{- $header
+= Pure Borrow API
+
+This module provides the main API of /Pure Borrow/, the pure realization of Rust-style borrowing in Linear Haskell.
+
+
+== Examples
+
+The following example code initializes a mutable vector, modifies it coordinate-wise, and then read a part and all the contents at the last:
+
+@
+example1 :: (Int, [Int])
+example1 = linearly \lin -> DataFlow.do
+  (lin, lin') <- dup lin
+  vec <- VL.fromList [0, 1, 2] lin
+  runBO lin' Control.do
+    let !(mvec, lend) = borrowLinearOnly vec
+    mvec <- VL.modify 0 (+ 3) mvec
+    mvec <- VL.modify 2 (+ 5) mvec
+    mvec <- VL.modify 0 (* 4) mvec
+    let !(Ur svec) = share mvec
+    Ur n <- VL.copyAt 0 svec
+    pureAfter $ (n, unur $ VL.toList (reclaim lend))
+@
+
+This just returns @(12, [12, 1, 7])@ as expected, which is not so surprising.
+But what if you want to modify non-overlapping segments of the vectors /in-parallel/?
+In particular, while you have to do two modifications to index @0@ sequentially, you can modify index @2@ in parallel with the first modification to index @0@.
+This is where pure concurrency with 'parBO' comes in:
+
+@
+example2 :: (Int, [Int])
+example2 = linearly \lin -> DataFlow.do
+  (lin, lin') <- dup lin
+  vec <- VL.fromList [0, 1, 2] lin
+  runBO lin' Control.do
+    let !(mvec, lend) = borrowLinearOnly vec
+    -- (*)
+    let !(mvec1, mvec2) = VL.splitAt 1 mvec
+    (mvec, ()) <-
+      parBO
+        ( Control.do
+            mvec1 <- VL.modify 0 (+ 3) mvec1
+            VL.modify 0 (* 4) mvec1
+        )
+        (VL.modify 1 (+ 5) mvec2)
+    let !(Ur svec) = share mvec
+    Ur n <- VL.copyAt 0 svec
+    pureAfter $ (n, unur $ VL.toList (reclaim lend))
+@
+
+The line after @(*)@ splits the mutable vector into two non-overlapping mutable borrows, which can be safely used in parallel with 'parBO'.
+It just returns the first half of the vector and discards the second half.
+
+But this kind of manual discarding of resources are getting so tedious, right?
+This is where our /borrow/-based /affine/ API shines, which allows you to write the same code without manually discarding resources using 'reborrowing':
+
+@
+example3 :: (Int, [Int])
+example3 = linearly \lin -> DataFlow.do
+  (lin, lin') <- dup lin
+  vec <- VL.fromList [0, 1, 2] lin
+  runBO lin' Control.do
+    let !(mvec, lend) = borrowLinearOnly vec
+    -- (!)
+    mvec <- reborrowing_ mvec \mvec -> Control.do
+      let !(mvec1, mvec2) = VL.splitAt 1 mvec
+      -- (!!)
+      consume
+        Control.<$> parBO
+          ( Control.do
+              mvec1 <- VL.modify 0 (+ 3) mvec1
+              VL.modify 0 (* 4) mvec1
+          )
+          (VL.modify 1 (+ 5) mvec2)
+    let !(Ur svec) = share mvec -- (!!!)
+    Ur n <- VL.copyAt 0 svec
+    pureAfter $ (n, unur $ VL.toList (reclaim lend))
+@
+
+Beware that the line after @(!)@ opens the new sublifetime by 'reborrowing_'.
+Within this sublifetime, new mutable borrow @mvec@ is divided into two pieces, and then modified parallely on each slices after @(!!)@.
+But this time, the whole splitted @mvec1@ and @mvec2@ are 'consume'd after the 'parBO' returned, but after the sublifetime has been ended, the original mutable borrow to the whole vector is recovered and used in Line @(!!!)@!
+
+This way, you can treat and split mutable/immutable borrows freely without manually dropping/reuniting into the original resources.
+-}
+
 runBO :: forall a. Linearly %1 -> (forall α. BO α (After α a)) %1 -> a
 {-# INLINE runBO #-}
 runBO lin bo =
@@ -139,7 +229,7 @@ srunBO bo = asksLinearlyM \lin ->
     Control.pure (withEnd end f)
 
 -- | A variant of 'borrow' that obtains 'Linearly' viar 'LinearOnly'.
-borrowLinearOnly :: (LinearOnly a) => a %1 -> (Mut α a, Lend α a)
+borrowLinearOnly :: forall α a. (LinearOnly a) => a %1 -> (Mut α a, Lend α a)
 borrowLinearOnly !a = case withLinearly a of
   (!lin, !a) -> borrow a lin
 
@@ -231,10 +321,11 @@ reborrowing mutα k = reborrowing' mutα (\mut -> Control.pure Control.<$> k mut
 infix 4 <%~
 
 reborrowing_ ::
+  (Consumable r) =>
   Mut α a %1 ->
-  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') ()) %1 ->
+  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
   BO α' (Mut α a)
-reborrowing_ mutα k = reborrowing mutα k Control.<&> \((), a) -> a
+reborrowing_ mutα k = reborrowing mutα (Control.fmap consume . k) Control.<&> \((), a) -> a
 
 -- | Flipped infix version of 'reborrowing_', smoewhat analgous to '(Control.<$>)' and @(<%=)@ in @lens@ package.
 (<%=) ::

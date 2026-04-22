@@ -25,26 +25,26 @@ type family L2 :: Lifetime where
 
 type family L3 :: Lifetime where
 
-transitive :: (a <= b, b <= c) => Witness a c
+transitive :: (α <= β, β <= γ) => Witness α γ
 transitive = witness
 
-infElimL :: forall a b c -> (a <= b) => Witness (a /\ c) b
+infElimL :: forall α β γ -> (α <= β) => Witness (α /\ γ) β
 infElimL _ _ _ = witness
 
-infElimR :: forall a b c -> (a <= b) => Witness (c /\ a) b
+infElimR :: forall α β γ -> (α <= β) => Witness (γ /\ α) β
 infElimR _ _ _ = witness
 
-infIntro :: forall a b c -> (a <= b, a <= c) => Witness a (b /\ c)
+infIntro :: forall α β γ -> (α <= β, α <= γ) => Witness α (β /\ γ)
 infIntro _ _ _ = witness
 
-infComm :: forall a b -> Witness (a /\ b) (b /\ a)
+infComm :: forall α β -> Witness (α /\ β) (β /\ α)
 infComm _ _ = witness
 
-infMonotone :: forall a b c -> (a <= b) => Witness (a /\ c) (b /\ c)
+infMonotone :: forall α β γ -> (α <= β) => Witness (α /\ γ) (β /\ γ)
 infMonotone _ _ _ = witness
 
-infL :: forall a b -> Witness (a /\ b) a
+infL :: forall α β -> Witness (α /\ β) α
 infL _ _ = witness
 
-infR :: forall a b -> Witness (a /\ b) b
+infR :: forall α β -> Witness (α /\ β) β
 infR _ _ = witness

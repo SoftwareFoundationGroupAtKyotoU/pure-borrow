@@ -3,6 +3,7 @@
 module Control.Monad.Borrow.Pure.Lifetime (
   type (/\),
   type (<=),
+  type (>=),
   type Static,
   Lifetime,
 ) where

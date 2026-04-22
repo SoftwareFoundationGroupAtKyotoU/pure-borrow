@@ -15,6 +15,10 @@ extra-doc-files:
   CHANGELOG.md
   README.md
 
+data-files:
+  dockerfiles/artifact/Dockerfile
+  scripts/genplot.gnuplot
+
 source-repository head
   type: git
   location: https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow
@@ -45,15 +49,19 @@ library
   build-depends:
     containers,
     deepseq,
+    hybrid-vectors,
     linear-generics,
+    random,
     stm,
     stm-chans,
     vector,
+    vector-algorithms,
 
   hs-source-dirs: src
   -- cabal-gild: discover src --exclude src/**/Utils.hs --exclude src/**/Utils/**/*.hs
   exposed-modules:
     Control.Concurrent.DivideConquer.Linear
+    Control.Concurrent.STM.TMDeque
     Control.Monad.Borrow.Pure
     Control.Monad.Borrow.Pure.Affine
     Control.Monad.Borrow.Pure.Affine.Internal
@@ -66,8 +74,6 @@ library
     Control.Syntax.DataFlow
     Data.Coerce.Directed
     Data.Comonad.Linear
-    Data.OnceChan.Linear
-    Data.OnceChan.Linear.Unlifted
     Data.Ref.Linear
     Data.Ref.Linear.Unlifted
     Data.Unique.Linear
@@ -76,6 +82,9 @@ library
   -- cabal-gild: discover src --include src/**/Utils.hs --include src/**/Utils/**/*.hs
   other-modules:
     Control.Concurrent.DivideConquer.Utils.MQueue.Linear
+    Control.Concurrent.DivideConquer.Utils.OnceChan.Linear
+    Control.Concurrent.DivideConquer.Utils.OnceChan.Linear.Unlifted
+    Control.Concurrent.DivideConquer.Utils.QueuePool
     Control.Monad.Borrow.Pure.Utils
 
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0
@@ -106,11 +115,30 @@ test-suite pure-borrow-test
     falsify,
     inspection-testing,
     pure-borrow,
+    random,
     tasty,
     tasty-discover,
     tasty-expected-failure,
     tasty-hunit,
     vector,
+
+library qsort-bench-suites
+  import: defaults
+  hs-source-dirs: internal-src/qsort-bench-suites
+  -- cabal-gild: discover internal-src/qsort-bench-suites
+  exposed-modules: PureBorrow.Internal.Bench.QSort
+  build-depends:
+    base >=4.7 && <5,
+    deepseq,
+    optparse-applicative,
+    pure-borrow,
+    random,
+    tasty,
+    tasty-bench,
+    vector,
+    vector-algorithms,
+
+  default-language: Haskell2010
 
 benchmark qsort-bench
   import: defaults
@@ -121,15 +149,25 @@ benchmark qsort-bench
     -threaded
     -rtsopts
     -O2
-    "-with-rtsopts=-N1 --nonmoving-gc"
+    "-with-rtsopts=-N -s"
 
   build-depends:
     base >=4.7 && <5,
+    pure-borrow:qsort-bench-suites,
+
+  default-language: Haskell2010
+
+library qsort-demo-impl
+  import: defaults
+  hs-source-dirs: internal-src/qsort-demo-impl
+  -- cabal-gild: discover internal-src/qsort-demo-impl
+  exposed-modules: PureBorrow.Demo.QSort
+  build-depends:
+    base >=4.7 && <5,
     deepseq,
+    optparse-applicative,
     pure-borrow,
     random,
-    tasty,
-    tasty-bench,
     vector,
     vector-algorithms,
 
@@ -146,12 +184,7 @@ executable qsort
 
   build-depends:
     base >=4.7 && <5,
-    deepseq,
-    optparse-applicative,
-    pure-borrow,
-    random,
-    vector,
-    vector-algorithms,
+    pure-borrow:qsort-demo-impl,
 
   default-language: Haskell2010
 
@@ -175,6 +208,41 @@ executable convert-qsort-bench-csv
     random,
     text,
     unordered-containers,
+    vector,
+    vector-algorithms,
+
+  default-language: Haskell2010
+
+executable artifact-runner
+  import: defaults
+  main-is: artifact-runner.hs
+  hs-source-dirs: app
+  ghc-options:
+    -O2
+    -threaded
+    -rtsopts
+    "-with-rtsopts=-N -s"
+
+  build-depends:
+    base >=4.7 && <5,
+    bytestring,
+    cassava,
+    containers,
+    deepseq,
+    directory,
+    file-embed,
+    monoidal-containers,
+    optparse-applicative,
+    process,
+    pure-borrow,
+    pure-borrow:qsort-bench-suites,
+    pure-borrow:qsort-demo-impl,
+    random,
+    tasty,
+    template-haskell,
+    temporary,
+    text,
+    transformers,
     vector,
     vector-algorithms,
 

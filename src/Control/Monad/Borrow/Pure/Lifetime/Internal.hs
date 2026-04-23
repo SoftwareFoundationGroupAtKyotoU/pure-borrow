@@ -83,7 +83,7 @@ instance α <= Static where
   witness = Top
   {-# NOINLINE witness #-}
 
-instance {-# OVERLAPPING #-} (α <=! β) => α <= β where
+instance {-# INCOHERENT #-} (α <=! β) => α <= β where
   witness = Inherit' witness'
   {-# NOINLINE witness #-}
 
@@ -96,7 +96,7 @@ instance (α /\ (β /\ γ) <=! δ) => (α /\ β) /\ γ <=! δ where
   witness' = AssocR witness'
   {-# NOINLINE witness' #-}
 
-instance {-# OVERLAPPING #-} (α <=!! β) => α <=! β where
+instance {-# INCOHERENT #-} (α <=!! β) => α <=! β where
   witness' = Inherit'' witness''
   {-# NOINLINE witness' #-}
 
@@ -117,6 +117,6 @@ instance α /\ β <=!! α where
 instance α /\ β <=!! β where
   witness'' = Witness -}
 
-instance {-# OVERLAPPING #-} (β <=! γ) => α /\ β <=!! γ where
+instance {-# INCOHERENT #-} (β <=! γ) => α /\ β <=!! γ where
   witness'' = InfIntroL witness'
   {-# NOINLINE witness'' #-}

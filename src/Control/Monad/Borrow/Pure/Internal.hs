@@ -485,7 +485,7 @@ class Copyable a where
   copy :: Share α a %1 -> a
 
 instance (Copyable a) => Copyable (Ur a) where
-  copy (UnsafeAlias (Ur a)) = Ur $ copy $ UnsafeAlias a
+  copy (UnsafeAlias (Ur !a)) = Ur $! copy $! UnsafeAlias a
   {-# INLINE copy #-}
 
 instance
@@ -512,7 +512,7 @@ copyMut mut = let !(Ur shr) = share mut in Ur (copy shr)
 newtype UnsafeAssumeNoVar a = UnsafeAssumeNoVar a
 
 instance Copyable (UnsafeAssumeNoVar a) where
-  copy = coerceLin
+  copy = \(UnsafeAlias !a) -> a
   {-# INLINE copy #-}
 
 deriving via UnsafeAssumeNoVar Int instance Copyable Int
@@ -558,27 +558,29 @@ class GCopyable f where
   gcopy :: Share α (f x) %1 -> f x
 
 instance (Copyable a) => GCopyable (K1 i a) where
-  gcopy = coerceLin . unsafeUnalias
+  gcopy = \(UnsafeAlias (K1 !a)) -> K1 (copy (UnsafeAlias a))
+  {-# INLINE gcopy #-}
 
 instance (GCopyable f, GCopyable g) => GCopyable (f :*: g) where
-  gcopy (UnsafeAlias (f :*: g)) =
+  gcopy (UnsafeAlias (!f :*: !g)) =
     gcopy (UnsafeAlias f) :*: gcopy (UnsafeAlias g)
 
 instance (GCopyable f) => GCopyable (M1 i c f) where
   gcopy = \case
-    UnsafeAlias (M1 x) -> M1 (gcopy (UnsafeAlias x))
+    UnsafeAlias (M1 !x) -> M1 (gcopy (UnsafeAlias x))
 
 instance (GCopyable f) => GCopyable (MP1 m f) where
   gcopy = \case
-    UnsafeAlias (MP1 x) -> MP1 (gcopy (UnsafeAlias x))
+    UnsafeAlias (MP1 !x) -> MP1 (gcopy (UnsafeAlias x))
 
 instance (GCopyable f, GCopyable g) => GCopyable (f :+: g) where
   gcopy = \case
-    UnsafeAlias (L1 x) -> L1 (gcopy (UnsafeAlias x))
-    UnsafeAlias (R1 x) -> R1 (gcopy (UnsafeAlias x))
+    UnsafeAlias (L1 !x) -> L1 (gcopy (UnsafeAlias x))
+    UnsafeAlias (R1 !x) -> R1 (gcopy (UnsafeAlias x))
 
 instance GCopyable U1 where
-  gcopy = coerceLin . unsafeUnalias
+  gcopy = \case
+    UnsafeAlias U1 -> U1
 
 instance GCopyable V1 where
   gcopy = \case {} . unsafeUnalias

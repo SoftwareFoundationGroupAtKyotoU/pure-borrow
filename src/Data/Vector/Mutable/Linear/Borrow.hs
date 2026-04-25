@@ -292,9 +292,9 @@ inplace ::
   Mut α (Vector a) %1 ->
   BO β (Mut α (Vector a))
 {-# INLINE inplace #-}
-inplace = Unsafe.toLinear2 \f mut@(UnsafeAlias v) -> Control.do
-  !() <- unsafeSTToBO $ f $ content $ Unsafe.coerce v
-  Control.pure mut
+inplace = Unsafe.toLinear2 \f (UnsafeAlias v) -> Control.do
+  !() <- unsafeSTToBO $ f $ content $ coerceLin v
+  Control.pure (UnsafeAlias v)
 
 {- | A simple parallel implementation of quicksort.
 It uses a sequential divide-and-conquer when size <8,

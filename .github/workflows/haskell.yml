@@ -77,7 +77,7 @@ jobs:
           restore-keys: ${{steps.cache-keys.outputs.dist-restore}}
       - name: cabal configure
         run: |
-          ${{env.cabal}} v2-configure --enable-tests --enable-benchmarks --enable-optimisation=2
+          ${{env.cabal}} v2-configure --enable-tests --enable-benchmarks --enable-optimisation=2 --test-show-details=always
           ${{env.cabal}} update
       - name: Build Dependencies
         run: |
@@ -112,7 +112,7 @@ jobs:
           echo "benchs=$(jq -cMnR '[inputs]' <"${{env.artifact-name}}"/benchs.list)" >>"${GITHUB_OUTPUT}"
           echo "tests=$(jq -cMnR '[inputs]' <"${{env.artifact-name}}"/tests.list)" >>"${GITHUB_OUTPUT}"
       - name: Run Tests
-        run: cabal test --test-show-details=always
+        run: cabal test
 
   bench:
     name: Benchmark (${{matrix.plan.name}})
@@ -148,7 +148,7 @@ jobs:
           tar xaf "${{ steps.download.outputs.download-path }}/${{env.artifact}}.tar.zst"
       - name: Prepare results directory
         run: mkdir -p bench-results
-      - name: Run Tests
+      - name: Run Benchmarks
         shell: bash
         run: >
           ${{env.artifact}}/benchs/qsort-bench --csv bench-results/qsort.csv

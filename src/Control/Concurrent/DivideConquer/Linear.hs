@@ -52,7 +52,6 @@ import Generics.Linear.TH (deriveGenericAnd1)
 import Prelude.Linear
 import Prelude.Linear.Generically (Generically, Generically1)
 import System.IO.Unsafe (unsafePerformIO)
-import System.Random (RandomGen)
 import Unsafe.Linear qualified as Unsafe
 
 data DivideConquer α t a = DivideConquer
@@ -119,21 +118,20 @@ doAndEnqueue q work cont = case q of
   DoThen work' q -> error "Could not happen!" work cont work' q
 
 divideAndConquer ::
-  forall α β t a g.
-  (RandomGen g, Data.Traversable t, Consumable (t ()), α >= β) =>
+  forall α β t a.
+  ( Data.Traversable t, Consumable (t ()), α >= β) =>
   -- | The # of workers.
   Int ->
   DivideConquer α t a ->
-  g ->
   Mut α a %1 ->
   BO β (Mut α a)
-divideAndConquer n DivideConquer {..} g ini
+divideAndConquer n DivideConquer {..} ini
   | n == 0 = error ("divideAndConquer: # of workers must be positive, but got: " <> show n) ini
   | otherwise =
       upcast $
         uncurry (lseq @()) Control.<$> reborrowing' ini \(ini :: Mut γ a) ->
           someNatVal (fromIntegral n) & \(SomeNat (_ :: Proxy n)) -> Control.do
-            (workers, master) <- newQueuePool @n g
+            (workers, master) <- newQueuePool @n
             (masterQ, masterLend) <- asksLinearly $ borrow master
             (rootSink, rootSource) <- asksLinearly Once.new
 
@@ -237,12 +235,11 @@ instance Data.Traversable Pair where
   {-# INLINE traverse #-}
 
 qsortDC ::
-  (RandomGen g, Ord a, Copyable a, α >= β) =>
+  (Ord a, Copyable a, α >= β) =>
   -- | The # of workers.
   Int ->
   -- | Threshold for the length of vector to switch to sequential sort.
   Int ->
-  g ->
   Mut α (LV.Vector a) %1 ->
   BO β (Mut α (LV.Vector a))
 qsortDC nwork thresh = divideAndConquer nwork (qsortDC' thresh)

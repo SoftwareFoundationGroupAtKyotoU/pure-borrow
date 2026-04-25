@@ -112,7 +112,7 @@ qsortWith (Worksteal p) v =
       (lin, l2, l3) <- dup3 lin
       runBO lin \ @α -> Control.do
         (v, lend) <- Control.pure PL.$ borrow @α (VL.fromVector v l2) l3
-        Control.void PL.$ qsortDC p 128 (mkStdGen 42) v
+        Control.void PL.$ qsortDC p 128 v
         pureAfter (VL.toVector PL.$ reclaim lend)
 
 data SampleSize = SampleSize Int

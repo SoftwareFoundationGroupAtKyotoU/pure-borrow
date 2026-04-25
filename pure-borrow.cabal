@@ -47,7 +47,7 @@ common defaults
 
   build-depends:
     base >=4.17 && <5,
-    linear-base >=0.5,
+    linear-base >=0.7,
 
 library
   import: defaults

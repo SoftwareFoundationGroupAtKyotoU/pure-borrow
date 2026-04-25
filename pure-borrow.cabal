@@ -129,6 +129,14 @@ test-suite pure-borrow-test
 
 test-suite pure-borrow-doctests
   import: defaults
+
+  -- NOTE: the older GHC has a bug where REPL segfaults with LinearTypes.
+  -- See: https://gitlab.haskell.org/ghc/ghc/-/issues/26565#note_645783
+  if impl(ghc >=9.12.3)
+    buildable: True
+  else
+    buildable: False
+
   default-language: GHC2021
   type: exitcode-stdio-1.0
   hs-source-dirs: doctests

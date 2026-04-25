@@ -118,9 +118,10 @@ import Prelude.Linear
 -}
 
 {- $header
-= Pure Borrow API
+= Pure Borrow
 
 This module provides the main API of /Pure Borrow/, the pure realization of Rust-style borrowing in Linear Haskell.
+
 
 == Examples
 

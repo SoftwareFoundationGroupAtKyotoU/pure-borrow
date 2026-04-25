@@ -51,7 +51,7 @@ data TMDeque a = TMDeque
 newtype UniqIx = UniqIx Int
 
 initialCapacity :: Int
-initialCapacity = 128
+initialCapacity = 64
 
 -- | Create a new empty 'TMDeque'.
 newTMDeque :: STM (TMDeque a)
@@ -74,7 +74,7 @@ newTMDequeIO =
     <*> newTVarIO 0
 
 growThreshold :: Int
-growThreshold = 64
+growThreshold = 16
 
 {- | Push an element to the front of the deque.  Silently ignored if the
 deque is closed.
@@ -215,4 +215,4 @@ isEmptyTMDeque deq = (==) <$> readTVar deq.front <*> readTVar deq.back
 -- | IO variant of 'countTMDeque'.
 estimateSizeTMDequeIO :: TMDeque a -> IO Int
 estimateSizeTMDequeIO deq =
-  fmap (+ 1) . (-) <$> readTVarIO deq.front <*> readTVarIO deq.back
+  (-) <$> readTVarIO deq.front <*> readTVarIO deq.back

@@ -58,7 +58,6 @@ library
     linear-generics,
     random,
     stm,
-    stm-chans,
     vector,
     vector-algorithms,
 
@@ -118,11 +117,9 @@ test-suite pure-borrow-test
   build-depends:
     deepseq,
     falsify,
-    inspection-testing,
     pure-borrow,
     random,
     tasty,
-    tasty-discover,
     tasty-expected-failure,
     tasty-hunit,
     vector,
@@ -149,7 +146,6 @@ test-suite pure-borrow-doctests
     -with-rtsopts=-N
 
   build-depends:
-    deepseq,
     doctest-parallel >=0.4.1,
     pure-borrow,
 

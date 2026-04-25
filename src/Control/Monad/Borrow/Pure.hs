@@ -108,10 +108,9 @@ import Data.Proxy (Proxy (..))
 import Prelude.Linear
 
 {- $setup
->>> :set -XBlockArguments -XDataKinds -XLinearTypes -XNoImplicitPrelude -XImpredicativeTypes -XRankNTypes -XScopedTypeVariables -XTypeAbstractions -XQualifiedDo
+>>> :set -XBlockArguments -XLinearTypes -XNoImplicitPrelude -XImpredicativeTypes -XTypeAbstractions -XQualifiedDo
 >>> :m -Prelude
 >>> import Prelude.Linear
->>> import Prelude ()
 >>> import qualified Data.Vector.Mutable.Linear.Borrow as VL
 >>> import Control.Syntax.DataFlow qualified as DataFlow
 >>> import Control.Functor.Linear qualified as Control
@@ -122,8 +121,25 @@ import Prelude.Linear
 
 This module provides the main API of /Pure Borrow/, the pure realization of Rust-style borrowing in Linear Haskell.
 
-
 == Examples
+
+You need the following language extensions to use this module:
+
+    * BlockArguments
+    * LinearTypes
+    * NoImplicitPrelude
+    * ImpredicativeTypes
+    * TypeAbstractions
+    * QualifiedDo
+
+...and import theese modules:
+
+@
+import Prelude.Linear
+import qualified Data.Vector.Mutable.Linear.Borrow as VL
+import Control.Syntax.DataFlow qualified as DataFlow
+import Control.Functor.Linear qualified as Control
+@
 
 The following example code initializes a mutable vector, modifies it coordinate-wise, and then read a part and all the contents at the last:
 
@@ -139,7 +155,7 @@ The following example code initializes a mutable vector, modifies it coordinate-
       mvec <- VL.modify 0 (* 4) mvec
       let !(Ur svec) = share mvec
       Ur n <- VL.copyAt 0 svec
-      pureAfter $ (n, unur $ VL.toList (reclaim @α lend))
+      pureAfter (n, unur $ VL.toList (reclaim @α lend))
 :}
 
 >>> example1
@@ -167,7 +183,7 @@ This is where pure concurrency with 'parBO' comes in:
           (consume Control.<$> VL.modify 1 (+ 5) mvec2)
       let !(Ur svec) = share mvec
       Ur n <- VL.copyAt 0 svec
-      pureAfter $ (n, unur $ VL.toList (reclaim @α lend))
+      pureAfter (n, unur $ VL.toList (reclaim @α lend))
 :}
 
 >>> example2
@@ -199,7 +215,7 @@ This is where our /borrow/-based /affine/ API shines, which allows you to write 
             (VL.modify 1 (+ 5) mvec2)
       let !(Ur svec) = share mvec -- (!!!)
       Ur n <- VL.copyAt 0 svec
-      pureAfter $ (n, unur $ VL.toList (reclaim @α lend))
+      pureAfter (n, unur $ VL.toList (reclaim @α lend))
 :}
 
 >>> example2

@@ -112,7 +112,7 @@ jobs:
           echo "benchs=$(jq -cMnR '[inputs]' <"${{env.artifact-name}}"/benchs.list)" >>"${GITHUB_OUTPUT}"
           echo "tests=$(jq -cMnR '[inputs]' <"${{env.artifact-name}}"/tests.list)" >>"${GITHUB_OUTPUT}"
       - name: Run Tests
-        run: cabal test -j1 --test-show-details=always
+        run: cabal test --test-show-details=always
 
   bench:
     name: Benchmark (${{matrix.plan.name}})

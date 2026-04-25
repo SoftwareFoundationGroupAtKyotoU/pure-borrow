@@ -33,7 +33,7 @@ import Control.Applicative (Alternative (..))
 import Control.Applicative qualified as P
 import Control.Concurrent (yield)
 import Control.Concurrent.STM (STM, atomically, retry)
-import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, countTMDeque, countTMDequeIO, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
+import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, countTMDeque, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure

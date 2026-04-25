@@ -23,17 +23,17 @@ import Control.Concurrent (getNumCapabilities)
 import Control.Concurrent.DivideConquer.Linear (qsortDC)
 import Control.DeepSeq (force)
 import Control.Exception (evaluate)
-import qualified Control.Functor.Linear as Control
+import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
-import qualified Control.Syntax.DataFlow as DataFlow
+import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Functor (void)
-import qualified Data.Vector as V
-import qualified Data.Vector.Algorithms.Intro as AI
-import qualified Data.Vector.Mutable.Linear.Borrow as VL
+import Data.Vector qualified as V
+import Data.Vector.Algorithms.Intro qualified as AI
+import Data.Vector.Mutable.Linear.Borrow qualified as VL
 import GHC.Generics (Generic)
-import qualified Options.Applicative as Opts
+import Options.Applicative qualified as Opts
 import Prelude.Linear hiding (Eq, Ord, Semigroup (..), ($), ($!))
-import qualified Prelude.Linear as PL hiding (($!))
+import Prelude.Linear qualified as PL hiding (($!))
 import System.Mem (performGC)
 import System.Random
 import System.Random.Stateful (runStateGen_, uniformM)

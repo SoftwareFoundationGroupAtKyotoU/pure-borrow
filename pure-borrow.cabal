@@ -168,7 +168,7 @@ library qsort-bench-suites
     vector,
     vector-algorithms,
 
-  default-language: Haskell2010
+  default-language: GHC2021
 
 benchmark qsort-bench
   import: defaults
@@ -185,7 +185,7 @@ benchmark qsort-bench
     base >=4.7 && <5,
     pure-borrow:qsort-bench-suites,
 
-  default-language: Haskell2010
+  default-language: GHC2021
 
 library qsort-demo-impl
   import: defaults
@@ -201,7 +201,7 @@ library qsort-demo-impl
     vector,
     vector-algorithms,
 
-  default-language: Haskell2010
+  default-language: GHC2021
 
 executable qsort
   import: defaults
@@ -216,7 +216,7 @@ executable qsort
     base >=4.7 && <5,
     pure-borrow:qsort-demo-impl,
 
-  default-language: Haskell2010
+  default-language: GHC2021
 
 executable convert-qsort-bench-csv
   import: defaults
@@ -240,7 +240,7 @@ executable convert-qsort-bench-csv
     vector,
     vector-algorithms,
 
-  default-language: Haskell2010
+  default-language: GHC2021
 
 executable artifact-runner
   import: defaults
@@ -280,4 +280,4 @@ executable artifact-runner
     vector,
     vector-algorithms,
 
-  default-language: Haskell2010
+  default-language: GHC2021

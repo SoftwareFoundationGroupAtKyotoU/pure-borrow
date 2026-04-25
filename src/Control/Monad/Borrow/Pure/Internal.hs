@@ -24,6 +24,7 @@
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
+{-# OPTIONS_HADDOCK hide #-}
 
 module Control.Monad.Borrow.Pure.Internal (
   module Control.Monad.Borrow.Pure.Internal,
@@ -125,9 +126,20 @@ instance Control.Monad (BO α) where
     (# s', a #) -> (f a) PL.& \(BO g) -> g s'
   {-# INLINE (>>=) #-}
 
+-- | Unsafely converts a 'BO' computation to linear 'L.IO'.
 unsafeBOToLinIO :: BO α a %1 -> L.IO a
 {-# INLINE unsafeBOToLinIO #-}
 unsafeBOToLinIO (BO f) = L.IO (Unsafe.coerce f)
+
+{- |
+Unsafely performs a linear 'L.IO' computation in 'BO' monad.
+
+This is really, really unsafe. If you don't know what you are doing,
+you MUST NOT use this function, otherwise you can break purity in a hard way.
+-}
+unsafeLinIOToBO :: L.IO a %1 -> BO α a
+{-# INLINE unsafeLinIOToBO #-}
+unsafeLinIOToBO (L.IO f) = BO (Unsafe.coerce f)
 
 runBO# :: forall {rep} α (o :: TYPE rep). (State# (ForBO α) %1 -> o) %1 -> o
 {-# INLINE runBO# #-}
@@ -144,31 +156,46 @@ dropState# :: State# a %1 -> ()
 {-# INLINE dropState# #-}
 dropState# = Unsafe.toLinear \ !_ -> ()
 
--- | See also 'scope'.
+-- | See also 'Control.Monad.Borrow.Pure.scope'.
 sexecBO :: BO (α /\ β) a %1 -> Now α %1 -> BO β (Now α, a)
 {-# INLINE sexecBO #-}
 sexecBO f now = unsafeCastBO ((now,) PL.. Unsafe.toLinear (\ !a -> a) Control.<$> f)
 
+{- |
+Coerces lifetime in 'BO' computation usafely and brutally.
+
+This is really, really unsafe. If you don't know what you are doing,
+you MUST NOT use this function, otherwise you will break the soundness of the type system.
+-}
 unsafeCastBO :: BO α a %1 -> BO β a
 {-# INLINE unsafeCastBO #-}
 unsafeCastBO = Unsafe.coerce
 
+-- | Unsafely peforms a 'ST' computation in 'BO' monad.
 unsafeSTToBO :: ST s a %1 -> BO α a
 {-# INLINE unsafeSTToBO #-}
 unsafeSTToBO (ST.ST f) = BO (Unsafe.coerce f)
 
+{- |
+Unsafely peforms a 'BO' computation in 'ST' monad.
+
+This is really unsafe. If you don't know what you are doing, you MUST NOT use this function, otherwise you can break purity in a hard way.
+-}
 unsafeBOToST :: BO α a %1 -> ST s a
 {-# INLINE unsafeBOToST #-}
 unsafeBOToST (BO f) = ST.ST (Unsafe.coerce f)
 
-unsafeIOToBO :: L.IO a %1 -> BO α a
-{-# INLINE unsafeIOToBO #-}
-unsafeIOToBO (L.IO f) = BO (Unsafe.coerce f)
+{- |
+Unsafely performs a standard, non-linear 'IO' computation in 'BO' monad.
 
+This is really, really unsafe. If you don't know what you are doing,
+you MUST NOT use this function, otherwise you can break purity in a hard way.
+-}
 unsafeSystemIOToBO :: IO a %1 -> BO α a
 {-# INLINE unsafeSystemIOToBO #-}
 unsafeSystemIOToBO (GHC.IO a) = BO (Unsafe.coerce a)
 
+-- | Unsafely performs a 'BO' in the standard, non-linear 'IO' monad.
 unsafeBOToSystemIO :: BO α a %1 -> IO a
 {-# INLINE unsafeBOToSystemIO #-}
 unsafeBOToSystemIO (BO f) = GHC.IO (Unsafe.coerce f)

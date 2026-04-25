@@ -76,26 +76,24 @@ empty :: Linearly %1 -> Vector a
 empty =
   GHC.noinline \l ->
     l `lseq` do
-      Vector (unsafePerformEvaluateUndupableBO (unsafeSystemIOToBO $ MV.new 0))
+      Vector (unsafePerformIO $ MV.new 0)
 
 constant :: Int -> a -> Linearly %1 -> Vector a
 {-# NOINLINE constant #-}
 constant = GHC.noinline \n a l ->
   l `lseq` do
     Vector $!
-      unsafePerformEvaluateUndupableBO $!
-        unsafeSystemIOToBO $!
-          MV.replicate n a
+      unsafePerformIO $!
+        MV.replicate n a
 
 fromList :: [a] %1 -> Linearly %1 -> Vector a
 {-# NOINLINE fromList #-}
 fromList = GHC.noinline $ Unsafe.toLinear \as l ->
   l `lseq` do
     Vector $!
-      unsafePerformEvaluateUndupableBO $!
-        unsafeSystemIOToBO $!
-          Unsafe.toLinear V.unsafeThaw $!
-            Unsafe.toLinear V.fromList as
+      unsafePerformIO $!
+        Unsafe.toLinear V.unsafeThaw $!
+          Unsafe.toLinear V.fromList as
 
 -- | Convert a 'V.Vector' (from @vector@ package) to a 'Vector'.
 fromVector :: V.Vector a -> Linearly %1 -> Vector a
@@ -103,9 +101,8 @@ fromVector :: V.Vector a -> Linearly %1 -> Vector a
 fromVector = GHC.noinline $ Unsafe.toLinear \v l ->
   l `lseq` do
     Vector $!
-      unsafePerformEvaluateUndupableBO $!
-        unsafeSystemIOToBO $!
-          Unsafe.toLinear V.thaw v
+      unsafePerformIO $!
+        Unsafe.toLinear V.thaw v
 
 -- | _O(n)_. Clone a 'V.MVector' from @vector@ package to a 'Vector'.
 fromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
@@ -113,9 +110,8 @@ fromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
 fromMutable = GHC.noinline $ Unsafe.toLinear \v l ->
   l `lseq` do
     Vector $!
-      unsafePerformEvaluateUndupableBO $!
-        unsafeSystemIOToBO $!
-          Unsafe.toLinear MV.clone (Unsafe.coerce v)
+      unsafePerformIO $!
+        Unsafe.toLinear MV.clone (Unsafe.coerce v)
 
 unsafeFromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
 unsafeFromMutable v lin =
@@ -140,9 +136,8 @@ unsafeFromVector :: V.Vector a %1 -> Linearly %1 -> Vector a
 unsafeFromVector = Unsafe.toLinear \v l ->
   l `lseq` GHC.noinline do
     Vector $!
-      unsafePerformEvaluateUndupableBO $!
-        unsafeSystemIOToBO $!
-          V.unsafeThaw v
+      unsafePerformIO $!
+        V.unsafeThaw v
 
 size :: Borrow bk α (Vector a) %1 -> (Ur Int, Borrow bk α (Vector a))
 {-# INLINE size #-}
@@ -269,7 +264,7 @@ copyAtMut i v = upcast $ sharing @_ @α v $ copyAt i
 
 -- | Applies an in-place mutation on 'V.MVector' from @vector@ package.
 inplace ::
-  α >= β =>
+  (α >= β) =>
   (forall s. V.MVector s a -> ST s ()) %1 ->
   Mut α (Vector a) %1 ->
   BO β (Mut α (Vector a))

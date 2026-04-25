@@ -119,7 +119,7 @@ doAndEnqueue q work cont = case q of
 
 divideAndConquer ::
   forall α β t a.
-  ( Data.Traversable t, Consumable (t ()), α >= β) =>
+  (Data.Traversable t, Consumable (t ()), α >= β) =>
   -- | The # of workers.
   Int ->
   DivideConquer α t a ->

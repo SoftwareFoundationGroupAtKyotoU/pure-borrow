@@ -77,7 +77,7 @@ jobs:
           restore-keys: ${{steps.cache-keys.outputs.dist-restore}}
       - name: cabal configure
         run: |
-          ${{env.cabal}} v2-configure --enable-tests --enable-benchmarks --enable-optimisation=2 --test-show-details=always
+          ${{env.cabal}} v2-configure --enable-tests --enable-benchmarks --enable-optimisation=2 --test-show-details=always --write-ghc-environment-files=always
           ${{env.cabal}} update
       - name: Build Dependencies
         run: |

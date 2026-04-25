@@ -33,7 +33,7 @@ import Control.Applicative (Alternative (..))
 import Control.Applicative qualified as P
 import Control.Concurrent (yield)
 import Control.Concurrent.STM (STM, atomically, retry)
-import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, countTMDeque, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
+import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, sizeTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure
@@ -141,7 +141,7 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
       Just Nothing -> fix \self -> do
         !ranks <-
           V.unsafeThaw
-            P.=<< atomically P.. (\x -> do xs <- V.mapM countTMDeque x; xs P.<$ P.unless (V.any (P.> 0) xs) retry)
+            P.=<< atomically P.. (\x -> do xs <- V.mapM sizeTMDeque x; xs P.<$ P.unless (V.any (P.> 0) xs) retry)
             P.=<< V.unsafeFreeze others
         let ranked = HMV.unsafeZip ranks others
         !() <- AI.sortBy (P.comparing P.$ Down P.. P.fst) ranked

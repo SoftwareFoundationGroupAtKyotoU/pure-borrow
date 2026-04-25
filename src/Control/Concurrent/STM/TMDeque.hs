@@ -39,7 +39,7 @@ module Control.Concurrent.STM.TMDeque (
   isClosedTMDeque,
   isClosedTMDequeIO,
   isEmptyTMDeque,
-  countTMDeque,
+  sizeTMDeque,
   countTMDequeIO,
 ) where
 
@@ -221,8 +221,8 @@ isEmptyTMDeque (TMDeque _ frontVar rearVar _) = do
       pure (null r)
 
 -- | Return the number of elements currently in the deque. O(1).
-countTMDeque :: TMDeque a -> STM Int
-countTMDeque (TMDeque _ _ _ sizeVar) = readTVar sizeVar
+sizeTMDeque :: TMDeque a -> STM Int
+sizeTMDeque (TMDeque _ _ _ sizeVar) = readTVar sizeVar
 
 -- | IO variant of 'countTMDeque'. O(1).
 countTMDequeIO :: TMDeque a -> IO Int

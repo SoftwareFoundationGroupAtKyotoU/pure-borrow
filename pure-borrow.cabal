@@ -126,6 +126,14 @@ test-suite pure-borrow-test
 
 test-suite pure-borrow-doctests
   import: defaults
+
+  -- NOTE: the older GHC has a bug where REPL segfaults with LinearTypes.
+  -- See: https://gitlab.haskell.org/ghc/ghc/-/issues/26565#note_645783
+  if impl(ghc >=9.12.3)
+    buildable: True
+  else
+    buildable: False
+
   default-language: GHC2021
   type: exitcode-stdio-1.0
   hs-source-dirs: doctests
@@ -137,14 +145,9 @@ test-suite pure-borrow-doctests
     -threaded
     -with-rtsopts=-N
 
-  -- NOTE 1: the older GHC has a bug where REPL segfaults with LinearTypes.
-  -- See: https://gitlab.haskell.org/ghc/ghc/-/issues/26565#note_645783
-  -- NOTE 2: it seems that `cabal test` doesn't respect `buildable: False` for test-suites, so we need to exclude the test suite from the build-depends of the library.
-  if impl(ghc >=9.12.3)
-    cpp-options: -DRUN_DOCTESTS
-    build-depends:
-      doctest-parallel >=0.4.1,
-      pure-borrow,
+  build-depends:
+    doctest-parallel >=0.4.1,
+    pure-borrow,
 
 library qsort-bench-suites
   import: defaults

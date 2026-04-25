@@ -1,4 +1,3 @@
-with-compiler: ghc-9.14.1
 constraints:
   abstract-deque ==0.3,
   abstract-deque-tests ==0.3,

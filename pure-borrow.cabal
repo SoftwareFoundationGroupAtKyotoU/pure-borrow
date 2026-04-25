@@ -127,6 +127,24 @@ test-suite pure-borrow-test
     tasty-hunit,
     vector,
 
+test-suite pure-borrow-doctests
+  import: defaults
+  default-language: GHC2021
+  type: exitcode-stdio-1.0
+  hs-source-dirs: doctests
+  main-is: doctests.hs
+  -- cabal-gild: discover doctests --exclude=test/doctests.hs
+  other-modules:
+  ghc-options:
+    -O2
+    -threaded
+    -with-rtsopts=-N
+
+  build-depends:
+    deepseq,
+    doctest-parallel >=0.4.1,
+    pure-borrow,
+
 library qsort-bench-suites
   import: defaults
   hs-source-dirs: internal-src/qsort-bench-suites

@@ -1018,7 +1018,7 @@ constraints:
   ghc-compact ==0.1.0.0,
   ghc-core ==0.5.6,
   ghc-events ==0.21.0.0,
-  ghc-exactprint ==1.12.0.0,
+  ghc-exactprint ==1.14.0.0,
   ghc-experimental installed,
   ghc-heap installed,
   ghc-hs-meta ==0.1.5.0,

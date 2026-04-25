@@ -58,6 +58,7 @@ module Control.Monad.Borrow.Pure (
   share,
   reclaim',
   reclaim,
+  pureAfter,
   reborrow,
   joinMut,
   joinLend,
@@ -94,7 +95,6 @@ module Control.Monad.Borrow.Pure (
   -- * Re-exports
   module Control.Monad.Borrow.Pure.Lifetime,
   module Control.Monad.Borrow.Pure.Lifetime.Token,
-  pureAfter,
 ) where
 
 import Control.Functor.Linear qualified as Control
@@ -107,56 +107,71 @@ import Data.Coerce.Directed (upcast)
 import Data.Proxy (Proxy (..))
 import Prelude.Linear
 
+
+{- $setup
+>>> :set -XBlockArguments -XDataKinds -XLinearTypes -XNoImplicitPrelude -XImpredicativeTypes -XRankNTypes -XScopedTypeVariables -XTypeAbstractions -XQualifiedDo
+>>> :m -Prelude
+>>> import Prelude.Linear
+>>> import Prelude ()
+>>> import qualified Data.Vector.Mutable.Linear.Borrow as VL
+>>> import Control.Syntax.DataFlow qualified as DataFlow
+>>> import Control.Functor.Linear qualified as Control
+-}
+
 {- $header
 = Pure Borrow API
 
 This module provides the main API of /Pure Borrow/, the pure realization of Rust-style borrowing in Linear Haskell.
 
-
 == Examples
 
 The following example code initializes a mutable vector, modifies it coordinate-wise, and then read a part and all the contents at the last:
 
-@
-example1 :: (Int, [Int])
-example1 = linearly \lin -> DataFlow.do
-  (lin, lin') <- dup lin
-  vec <- VL.fromList [0, 1, 2] lin
-  runBO lin' Control.do
-    let !(mvec, lend) = borrowLinearOnly vec
-    mvec <- VL.modify 0 (+ 3) mvec
-    mvec <- VL.modify 2 (+ 5) mvec
-    mvec <- VL.modify 0 (* 4) mvec
-    let !(Ur svec) = share mvec
-    Ur n <- VL.copyAt 0 svec
-    pureAfter $ (n, unur $ VL.toList (reclaim lend))
-@
+>>> :{
+  example1 :: (Int, [Int])
+  example1 = linearly \lin -> DataFlow.do
+    (lin, lin') <- dup lin
+    vec <- VL.fromList [0, 1, 2] lin
+    runBO lin' \ @α -> Control.do
+      let !(mvec, lend) = borrowLinearOnly vec
+      mvec <- VL.modify 0 (+ 3) mvec
+      mvec <- VL.modify 2 (+ 5) mvec
+      mvec <- VL.modify 0 (* 4) mvec
+      let !(Ur svec) = share mvec
+      Ur n <- VL.copyAt 0 svec
+      pureAfter $ (n, unur $ VL.toList (reclaim @α lend))
+:}
+
+>>> example1
+(12,[12,1,7])
 
 This just returns @(12, [12, 1, 7])@ as expected, which is not so surprising.
 But what if you want to modify non-overlapping segments of the vectors /in-parallel/?
 In particular, while you have to do two modifications to index @0@ sequentially, you can modify index @2@ in parallel with the first modification to index @0@.
 This is where pure concurrency with 'parBO' comes in:
 
-@
-example2 :: (Int, [Int])
-example2 = linearly \lin -> DataFlow.do
-  (lin, lin') <- dup lin
-  vec <- VL.fromList [0, 1, 2] lin
-  runBO lin' Control.do
-    let !(mvec, lend) = borrowLinearOnly vec
-    -- (*)
-    let !(mvec1, mvec2) = VL.splitAt 1 mvec
-    (mvec, ()) <-
-      parBO
-        ( Control.do
-            mvec1 <- VL.modify 0 (+ 3) mvec1
-            VL.modify 0 (* 4) mvec1
-        )
-        (VL.modify 1 (+ 5) mvec2)
-    let !(Ur svec) = share mvec
-    Ur n <- VL.copyAt 0 svec
-    pureAfter $ (n, unur $ VL.toList (reclaim lend))
-@
+>>> :{
+  example2 :: (Int, [Int])
+  example2 = linearly \lin -> DataFlow.do
+    (lin, lin') <- dup lin
+    vec <- VL.fromList [0, 1, 2] lin
+    runBO lin' \ @α -> Control.do
+      let !(mvec, lend) = borrowLinearOnly vec
+      let !(mvec1, mvec2) = VL.splitAt 1 mvec -- (*)
+      (mvec, ()) <-
+        parBO
+          ( Control.do
+              mvec1 <- VL.modify 0 (+ 3) mvec1
+              VL.modify 0 (* 4) mvec1
+          )
+          (consume Control.<$> VL.modify 1 (+ 5) mvec2)
+      let !(Ur svec) = share mvec
+      Ur n <- VL.copyAt 0 svec
+      pureAfter $ (n, unur $ VL.toList (reclaim @α lend))
+:}
+
+>>> example2
+(12,[12,1,7])
 
 The line after @(*)@ splits the mutable vector into two non-overlapping mutable borrows, which can be safely used in parallel with 'parBO'.
 It just returns the first half of the vector and discards the second half.
@@ -164,28 +179,31 @@ It just returns the first half of the vector and discards the second half.
 But this kind of manual discarding of resources are getting so tedious, right?
 This is where our /borrow/-based /affine/ API shines, which allows you to write the same code without manually discarding resources using 'reborrowing':
 
-@
-example3 :: (Int, [Int])
-example3 = linearly \lin -> DataFlow.do
-  (lin, lin') <- dup lin
-  vec <- VL.fromList [0, 1, 2] lin
-  runBO lin' Control.do
-    let !(mvec, lend) = borrowLinearOnly vec
-    -- (!)
-    mvec <- reborrowing_ mvec \mvec -> Control.do
-      let !(mvec1, mvec2) = VL.splitAt 1 mvec
-      -- (!!)
-      consume
-        Control.<$> parBO
-          ( Control.do
-              mvec1 <- VL.modify 0 (+ 3) mvec1
-              VL.modify 0 (* 4) mvec1
-          )
-          (VL.modify 1 (+ 5) mvec2)
-    let !(Ur svec) = share mvec -- (!!!)
-    Ur n <- VL.copyAt 0 svec
-    pureAfter $ (n, unur $ VL.toList (reclaim lend))
-@
+>>> :{
+  example3 :: (Int, [Int])
+  example3 = linearly \lin -> DataFlow.do
+    (lin, lin') <- dup lin
+    vec <- VL.fromList [0, 1, 2] lin
+    runBO lin' \ @α -> Control.do
+      let !(mvec, lend) = borrowLinearOnly vec
+      -- (!)
+      mvec <- reborrowing_ mvec \mvec -> Control.do
+        let !(mvec1, mvec2) = VL.splitAt 1 mvec
+        -- (!!)
+        consume
+          Control.<$> parBO
+            ( Control.do
+                mvec1 <- VL.modify 0 (+ 3) mvec1
+                VL.modify 0 (* 4) mvec1
+            )
+            (VL.modify 1 (+ 5) mvec2)
+      let !(Ur svec) = share mvec -- (!!!)
+      Ur n <- VL.copyAt 0 svec
+      pureAfter $ (n, unur $ VL.toList (reclaim @α lend))
+:}
+
+>>> example2
+(12,[12,1,7])
 
 Beware that the line after @(!)@ opens the new sublifetime by 'reborrowing_'.
 Within this sublifetime, new mutable borrow @mvec@ is divided into two pieces, and then modified parallely on each slices after @(!!)@.

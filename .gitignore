@@ -114,3 +114,4 @@ cabal.project.local~
 *.local.json
 haddocks
 *.csv
+workspace

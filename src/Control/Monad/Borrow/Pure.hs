@@ -69,6 +69,7 @@ module Control.Monad.Borrow.Pure (
   genericCopy,
   GenericCopyable,
   Copyable1 (..),
+  AsCopyable1 (..),
   GenericCopyable1,
   copy1,
   genericCopy1,
@@ -108,13 +109,13 @@ import Control.Monad.Borrow.Pure.Internal
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
 import Control.Monad.Borrow.Pure.Ref
+import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Syntax.DataFlow qualified as DataFlow
+import Data.Coerce (Coercible)
 import Data.Coerce.Directed (upcast)
 import Data.Proxy (Proxy (..))
-import Prelude.Linear
-import Data.Coerce (Coercible)
 import Data.Type.Coercion (Coercion (..))
-import Control.Monad.Borrow.Pure.Utils (coerceLin)
+import Prelude.Linear
 
 {- $setup
 >>> :set -XBlockArguments -XLinearTypes -XNoImplicitPrelude -XImpredicativeTypes -XTypeAbstractions -XQualifiedDo
@@ -457,10 +458,10 @@ copyMut mut =
   let !(Ur shr) = share mut
    in Ur (copy shr)
 
-coerceShare :: forall b α a. Coercible a b => Share α a %1 -> Share α b
+coerceShare :: forall b α a. (Coercible a b) => Share α a %1 -> Share α b
 {-# INLINE coerceShare #-}
 coerceShare = coerceLin
 
-shareCoercion :: forall a b α. Coercible a b => Coercion (Share α a) (Share α b)
+shareCoercion :: forall a b α. (Coercible a b) => Coercion (Share α a) (Share α b)
 {-# INLINE shareCoercion #-}
 shareCoercion = Coercion

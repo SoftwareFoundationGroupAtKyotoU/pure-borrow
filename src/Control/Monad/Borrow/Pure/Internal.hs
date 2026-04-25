@@ -672,13 +672,19 @@ deriving via
   instance
     (Copyable a, Copyable b) => Copyable (Sem.Arg a b)
 
+newtype AsCopyable1 f a = AsCopyable1 (f a)
+
+instance (Copyable1 f, Copyable a) => Copyable (AsCopyable1 f a) where
+  copy = AsCopyable1 . copy1 . unsafeMapAlias \(AsCopyable1 x) -> x
+  {-# INLINE copy #-}
+
 -- | Lifting of the 'Copyable' operation to unary type constructors.
 class Copyable1 f where
-  liftCopy :: (Share α a %1 -> b) -> Share α (f a) %1 -> f b
+  liftCopy :: (Borrow bk α a %1 -> b) -> Borrow bk α (f a) %1 -> f b
 
 type GenericCopyable1 f = (Copyable1 (Rep1 @Type f), Generic1 f)
 
-genericLiftCopy :: forall f a b α. (GenericCopyable1 f) => (Share α a %1 -> b) -> Share α (f a) %1 -> f b
+genericLiftCopy :: forall f bk a b α. (GenericCopyable1 f) => (Borrow bk α a %1 -> b) -> Borrow bk α (f a) %1 -> f b
 {-# INLINE genericLiftCopy #-}
 genericLiftCopy f (UnsafeAlias x) = to1 $ liftCopy f (UnsafeAlias $ from1 x)
 
@@ -686,7 +692,7 @@ genericCopy1 :: forall f a α. (GenericCopyable1 f, Copyable a) => Share α (f a
 {-# INLINE genericCopy1 #-}
 genericCopy1 = genericLiftCopy copy
 
-copy1 :: (Copyable1 f, Copyable a) => Share α (f a) %1 -> f a
+copy1 :: (Copyable1 f, Copyable a) => Borrow bk α (f a) %1 -> f a
 {-# INLINE copy1 #-}
 copy1 = liftCopy copy
 

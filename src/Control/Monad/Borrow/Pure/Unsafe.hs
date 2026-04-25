@@ -24,7 +24,7 @@ module Control.Monad.Borrow.Pure.Unsafe (
   unsafeUnalias,
 
   -- * Unsafe DerivingVia modifiers.
-  UnsafeAssumeNoVar(..),
+  UnsafeAssumeNoVar (..),
 
   -- * Conversions from/to 'BO' monad.
   unsafeBOToLinIO,

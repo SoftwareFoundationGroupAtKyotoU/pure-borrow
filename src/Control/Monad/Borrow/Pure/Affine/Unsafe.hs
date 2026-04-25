@@ -8,6 +8,7 @@ We __STRONGLY__ recommend to you to import only the needed parts of the definiti
 -}
 module Control.Monad.Borrow.Pure.Affine.Unsafe (
   -- * Affine Modality
-  Aff(..),
+  Aff (..),
 ) where
+
 import Control.Monad.Borrow.Pure.Affine.Internal

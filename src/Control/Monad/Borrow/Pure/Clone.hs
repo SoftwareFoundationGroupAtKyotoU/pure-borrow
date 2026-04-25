@@ -21,7 +21,9 @@ module Control.Monad.Borrow.Pure.Clone (
 ) where
 
 import Control.Functor.Linear qualified as Control
+import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Internal
+import Control.Monad.Borrow.Pure.Ref
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Coerce (Coercible, coerce)
 import Data.Data (Proxy)
@@ -36,8 +38,6 @@ import Generics.Linear
 import Numeric.Natural
 import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
-import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Ref
 
 {- | @'Clone' a@ is analogous o @'Copyable' a@, but requires cloned values
 to be accessible only inside the @'BO' α@ monad.

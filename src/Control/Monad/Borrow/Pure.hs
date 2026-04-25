@@ -99,6 +99,8 @@ module Control.Monad.Borrow.Pure (
 ) where
 
 import Control.Functor.Linear qualified as Control
+import Control.Monad.Borrow.Pure.Clone
+import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Internal
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
@@ -110,8 +112,6 @@ import Data.Coerce.Directed (upcast)
 import Data.Proxy (Proxy (..))
 import Data.Type.Coercion (Coercion (..))
 import Prelude.Linear
-import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Clone
 
 {- $setup
 >>> :set -XBlockArguments -XLinearTypes -XNoImplicitPrelude -XImpredicativeTypes -XTypeAbstractions -XQualifiedDo

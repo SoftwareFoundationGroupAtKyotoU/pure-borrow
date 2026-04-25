@@ -509,7 +509,7 @@ instance GDistributeAlias U1 where
   {-# INLINE gdistributeAlias #-}
 
 class Copyable a where
-  copy :: Share α a %1 -> a
+  copy :: Borrow bk α a %1 -> a
 
 instance (Copyable a) => Copyable (Ur a) where
   copy (UnsafeAlias (Ur !a)) = Ur $! copy $! UnsafeAlias a
@@ -532,9 +532,6 @@ instance
   Copyable (Vector a)
   where
   copy = unsatisfiable
-
-copyMut :: (Copyable a) => Mut α a %1 -> Ur a
-copyMut mut = let !(Ur shr) = share mut in Ur (copy shr)
 
 newtype UnsafeAssumeNoVar a = UnsafeAssumeNoVar a
 
@@ -576,13 +573,13 @@ deriving via UnsafeAssumeNoVar Bool instance Copyable Bool
 
 type GenericCopyable a = (Generic a, GCopyable (Rep a))
 
-genericCopyShare :: (GenericCopyable a) => Share α a %1 -> a
-{-# INLINE genericCopyShare #-}
-genericCopyShare (UnsafeAlias x) = to (gcopy (UnsafeAlias (from x)))
+genericCopy :: (GenericCopyable a) => Borrow bk α a %1 -> a
+{-# INLINE genericCopy #-}
+genericCopy (UnsafeAlias x) = to (gcopy (UnsafeAlias (from x)))
 
 type GCopyable :: forall {k}. (k -> Type) -> Constraint
 class GCopyable f where
-  gcopy :: Share α (f x) %1 -> f x
+  gcopy :: Borrow bk α (f x) %1 -> f x
 
 instance (Copyable a) => GCopyable (K1 i a) where
   gcopy = \(UnsafeAlias (K1 !a)) -> K1 (copy (UnsafeAlias a))
@@ -613,7 +610,7 @@ instance GCopyable V1 where
   gcopy = \case {} . unsafeUnalias
 
 instance (GenericCopyable a) => Copyable (Generically a) where
-  copy = Generically . genericCopyShare . unsafeMapAlias (\(Generically x) -> x)
+  copy = Generically . genericCopy . unsafeMapAlias (\(Generically x) -> x)
 
 deriving via Generically () instance Copyable ()
 
@@ -674,3 +671,55 @@ deriving via
   Generically (Sem.Arg a b)
   instance
     (Copyable a, Copyable b) => Copyable (Sem.Arg a b)
+
+-- | Lifting of the 'Copyable' operation to unary type constructors.
+class Copyable1 f where
+  liftCopy :: (Share α a %1 -> b) -> Share α (f a) %1 -> f b
+
+type GenericCopyable1 f = (Copyable1 (Rep1 @Type f), Generic1 f)
+
+genericLiftCopy :: forall f a b α. (GenericCopyable1 f) => (Share α a %1 -> b) -> Share α (f a) %1 -> f b
+{-# INLINE genericLiftCopy #-}
+genericLiftCopy f (UnsafeAlias x) = to1 $ liftCopy f (UnsafeAlias $ from1 x)
+
+genericCopy1 :: forall f a α. (GenericCopyable1 f, Copyable a) => Share α (f a) %1 -> f a
+{-# INLINE genericCopy1 #-}
+genericCopy1 = genericLiftCopy copy
+
+copy1 :: (Copyable1 f, Copyable a) => Share α (f a) %1 -> f a
+{-# INLINE copy1 #-}
+copy1 = liftCopy copy
+
+instance (GenericCopyable1 f) => Copyable1 (Generically1 @Type f) where
+  liftCopy f = Generically1 . genericLiftCopy f . coerceLin
+  {-# INLINE liftCopy #-}
+
+instance (Copyable c) => Copyable1 (K1 i c) where
+  liftCopy _ = coerceLin $! copy @c
+  {-# INLINE liftCopy #-}
+
+instance Copyable1 Par1 where
+  liftCopy f = Par1 . f . coerceLin
+  {-# INLINE liftCopy #-}
+
+instance (Copyable1 f) => Copyable1 (M1 i c f) where
+  liftCopy f = M1 . liftCopy f . coerceLin
+  {-# INLINE liftCopy #-}
+
+instance (Copyable1 l, Copyable1 r) => Copyable1 (l :*: r) where
+  liftCopy f = \(UnsafeAlias (!l :*: !r)) ->
+    let !l' = liftCopy f (UnsafeAlias l)
+        !r' = liftCopy f (UnsafeAlias r)
+     in l' :*: r'
+  {-# INLINE liftCopy #-}
+
+instance (Copyable1 f, Copyable1 g) => Copyable1 (f :.: g) where
+  liftCopy f = \(UnsafeAlias (Comp1 x)) ->
+    Comp1 . liftCopy (liftCopy f) $ UnsafeAlias x
+  {-# INLINE liftCopy #-}
+
+instance (Copyable1 l, Copyable1 r) => Copyable1 (l :+: r) where
+  liftCopy f = \(UnsafeAlias sum) -> case sum of
+    L1 !l -> L1 $! (liftCopy f (UnsafeAlias l))
+    R1 !r -> R1 $! (liftCopy f (UnsafeAlias r))
+  {-# INLINE liftCopy #-}

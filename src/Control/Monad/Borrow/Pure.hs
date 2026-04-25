@@ -62,11 +62,15 @@ module Control.Monad.Borrow.Pure (
   reborrow,
   joinMut,
   joinLend,
-  Copyable (),
-  copy,
+  Copyable (..),
   copyMut,
-  genericCopyShare,
+  genericCopy,
   GenericCopyable,
+  Copyable1 (..),
+  GenericCopyable1,
+  copy1,
+  genericCopy1,
+  genericLiftCopy,
 
   -- ** Splitting aliases
   DistributesAlias (),
@@ -437,3 +441,13 @@ asksLinearly k = asksLinearlyM $ Control.pure . k
 pureAfter :: ((End α) => a) %1 -> BO α (After α a)
 {-# INLINE pureAfter #-}
 pureAfter a = Control.pure (After a)
+
+{- | A variant of 'copy' that returns 'Ur' wrapped copy of the value.
+'Ur' wrapper was not necessary because 'Share' is always introduced unrestricted,
+whereas 'Mut' is introduced linearly, so it is convenient to have 'Ur' wrapped version.
+-}
+copyMut :: (Copyable a) => Mut α a %1 -> Ur a
+{-# INLINE copyMut #-}
+copyMut mut =
+  let !(Ur shr) = share mut
+   in Ur (copy shr)

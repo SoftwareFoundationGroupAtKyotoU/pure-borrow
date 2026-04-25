@@ -8,6 +8,7 @@
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
+{-# LANGUAGE DataKinds #-}
 
 module Data.Vector.Mutable.Linear.Borrow (
   Vector,
@@ -72,6 +73,8 @@ import GHC.Stack (HasCallStack)
 import Prelude.Linear hiding (head, last, splitAt)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
+import GHC.TypeError
+import qualified Control.Monad as NonLinear
 
 -- | Linearly owned mutable vector.
 newtype Vector a = Vector {content :: MV.MVector RealWorld a}
@@ -264,6 +267,25 @@ splitAt = Unsafe.toLinear2 \i (UnsafeAlias (Vector v)) ->
 instance LinearOnly (Vector a) where
   linearOnly = UnsafeLinearOnly
   {-# INLINE linearOnly #-}
+
+instance
+  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copied!")) =>
+  Copyable (Vector a)
+  where
+  copy = unsatisfiable
+
+instance Dupable a => Clone (Vector a) where
+  clone = Unsafe.toLinear \(UnsafeAlias (Vector v)) -> unsafeSystemIOToBO do
+    let !n = MV.length v
+    !new <- MV.new n
+    let go !i = NonLinear.when (i < n) do
+          x <- MV.unsafeRead v i
+          let (!_, !x') = dup x
+          MV.unsafeWrite new i x'
+          go (i + 1)
+    go 0
+    NonLinear.pure (Vector new)
+  {-# INLINE clone #-}
 
 unsafeSwap :: (α >= β) => Mut α (Vector a) %1 -> Int -> Int -> BO β (Mut α (Vector a))
 unsafeSwap = Unsafe.toLinear3 \(UnsafeAlias v) i j -> Control.do

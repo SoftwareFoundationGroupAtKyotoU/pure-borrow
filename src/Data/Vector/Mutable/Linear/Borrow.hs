@@ -132,7 +132,7 @@ unsafeFromMutable v lin =
 
 {- 
 NOTE [Unrestricted Materialization of Vector]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~----------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 We impose 'Copyable' on 'toVector' and 'toList' to ensure elements doesn't bare any essentially linear contents inside, but we don't make use of the constraint internally.
 Is it a cheating? Maybe. Think hard about it.
 -}

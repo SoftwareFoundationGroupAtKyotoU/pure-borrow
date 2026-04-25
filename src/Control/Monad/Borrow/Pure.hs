@@ -107,7 +107,6 @@ import Data.Coerce.Directed (upcast)
 import Data.Proxy (Proxy (..))
 import Prelude.Linear
 
-
 {- $setup
 >>> :set -XBlockArguments -XDataKinds -XLinearTypes -XNoImplicitPrelude -XImpredicativeTypes -XRankNTypes -XScopedTypeVariables -XTypeAbstractions -XQualifiedDo
 >>> :m -Prelude

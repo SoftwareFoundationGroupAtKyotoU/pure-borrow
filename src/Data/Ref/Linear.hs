@@ -16,8 +16,13 @@ module Data.Ref.Linear (
   atomicModify_,
 ) where
 
-import Control.Monad.Borrow.Pure.Affine.Internal
-import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
+import Control.Monad.Borrow.Pure.Affine
+import Control.Monad.Borrow.Pure.Affine.Unsafe (Aff (..))
+import Control.Monad.Borrow.Pure.Lifetime.Token
+import Control.Monad.Borrow.Pure.Lifetime.Token.Internal (
+  LinearOnly (..),
+  LinearOnlyWitness (..),
+ )
 import Data.Ref.Linear.Unlifted
 import Prelude.Linear (Consumable (..), Dupable (..))
 import Prelude.Linear qualified as PL

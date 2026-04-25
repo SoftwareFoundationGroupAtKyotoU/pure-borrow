@@ -21,7 +21,7 @@ module Control.Monad.Borrow.Pure.Clone (
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Internal (Alias (..), unsafeMapAlias, unsafeUnalias)
+import Control.Monad.Borrow.Pure.Unsafe (Alias (..), unsafeMapAlias, unsafeUnalias)
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Coerce (Coercible, coerce)
 import Data.Data (Proxy)

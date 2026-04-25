@@ -21,20 +21,22 @@ module Data.Vector.Mutable.Linear.Borrow (
   toVector,
   toList,
   size,
-  unsafeGet,
   get,
-  unsafeUpdate,
+  unsafeGet,
+  set,
+  unsafeSet,
   update,
+  unsafeUpdate,
   modify,
-  unsafeHead,
   head,
-  unsafeLast,
+  unsafeHead,
   last,
-  unsafeIndicesMut,
+  unsafeLast,
   indicesMut,
+  unsafeIndicesMut,
   splitAt,
-  unsafeSwap,
   swap,
+  unsafeSwap,
   copyAt,
   copyAtMut,
   inplace,
@@ -48,8 +50,11 @@ module Data.Vector.Mutable.Linear.Borrow (
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Internal
-import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
+import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
+  LinearOnly (..),
+  LinearOnlyWitness (..),
+ )
+import Control.Monad.Borrow.Pure.Unsafe
 import Control.Monad.Borrow.Pure.Utils
 import Control.Monad.ST.Strict (ST)
 import Control.Syntax.DataFlow qualified as DataFlow
@@ -145,7 +150,25 @@ size =
   unsafeUnalias >>> Unsafe.toLinear \(Vector v) ->
     (move (MV.length v), UnsafeAlias (Vector v))
 
--- | Get without bounds check.
+-- | 'set' an element without bound check.
+set :: (HasCallStack, α >= β) => Int -> a %1 -> Mut α (Vector a) %1 -> BO β (a, Mut α (Vector a))
+{-# INLINE set #-}
+set i a v = DataFlow.do
+  (len, v) <- size v
+  case len of
+    Ur len ->
+      if i < 0 || i >= len
+        then error ("get: index " <> show i <> " out of bound: " <> show len) v a
+        else unsafeSet i a v
+
+-- | 'set' without bound check
+unsafeSet :: (α >= β) => Int -> a %1 -> Mut α (Vector a) %1 -> BO β (a, Mut α (Vector a))
+unsafeSet = Unsafe.toLinear3 \i a mut@(UnsafeAlias (Vector v)) -> unsafeSystemIOToBO do
+  old <- MV.unsafeRead v i
+  MV.unsafeWrite v i a
+  NonLinear.pure (old, mut)
+
+-- | 'get' without bounds check.
 unsafeGet :: (α >= β) => Int -> Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
 {-# INLINE unsafeGet #-}
 unsafeGet i =

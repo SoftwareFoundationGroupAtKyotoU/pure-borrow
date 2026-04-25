@@ -18,10 +18,11 @@ This module provides internals of 'BO' and 'Alias', which can break the soundnes
 We __STRONGLY__ recommend to you to import only the needed parts of the definitions, and not to import everything or qualified.
 -}
 module Control.Monad.Borrow.Pure.Unsafe (
-  -- * Internal definitions of core types.
+  -- * Internal definitions and utilities of core types.
   BO (..),
   Alias (..),
   unsafeUnalias,
+  unsafeMapAlias,
 
   -- * Unsafe DerivingVia modifiers.
   UnsafeAssumeNoVar (..),

@@ -37,7 +37,7 @@ import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, isClosedTMDeque, n
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Internal
+import Control.Monad.Borrow.Pure.Unsafe (Alias (..), unsafeSystemIOToBO)
 import Data.Coerce (coerce)
 import Data.Foldable qualified as P
 import Data.Function (fix)

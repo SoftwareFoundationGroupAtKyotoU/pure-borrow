@@ -13,6 +13,8 @@ We __STRONGLY__ recommend to you to import only the needed parts of the definiti
 -}
 module Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   Linearly (..),
+  LinearOnly (..),
+  LinearOnlyWitness (..),
   Now (..),
   End (..),
   EndToken (..),

@@ -1,5 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE ImpredicativeTypes #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE QualifiedDo #-}
@@ -36,6 +37,7 @@ module Data.Vector.Mutable.Linear.Borrow (
   swap,
   copyAt,
   copyAtMut,
+  inplace,
 
   -- * An example algorithm implementations
   qsort,
@@ -49,6 +51,7 @@ import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Internal
 import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
 import Control.Monad.Borrow.Pure.Utils
+import Control.Monad.ST.Strict (ST)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce.Directed (upcast)
 import Data.Function qualified as NonLinear
@@ -104,6 +107,7 @@ fromVector = GHC.noinline $ Unsafe.toLinear \v l ->
         unsafeSystemIOToBO $!
           Unsafe.toLinear V.thaw v
 
+-- | _O(n)_. Clone a 'V.MVector' from @vector@ package to a 'Vector'.
 fromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
 {-# NOINLINE fromMutable #-}
 fromMutable = GHC.noinline $ Unsafe.toLinear \v l ->
@@ -117,6 +121,7 @@ unsafeFromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
 unsafeFromMutable v lin =
   lin `lseq` Vector (Unsafe.coerce v)
 
+-- | _O(1)_. Freezes @'Vector' a@ to @'V.Vector' a@ from @vector@ package, _without_ copying.
 toVector :: Vector a %1 -> Ur (V.Vector a)
 {-# NOINLINE toVector #-}
 toVector = GHC.noinline $
@@ -261,6 +266,17 @@ copyAt i v = Control.do Ur s <- move Control.<$> get i v; Control.pure $ Ur $ co
 
 copyAtMut :: forall a α β. (Copyable a, α >= β) => Int -> Mut α (Vector a) %1 -> BO β (Ur a, Mut α (Vector a))
 copyAtMut i v = upcast $ sharing @_ @α v $ copyAt i
+
+-- | Applies an in-place mutation on 'V.MVector' from @vector@ package.
+inplace ::
+  α >= β =>
+  (forall s. V.MVector s a -> ST s ()) %1 ->
+  Mut α (Vector a) %1 ->
+  BO β (Mut α (Vector a))
+{-# INLINE inplace #-}
+inplace = Unsafe.toLinear2 \f mut@(UnsafeAlias v) -> Control.do
+  !() <- unsafeSTToBO $ f $ content $ Unsafe.coerce v
+  Control.pure mut
 
 {- | A simple parallel implementation of quicksort.
 It uses a sequential divide-and-conquer when size <8,

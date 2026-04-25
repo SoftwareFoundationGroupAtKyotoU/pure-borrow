@@ -130,13 +130,27 @@ unsafeFromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
 unsafeFromMutable v lin =
   lin `lseq` Vector (Unsafe.coerce v)
 
+{- 
+NOTE [Unrestricted Materialization of Vector]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~----------
+We impose 'Copyable' on 'toVector' and 'toList' to ensure elements doesn't bare any essentially linear contents inside, but we don't make use of the constraint internally.
+Is it a cheating? Maybe. Think hard about it.
+-}
+
 -- | _O(1)_. Freezes @'Vector' a@ to @'V.Vector' a@ from @vector@ package, _without_ copying.
-toVector :: Vector a %1 -> Ur (V.Vector a)
+toVector :: 
+  -- See Note [Unrestricted Materialization of Vector].
+  Copyable a => 
+  Vector a %1 -> Ur (V.Vector a)
 {-# NOINLINE toVector #-}
 toVector = GHC.noinline $
-  Unsafe.toLinear \(Vector v) -> Ur (unsafePerformIO $ V.unsafeFreeze v)
+  Unsafe.toLinear \(Vector v) ->Ur $ unsafePerformIO $ V.unsafeFreeze v
 
-toList :: Vector a %1 -> Ur [a]
+-- Same applies to 'Copyable' here, as in 'toVector'.
+toList :: 
+  -- See Note [Unrestricted Materialization of Vector].
+  Copyable a => 
+  Vector a %1 -> Ur [a]
 {-# INLINE toList #-}
 toList = Ur.lift V.toList . toVector
 

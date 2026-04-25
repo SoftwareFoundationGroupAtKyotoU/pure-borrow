@@ -7,6 +7,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  cabal-version: 3.16.1.0
+
 jobs:
   ci-enumerate:
     name: Enumerate GHC Versions
@@ -34,7 +37,6 @@ jobs:
         plan: ${{fromJSON(needs.ci-enumerate.outputs.plan)}}
       fail-fast: false
     env:
-      cabal-version: 3.16.1.0
       cabal: "cabal --project-file=${{matrix.plan.path}}"
       ghc: ${{matrix.plan.ghc}}
       project-file: ${{matrix.plan.path}}
@@ -124,7 +126,6 @@ jobs:
           - ${{ fromJSON(needs.ci-enumerate.outputs.plan)[0] }}
       fail-fast: false
     env:
-      cabal: 3.10.1.0
       ghc: ${{matrix.plan.ghc}}
       project-file: ${{matrix.plan.path}}
       plan: ${{matrix.plan.name}}
@@ -182,6 +183,6 @@ jobs:
       - uses: actions/checkout@v3
       - uses: haskell-actions/setup@v2
         with:
-          cabal-version: 3.16.1.0
+          cabal-version: ${{env.cabal-version}}
           ghc-version: latest
       - run: cabal check

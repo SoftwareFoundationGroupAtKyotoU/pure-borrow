@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
@@ -8,7 +9,6 @@
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
-{-# LANGUAGE DataKinds #-}
 
 module Data.Vector.Mutable.Linear.Borrow (
   Vector,
@@ -50,6 +50,7 @@ module Data.Vector.Mutable.Linear.Borrow (
 ) where
 
 import Control.Functor.Linear qualified as Control
+import Control.Monad qualified as NonLinear
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnly (..),
@@ -70,13 +71,17 @@ import Data.Vector.Mutable qualified as MV
 import GHC.Exts qualified as GHC
 import GHC.IO (unsafePerformIO)
 import GHC.Stack (HasCallStack)
+import GHC.TypeError
 import Prelude.Linear hiding (head, last, splitAt)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
-import GHC.TypeError
-import qualified Control.Monad as NonLinear
 
--- | Linearly owned mutable vector.
+{- |
+Linearly owned mutable vector.
+Contrary to those in @linear-base@, our 'Vector' owns every element @linearly@.
+This is because Pure Borrow can now treat nested mutability safely, so we must allow mutable values to be stored inside 'Vector'.
+This manifests in the type of 'set' - it returns the old value, which MUST NOT drop in favour of the new value.
+-}
 newtype Vector a = Vector {content :: MV.MVector RealWorld a}
 
 empty :: Linearly %1 -> Vector a
@@ -153,7 +158,10 @@ size =
   unsafeUnalias >>> Unsafe.toLinear \(Vector v) ->
     (move (MV.length v), UnsafeAlias (Vector v))
 
--- | 'set' an element without bound check.
+{- |
+@'set' i a v@ sets the @i@-th element of @v@ to @a@, and returns the old value alongside.
+Note that @a@ is bound linearly.
+-}
 set :: (HasCallStack, α >= β) => Int -> a %1 -> Mut α (Vector a) %1 -> BO β (a, Mut α (Vector a))
 {-# INLINE set #-}
 set i a v = DataFlow.do
@@ -164,7 +172,7 @@ set i a v = DataFlow.do
         then error ("get: index " <> show i <> " out of bound: " <> show len) v a
         else unsafeSet i a v
 
--- | 'set' without bound check
+-- | 'set' without bound check.
 unsafeSet :: (α >= β) => Int -> a %1 -> Mut α (Vector a) %1 -> BO β (a, Mut α (Vector a))
 unsafeSet = Unsafe.toLinear3 \i a mut@(UnsafeAlias (Vector v)) -> unsafeSystemIOToBO do
   old <- MV.unsafeRead v i
@@ -274,7 +282,7 @@ instance
   where
   copy = unsatisfiable
 
-instance Dupable a => Clone (Vector a) where
+instance (Dupable a) => Clone (Vector a) where
   clone = Unsafe.toLinear \(UnsafeAlias (Vector v)) -> unsafeSystemIOToBO do
     let !n = MV.length v
     !new <- MV.new n

@@ -41,7 +41,6 @@ import Control.Monad.Borrow.Pure.Internal
 import Data.Coerce (coerce)
 import Data.Foldable qualified as P
 import Data.Function (fix)
-import Data.IORef (IORef, newIORef)
 import Data.List qualified as L
 import Data.Monoid (Alt (..))
 import Data.Ord (Down (..))
@@ -56,8 +55,6 @@ import GHC.Exts qualified as GHC
 import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownNat)
 import Prelude.Linear
-import System.Random (RandomGen)
-import System.Random qualified as R
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as P
 

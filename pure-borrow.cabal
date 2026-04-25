@@ -19,6 +19,8 @@ data-files:
   dockerfiles/artifact/Dockerfile
   scripts/genplot.gnuplot
 
+tested-with: ghc ==9.10.2 || ==9.12.4 || ==9.14.1
+
 source-repository head
   type: git
   location: https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow
@@ -77,6 +79,7 @@ library
     Control.Monad.Borrow.Pure.Lifetime.Token
     Control.Monad.Borrow.Pure.Lifetime.Token.Internal
     Control.Monad.Borrow.Pure.Ref
+    Control.Monad.Borrow.Pure.Unsafe
     Control.Syntax.DataFlow
     Data.Coerce.Directed
     Data.Comonad.Linear

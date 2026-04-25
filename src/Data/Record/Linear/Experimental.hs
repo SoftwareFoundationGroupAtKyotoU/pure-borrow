@@ -83,7 +83,7 @@ type family Delete l ls where
   Delete l ('(l, v) ': ls) = ls
   Delete l ('(l', v) ': ls) = '(l', v) ': Delete l ls
 
-{- | 
+{- |
 @'SplitRecord' a bk α fs@ represents a borrow of a value of type @a@ of borrow kind @bk@ (i.e. 'Share' or 'Mut') for lifetime @α@ with @fs@ remains unsplit.
 That is, if the field @f@ is removed by some combinators like '(-#)', then the resulting 'SplitRecord' will have @f@ removed from the @fs@ type-level list.
 

@@ -21,8 +21,7 @@ module Control.Monad.Borrow.Pure.Clone (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Unsafe (Alias (..), unsafeMapAlias, unsafeUnalias)
+import Control.Monad.Borrow.Pure.Internal
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Coerce (Coercible, coerce)
 import Data.Data (Proxy)
@@ -37,6 +36,8 @@ import Generics.Linear
 import Numeric.Natural
 import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
+import Control.Monad.Borrow.Pure.Copyable
+import Control.Monad.Borrow.Pure.Ref
 
 {- | @'Clone' a@ is analogous o @'Copyable' a@, but requires cloned values
 to be accessible only inside the @'BO' α@ monad.
@@ -55,7 +56,7 @@ instance (Dupable a) => Clone (Ref a) where
   clone = Unsafe.toLinear \(UnsafeAlias ref) -> Control.do
     !a <- Control.pure $ freeRef ref
     !a' <- Unsafe.toLinear (\(!_, !a') -> Control.pure a') $ dup a
-    asksLinearly $ Ref.new a'
+    Ref.new a' Control.<$> askLinearly
   {-# INLINE clone #-}
 
 newtype AsCopyable a = AsCopyable a

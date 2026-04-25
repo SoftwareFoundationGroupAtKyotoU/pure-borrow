@@ -59,7 +59,6 @@ instance (Dupable a) => Clone (Ref a) where
     Ref.new a' Control.<$> askLinearly
   {-# INLINE clone #-}
 
-
 newtype AsCopyable a = AsCopyable a
   deriving newtype (Copyable)
 

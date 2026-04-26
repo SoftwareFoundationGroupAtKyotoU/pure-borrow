@@ -10,8 +10,9 @@ We support GHC 9.10.2+, but we recommend GHC 9.12.4+, due to subtle compiler bug
 
 ## Known Issues
 
-Due to the bug of linear types in GHC, some program segfaults when evaluated in *interpreter* (see https://gitlab.haskell.org/ghc/ghc/-/issues/26565#note_645783).
+Due to the bug of linear types in GHC <9.10.3, some program segfaults when evaluated in *interpreter* (see https://gitlab.haskell.org/ghc/ghc/-/issues/26565#note_645783).
 Compiled programs just work as expected with GHC 9.10.2+, so this is issue will only affect you are trying to use GHCi or Eval Plugin of Haskell Language Server.
+If you want to use interpreters, usn GHC 9.12.3+.
 
 ## Publication(s)
 

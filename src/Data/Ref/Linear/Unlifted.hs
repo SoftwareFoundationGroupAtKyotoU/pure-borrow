@@ -17,7 +17,7 @@ module Data.Ref.Linear.Unlifted (
 ) where
 
 import Control.Monad.Borrow.Pure.Lifetime.Token
-import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
+import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (LinearOnly (..), LinearOnlyWitness (..))
 import Control.Monad.Borrow.Pure.Utils (lseq#)
 import GHC.Exts
 import GHC.Exts qualified as GHC

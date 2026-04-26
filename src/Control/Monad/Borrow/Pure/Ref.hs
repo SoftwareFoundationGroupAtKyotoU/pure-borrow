@@ -17,6 +17,7 @@ module Control.Monad.Borrow.Pure.Ref (
 ) where
 
 import Control.Functor.Linear qualified as Control
+import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Internal
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Syntax.DataFlow qualified as DataFlow

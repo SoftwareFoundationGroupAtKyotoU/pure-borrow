@@ -1,5 +1,7 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ImpredicativeTypes #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE QualifiedDo #-}
@@ -20,22 +22,25 @@ module Data.Vector.Mutable.Linear.Borrow (
   toVector,
   toList,
   size,
-  unsafeGet,
   get,
-  unsafeUpdate,
+  unsafeGet,
+  set,
+  unsafeSet,
   update,
+  unsafeUpdate,
   modify,
-  unsafeHead,
   head,
-  unsafeLast,
+  unsafeHead,
   last,
-  unsafeIndicesMut,
+  unsafeLast,
   indicesMut,
+  unsafeIndicesMut,
   splitAt,
-  unsafeSwap,
   swap,
+  unsafeSwap,
   copyAt,
   copyAtMut,
+  inplace,
 
   -- * An example algorithm implementations
   qsort,
@@ -45,10 +50,15 @@ module Data.Vector.Mutable.Linear.Borrow (
 ) where
 
 import Control.Functor.Linear qualified as Control
+import Control.Monad qualified as NonLinear
 import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Internal
-import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
+import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
+  LinearOnly (..),
+  LinearOnlyWitness (..),
+ )
+import Control.Monad.Borrow.Pure.Unsafe
 import Control.Monad.Borrow.Pure.Utils
+import Control.Monad.ST.Strict (ST)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce.Directed (upcast)
 import Data.Function qualified as NonLinear
@@ -61,11 +71,17 @@ import Data.Vector.Mutable qualified as MV
 import GHC.Exts qualified as GHC
 import GHC.IO (unsafePerformIO)
 import GHC.Stack (HasCallStack)
+import GHC.TypeError
 import Prelude.Linear hiding (head, last, splitAt)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
--- | Linearly owned mutable vector.
+{- |
+Linearly owned mutable vector.
+Contrary to those in @linear-base@, our 'Vector' owns every element @linearly@.
+This is because Pure Borrow can now treat nested mutability safely, so we must allow mutable values to be stored inside 'Vector'.
+This manifests in the type of 'set' - it returns the old value, which MUST NOT drop in favour of the new value.
+-}
 newtype Vector a = Vector {content :: MV.MVector RealWorld a}
 
 empty :: Linearly %1 -> Vector a
@@ -73,26 +89,24 @@ empty :: Linearly %1 -> Vector a
 empty =
   GHC.noinline \l ->
     l `lseq` do
-      Vector (unsafePerformEvaluateUndupableBO (unsafeSystemIOToBO $ MV.new 0))
+      Vector (unsafePerformIO $ MV.new 0)
 
 constant :: Int -> a -> Linearly %1 -> Vector a
 {-# NOINLINE constant #-}
 constant = GHC.noinline \n a l ->
   l `lseq` do
     Vector $!
-      unsafePerformEvaluateUndupableBO $!
-        unsafeSystemIOToBO $!
-          MV.replicate n a
+      unsafePerformIO $!
+        MV.replicate n a
 
 fromList :: [a] %1 -> Linearly %1 -> Vector a
 {-# NOINLINE fromList #-}
 fromList = GHC.noinline $ Unsafe.toLinear \as l ->
   l `lseq` do
     Vector $!
-      unsafePerformEvaluateUndupableBO $!
-        unsafeSystemIOToBO $!
-          Unsafe.toLinear V.unsafeThaw $!
-            Unsafe.toLinear V.fromList as
+      unsafePerformIO $!
+        Unsafe.toLinear V.unsafeThaw $!
+          Unsafe.toLinear V.fromList as
 
 -- | Convert a 'V.Vector' (from @vector@ package) to a 'Vector'.
 fromVector :: V.Vector a -> Linearly %1 -> Vector a
@@ -100,29 +114,43 @@ fromVector :: V.Vector a -> Linearly %1 -> Vector a
 fromVector = GHC.noinline $ Unsafe.toLinear \v l ->
   l `lseq` do
     Vector $!
-      unsafePerformEvaluateUndupableBO $!
-        unsafeSystemIOToBO $!
-          Unsafe.toLinear V.thaw v
+      unsafePerformIO $!
+        Unsafe.toLinear V.thaw v
 
+-- | _O(n)_. Clone a 'V.MVector' from @vector@ package to a 'Vector'.
 fromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
 {-# NOINLINE fromMutable #-}
 fromMutable = GHC.noinline $ Unsafe.toLinear \v l ->
   l `lseq` do
     Vector $!
-      unsafePerformEvaluateUndupableBO $!
-        unsafeSystemIOToBO $!
-          Unsafe.toLinear MV.clone (Unsafe.coerce v)
+      unsafePerformIO $!
+        Unsafe.toLinear MV.clone (Unsafe.coerce v)
 
 unsafeFromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
 unsafeFromMutable v lin =
   lin `lseq` Vector (Unsafe.coerce v)
 
-toVector :: Vector a %1 -> Ur (V.Vector a)
+{-
+Note [Unrestricted Materialization of Vector]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+We impose 'Copyable' on 'toVector' and 'toList' to ensure elements doesn't bare any essentially linear contents inside, but we don't make use of the constraint internally.
+Is it a cheating? Maybe. Think hard about it.
+-}
+
+-- | _O(1)_. Freezes @'Vector' a@ to @'V.Vector' a@ from @vector@ package, _without_ copying.
+toVector ::
+  -- See Note [Unrestricted Materialization of Vector].
+  (Copyable a) =>
+  Vector a %1 -> Ur (V.Vector a)
 {-# NOINLINE toVector #-}
 toVector = GHC.noinline $
-  Unsafe.toLinear \(Vector v) -> Ur (unsafePerformIO $ V.unsafeFreeze v)
+  Unsafe.toLinear \(Vector v) -> Ur $ unsafePerformIO $ V.unsafeFreeze v
 
-toList :: Vector a %1 -> Ur [a]
+-- Same applies to 'Copyable' here, as in 'toVector'.
+toList ::
+  -- See Note [Unrestricted Materialization of Vector].
+  (Copyable a) =>
+  Vector a %1 -> Ur [a]
 {-# INLINE toList #-}
 toList = Ur.lift V.toList . toVector
 
@@ -135,9 +163,8 @@ unsafeFromVector :: V.Vector a %1 -> Linearly %1 -> Vector a
 unsafeFromVector = Unsafe.toLinear \v l ->
   l `lseq` GHC.noinline do
     Vector $!
-      unsafePerformEvaluateUndupableBO $!
-        unsafeSystemIOToBO $!
-          V.unsafeThaw v
+      unsafePerformIO $!
+        V.unsafeThaw v
 
 size :: Borrow bk α (Vector a) %1 -> (Ur Int, Borrow bk α (Vector a))
 {-# INLINE size #-}
@@ -145,7 +172,28 @@ size =
   unsafeUnalias >>> Unsafe.toLinear \(Vector v) ->
     (move (MV.length v), UnsafeAlias (Vector v))
 
--- | Get without bounds check.
+{- |
+@'set' i a v@ sets the @i@-th element of @v@ to @a@, and returns the old value alongside.
+Note that @a@ is bound linearly.
+-}
+set :: (HasCallStack, α >= β) => Int -> a %1 -> Mut α (Vector a) %1 -> BO β (a, Mut α (Vector a))
+{-# INLINE set #-}
+set i a v = DataFlow.do
+  (len, v) <- size v
+  case len of
+    Ur len ->
+      if i < 0 || i >= len
+        then error ("get: index " <> show i <> " out of bound: " <> show len) v a
+        else unsafeSet i a v
+
+-- | 'set' without bound check.
+unsafeSet :: (α >= β) => Int -> a %1 -> Mut α (Vector a) %1 -> BO β (a, Mut α (Vector a))
+unsafeSet = Unsafe.toLinear3 \i a mut@(UnsafeAlias (Vector v)) -> unsafeSystemIOToBO do
+  old <- MV.unsafeRead v i
+  MV.unsafeWrite v i a
+  NonLinear.pure (old, mut)
+
+-- | 'get' without bounds check.
 unsafeGet :: (α >= β) => Int -> Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
 {-# INLINE unsafeGet #-}
 unsafeGet i =
@@ -242,6 +290,25 @@ instance LinearOnly (Vector a) where
   linearOnly = UnsafeLinearOnly
   {-# INLINE linearOnly #-}
 
+instance
+  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copied!")) =>
+  Copyable (Vector a)
+  where
+  copy = unsatisfiable
+
+instance (Dupable a) => Clone (Vector a) where
+  clone = Unsafe.toLinear \(UnsafeAlias (Vector v)) -> unsafeSystemIOToBO do
+    let !n = MV.length v
+    !new <- MV.new n
+    let go !i = NonLinear.when (i < n) do
+          x <- MV.unsafeRead v i
+          let (!_, !x') = dup x
+          MV.unsafeWrite new i x'
+          go (i + 1)
+    go 0
+    NonLinear.pure (Vector new)
+  {-# INLINE clone #-}
+
 unsafeSwap :: (α >= β) => Mut α (Vector a) %1 -> Int -> Int -> BO β (Mut α (Vector a))
 unsafeSwap = Unsafe.toLinear3 \(UnsafeAlias v) i j -> Control.do
   () <- unsafeSystemIOToBO $ MV.unsafeSwap v.content i j
@@ -261,6 +328,17 @@ copyAt i v = Control.do Ur s <- move Control.<$> get i v; Control.pure $ Ur $ co
 
 copyAtMut :: forall a α β. (Copyable a, α >= β) => Int -> Mut α (Vector a) %1 -> BO β (Ur a, Mut α (Vector a))
 copyAtMut i v = upcast $ sharing @_ @α v $ copyAt i
+
+-- | Applies an in-place mutation on 'V.MVector' from @vector@ package.
+inplace ::
+  (α >= β) =>
+  (forall s. V.MVector s a -> ST s ()) %1 ->
+  Mut α (Vector a) %1 ->
+  BO β (Mut α (Vector a))
+{-# INLINE inplace #-}
+inplace = Unsafe.toLinear2 \f (UnsafeAlias v) -> Control.do
+  !() <- unsafeSTToBO $ f $ content $ coerceLin v
+  Control.pure (UnsafeAlias v)
 
 {- | A simple parallel implementation of quicksort.
 It uses a sequential divide-and-conquer when size <8,

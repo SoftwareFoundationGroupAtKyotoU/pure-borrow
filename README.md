@@ -4,10 +4,16 @@ This is `pure-borrow`, a library that realizes Rust-style borrows in Linear
 Haskell in a pure manner.
 See the haddock or publication below for the more information.
 
+## Supported GHC Versions
+
+We support GHC 9.10.2+, but we recommend GHC 9.12.4+, due to subtle compiler bug in older GHC.
+
 ## Known Issues
 
-Due to the bug of linear types in GHC, some program segfaults when evaluated in *interpreter* (see https://gitlab.haskell.org/ghc/ghc/-/issues/26565#note_645783).
-Compiled programs just work as expected with GHC 9.10.2+, so this is issue will only affect you are trying to use GHCi or Eval Plugin of Haskell Language Server.
+Due to the bug of linear types in GHC <9.12.3, some program segfaults when evaluated in *interpreter* with older GHCs (see https://gitlab.haskell.org/ghc/ghc/-/issues/26565#note_645783).
+Compiled programs just work as expected with GHC 9.10.2+, so this issue will only affect you are trying to use GHCi or Eval Plugin of Haskell Language Server.
+If you want to use interpreters, 
+use GHC 9.12.3+.
 
 ## Publication(s)
 

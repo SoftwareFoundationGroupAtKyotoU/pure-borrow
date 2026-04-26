@@ -37,11 +37,10 @@ import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, isClosedTMDeque, n
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Internal
+import Control.Monad.Borrow.Pure.Unsafe (Alias (..), unsafeSystemIOToBO)
 import Data.Coerce (coerce)
 import Data.Foldable qualified as P
 import Data.Function (fix)
-import Data.IORef (IORef, newIORef)
 import Data.List qualified as L
 import Data.Monoid (Alt (..))
 import Data.Ord (Down (..))
@@ -56,15 +55,12 @@ import GHC.Exts qualified as GHC
 import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownNat)
 import Prelude.Linear
-import System.Random (RandomGen)
-import System.Random qualified as R
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as P
 
-data QueuePool a = forall g. (RandomGen g) => QueuePool
+data QueuePool a = QueuePool
   { mine :: !(TMDeque a)
   , others :: !(V.MVector RealWorld (TMDeque a))
-  , gen :: !(IORef g)
   , num :: !Int
   }
 
@@ -80,27 +76,24 @@ consumeTMDQ = GHC.noinline $ Unsafe.toLinear \q -> GHC.unsafePerformIO do
   P.pure ()
 
 newQueuePool ::
-  forall n a α g.
-  (KnownNat n, RandomGen g) =>
-  g ->
+  forall n a α.
+  (KnownNat n) =>
   BO α (V n (Mut α (QueuePool a)), MasterQueuePool a)
-newQueuePool g = unsafeSystemIOToBO do
+newQueuePool = unsafeSystemIOToBO do
   let n = theLength @n
 
   qs <- NonLinear.replicateM n newTMDequeIO
   pools <-
     P.mapM
-      ( \(num, ini, mine, tl, gen) -> do
-          gen <- newIORef gen
+      ( \(num, ini, mine, tl) -> do
           others <- V.unsafeThaw $ V.fromList $ tl <> ini
           P.pure P.$ QueuePool {others, ..}
       )
-      P.$ L.zip5
+      P.$ L.zip4
         [0 ..]
         (L.inits qs)
         qs
         (P.drop 1 $ L.tails qs)
-        (P.take n $ L.unfoldr (Just P.. R.split) g)
   let master = MasterQueuePool $ P.map (mine P.. coerce) pools
   P.pure (V $ V.fromList $ map UnsafeAlias pools, master)
 

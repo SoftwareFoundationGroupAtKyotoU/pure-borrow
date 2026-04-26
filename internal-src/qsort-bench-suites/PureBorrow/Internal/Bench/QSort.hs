@@ -18,21 +18,21 @@ module PureBorrow.Internal.Bench.QSort (
 import Control.Applicative
 import Control.Concurrent (getNumCapabilities)
 import Control.Concurrent.DivideConquer.Linear (qsortDC)
-import qualified Control.Functor.Linear as Control
+import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
-import qualified Control.Syntax.DataFlow as DataFlow
+import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Proxy (Proxy (..))
 import Data.Unrestricted.Linear (dup3)
-import qualified Data.Vector as V
-import qualified Data.Vector.Algorithms.Intro as AI
-import qualified Data.Vector.Mutable.Linear.Borrow as VL
-import qualified Options.Applicative as Opts
+import Data.Vector qualified as V
+import Data.Vector.Algorithms.Intro qualified as AI
+import Data.Vector.Mutable.Linear.Borrow qualified as VL
+import Options.Applicative qualified as Opts
 import Prelude.Linear (unur)
-import qualified Prelude.Linear as PL
+import Prelude.Linear qualified as PL
 import System.Random.Stateful
 import Test.Tasty (askOption, defaultMainWithIngredients)
 import Test.Tasty.Bench hiding (defaultMain)
-import qualified Test.Tasty.Bench as Bench
+import Test.Tasty.Bench qualified as Bench
 import Test.Tasty.Ingredients.Basic (includingOptions)
 import Test.Tasty.Options
 import Text.Read (readMaybe)
@@ -112,7 +112,7 @@ qsortWith (Worksteal p) v =
       (lin, l2, l3) <- dup3 lin
       runBO lin \ @α -> Control.do
         (v, lend) <- Control.pure PL.$ borrow @α (VL.fromVector v l2) l3
-        Control.void PL.$ qsortDC p 128 (mkStdGen 42) v
+        Control.void PL.$ qsortDC p 128 v
         pureAfter (VL.toVector PL.$ reclaim lend)
 
 data SampleSize = SampleSize Int

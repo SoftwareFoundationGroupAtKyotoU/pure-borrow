@@ -19,6 +19,8 @@ data-files:
   dockerfiles/artifact/Dockerfile
   scripts/genplot.gnuplot
 
+tested-with: ghc ==9.10.2 || ==9.12.4 || ==9.14.1
+
 source-repository head
   type: git
   location: https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow
@@ -57,7 +59,6 @@ library
     deepseq,
     hybrid-vectors,
     linear-generics,
-    random,
     stm,
     vector,
     vector-algorithms,
@@ -71,15 +72,21 @@ library
     Control.Monad.Borrow.Pure
     Control.Monad.Borrow.Pure.Affine
     Control.Monad.Borrow.Pure.Affine.Internal
+    Control.Monad.Borrow.Pure.Affine.Unsafe
+    Control.Monad.Borrow.Pure.Clone
+    Control.Monad.Borrow.Pure.Copyable
     Control.Monad.Borrow.Pure.Internal
     Control.Monad.Borrow.Pure.Lifetime
     Control.Monad.Borrow.Pure.Lifetime.Internal
     Control.Monad.Borrow.Pure.Lifetime.Token
     Control.Monad.Borrow.Pure.Lifetime.Token.Internal
+    Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe
     Control.Monad.Borrow.Pure.Ref
+    Control.Monad.Borrow.Pure.Unsafe
     Control.Syntax.DataFlow
     Data.Coerce.Directed
     Data.Comonad.Linear
+    Data.Record.Linear.Experimental
     Data.Ref.Linear
     Data.Ref.Linear.Unlifted
     Data.Unique.Linear
@@ -120,7 +127,6 @@ test-suite pure-borrow-test
     deepseq,
     falsify,
     pure-borrow,
-    random,
     tasty,
     tasty-expected-failure,
     tasty-hunit,
@@ -164,7 +170,7 @@ library qsort-bench-suites
     vector,
     vector-algorithms,
 
-  default-language: Haskell2010
+  default-language: GHC2021
 
 benchmark qsort-bench
   import: defaults
@@ -181,7 +187,7 @@ benchmark qsort-bench
     base >=4.7 && <5,
     pure-borrow:qsort-bench-suites,
 
-  default-language: Haskell2010
+  default-language: GHC2021
 
 library qsort-demo-impl
   import: defaults
@@ -197,7 +203,7 @@ library qsort-demo-impl
     vector,
     vector-algorithms,
 
-  default-language: Haskell2010
+  default-language: GHC2021
 
 executable qsort
   import: defaults
@@ -212,7 +218,7 @@ executable qsort
     base >=4.7 && <5,
     pure-borrow:qsort-demo-impl,
 
-  default-language: Haskell2010
+  default-language: GHC2021
 
 executable convert-qsort-bench-csv
   import: defaults
@@ -231,13 +237,12 @@ executable convert-qsort-bench-csv
     monoidal-containers,
     optparse-applicative,
     pure-borrow,
-    random,
     text,
     unordered-containers,
     vector,
     vector-algorithms,
 
-  default-language: Haskell2010
+  default-language: GHC2021
 
 executable artifact-runner
   import: defaults
@@ -269,7 +274,6 @@ executable artifact-runner
     pure-borrow,
     pure-borrow:qsort-bench-suites,
     pure-borrow:qsort-demo-impl,
-    random,
     tasty,
     template-haskell,
     temporary,
@@ -278,4 +282,4 @@ executable artifact-runner
     vector,
     vector-algorithms,
 
-  default-language: Haskell2010
+  default-language: GHC2021

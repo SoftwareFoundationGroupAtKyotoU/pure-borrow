@@ -15,7 +15,10 @@ module Control.Concurrent.DivideConquer.Utils.OnceChan.Linear.Unlifted (
 ) where
 
 import Control.Monad.Borrow.Pure.Lifetime.Token
-import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
+import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
+  LinearOnly (..),
+  LinearOnlyWitness (..),
+ )
 import GHC.Exts qualified as GHC
 import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe

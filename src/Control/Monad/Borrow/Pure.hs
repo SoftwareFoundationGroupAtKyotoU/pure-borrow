@@ -42,6 +42,8 @@ module Control.Monad.Borrow.Pure (
   Mut,
   Share,
   Lend,
+  coerceShare,
+  shareCoercion,
   borrow,
   borrow_,
   borrowLinearOnly,
@@ -62,11 +64,10 @@ module Control.Monad.Borrow.Pure (
   reborrow,
   joinMut,
   joinLend,
-  Copyable (),
-  copy,
-  copyMut,
-  genericCopyShare,
-  GenericCopyable,
+
+  -- ** Copying and Cloning
+  module Control.Monad.Borrow.Pure.Copyable,
+  module Control.Monad.Borrow.Pure.Clone,
 
   -- ** Splitting aliases
   DistributesAlias (),
@@ -98,13 +99,18 @@ module Control.Monad.Borrow.Pure (
 ) where
 
 import Control.Functor.Linear qualified as Control
+import Control.Monad.Borrow.Pure.Clone
+import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Internal
 import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.Token
 import Control.Monad.Borrow.Pure.Ref
+import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Syntax.DataFlow qualified as DataFlow
+import Data.Coerce (Coercible)
 import Data.Coerce.Directed (upcast)
 import Data.Proxy (Proxy (..))
+import Data.Type.Coercion (Coercion (..))
 import Prelude.Linear
 
 {- $setup
@@ -437,3 +443,11 @@ asksLinearly k = asksLinearlyM $ Control.pure . k
 pureAfter :: ((End α) => a) %1 -> BO α (After α a)
 {-# INLINE pureAfter #-}
 pureAfter a = Control.pure (After a)
+
+coerceShare :: forall b α a. (Coercible a b) => Share α a %1 -> Share α b
+{-# INLINE coerceShare #-}
+coerceShare = coerceLin
+
+shareCoercion :: forall a b α. (Coercible a b) => Coercion (Share α a) (Share α b)
+{-# INLINE shareCoercion #-}
+shareCoercion = Coercion

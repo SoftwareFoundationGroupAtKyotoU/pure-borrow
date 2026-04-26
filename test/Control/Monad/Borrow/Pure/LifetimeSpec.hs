@@ -8,7 +8,7 @@ module Control.Monad.Borrow.Pure.LifetimeSpec (
 
 import Control.DeepSeq (force)
 import Control.Exception (evaluate)
-import Control.Monad.Borrow.Pure.Lifetime.Internal
+import Control.Monad.Borrow.Pure.Lifetime
 import Control.Monad.Borrow.Pure.Lifetime.TypingCases
 import Data.Functor
 import Test.Tasty (TestTree, testGroup)

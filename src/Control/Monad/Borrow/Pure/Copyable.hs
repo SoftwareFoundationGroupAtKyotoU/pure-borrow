@@ -57,8 +57,8 @@ import Prelude.Linear.Unsatisfiable (Unsatisfiable, unsatisfiable)
 class Copyable a where
   copy :: Borrow bk α a %1 -> a
 
-instance (Copyable a) => Copyable (Ur a) where
-  copy (UnsafeAlias (Ur !a)) = Ur $! copy $! UnsafeAlias a
+instance Copyable (Ur a) where
+  copy (UnsafeAlias (Ur !a)) = Ur a
   {-# INLINE copy #-}
 
 instance

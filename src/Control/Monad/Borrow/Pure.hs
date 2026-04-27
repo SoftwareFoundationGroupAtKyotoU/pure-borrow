@@ -1,6 +1,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE QualifiedDo #-}
@@ -44,10 +45,8 @@ module Control.Monad.Borrow.Pure (
   Lend,
   coerceShare,
   shareCoercion,
-  borrow,
-  borrow_,
-  borrowLinearOnly,
   borrowM,
+  borrowLinearlyM,
   sharing',
   sharing,
   (<$~),
@@ -65,6 +64,13 @@ module Control.Monad.Borrow.Pure (
   reborrow,
   joinMut,
   joinLend,
+
+  -- *** Lower-level operators
+  borrow,
+  borrowLinearOnly,
+
+  -- ** Bulk Borrows
+  module Control.Monad.Borrow.Pure.Borrows,
 
   -- ** Copying and Cloning
   module Control.Monad.Borrow.Pure.Copyable,
@@ -100,6 +106,7 @@ module Control.Monad.Borrow.Pure (
 ) where
 
 import Control.Functor.Linear qualified as Control
+import Control.Monad.Borrow.Pure.Borrows
 import Control.Monad.Borrow.Pure.Clone
 import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Internal
@@ -453,9 +460,18 @@ shareCoercion :: forall a b α. (Coercible a b) => Coercion (Share α a) (Share 
 shareCoercion = Coercion
 
 {- |
-A variant of 'borrow' that borrows the resource for the same lifetiem as the ambient 'BO'.
-This is useful when you want to eliminate the ambiguity of the lifetime parameter.
+Borrow a resource linearly for the same lifetime as the ambient 'BO' computation.
+Returns the pair of the mutable borrow to the resource, and 'Lend'er to be invoked later to 'reclaim' the resource at the 'End' of the lifetime.
+
+See also 'borrowLinearlyM'.
+
+If you want to borrow a resource indepdendent of the ambient lifetime, you can use 'borrow' instead.
 -}
 borrowM :: a %1 -> BO α (Mut α a, Lend α a)
 {-# INLINE borrowM #-}
 borrowM !a = asksLinearly \lin -> borrow a lin
+
+-- | A variant of 'borrowM' that does linear allocation first.
+borrowLinearlyM :: (Linearly %1 -> a) %1 -> BO α (Mut α a, Lend α a)
+{-# INLINE borrowLinearlyM #-}
+borrowLinearlyM k = asksLinearlyM $ borrowM . k

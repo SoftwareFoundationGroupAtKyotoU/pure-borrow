@@ -326,15 +326,14 @@ type Lend α = Alias ('Lend α)
 instance (α <= β, a <: b) => Lend α a <: Lend β b where
   subtype = UnsafeSubtype
 
--- | Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim the resource to lend at the 'End' of the lifetime.
+{- |
+Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim the resource to lend at the 'End' of the lifetime.
+
+For typical usage, you should use 'Control.Monad.Borrow.Pure.borrowM' to avoid type ambiguity.
+-}
 borrow :: forall α a. a %1 -> Linearly %1 -> (Mut α a, Lend α a)
 borrow = Unsafe.toLinear2 \ !a !_ ->
   (UnsafeAlias a, UnsafeAlias a)
-
--- | Analogous to 'borrow', but does not return the original 'Lend' to be reclaimed.
-borrow_ :: forall α a. a %1 -> Linearly %1 -> Mut α a
-borrow_ = Unsafe.toLinear2 \ !a !_ ->
-  UnsafeAlias a
 
 -- | Shares a mutable borrow, invalidating the original one.
 share :: Borrow k α a %1 -> Ur (Share α a)

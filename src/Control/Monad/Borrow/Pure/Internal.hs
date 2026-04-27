@@ -70,6 +70,13 @@ askLinearly :: BO α Linearly
 {-# NOINLINE askLinearly #-}
 askLinearly = GHC.noinline $ Control.pure UnsafeLinearly
 
+asksLinearlyM :: (Linearly %1 -> BO α r) %1 -> BO α r
+{-# INLINE asksLinearlyM #-}
+asksLinearlyM k = Control.do
+  lin <- askLinearly
+  !a <- k lin
+  Control.pure a
+
 -- NOTE: We want to use @TypeData@ extension for 'ForBO', but it makes Haddock panic!
 
 type ForBO :: Lifetime -> Type
@@ -507,3 +514,11 @@ instance
 instance GDistributeAlias U1 where
   gdistributeAlias = coerceLin
   {-# INLINE gdistributeAlias #-}
+
+srunBO :: (forall α. BO (α /\ β) (After α a)) %1 -> BO β a
+{-# INLINE srunBO #-}
+srunBO bo = asksLinearlyM \lin ->
+  newLifetime' lin \now -> Control.do
+    (now, f) <- sexecBO bo now
+    Ur end <- Control.pure (endLifetime now)
+    Control.pure (withEnd end f)

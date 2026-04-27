@@ -7,6 +7,7 @@
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeAbstractions #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
@@ -69,9 +70,6 @@ module Control.Monad.Borrow.Pure (
   borrow,
   borrowLinearOnly,
 
-  -- ** Bulk Borrows
-  module Control.Monad.Borrow.Pure.Borrows,
-
   -- ** Copying and Cloning
   module Control.Monad.Borrow.Pure.Copyable,
   module Control.Monad.Borrow.Pure.Clone,
@@ -106,7 +104,6 @@ module Control.Monad.Borrow.Pure (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.Borrows
 import Control.Monad.Borrow.Pure.Clone
 import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Internal
@@ -117,7 +114,6 @@ import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce (Coercible)
 import Data.Coerce.Directed (upcast)
-import Data.Proxy (Proxy (..))
 import Data.Type.Coercion (Coercion (..))
 import Prelude.Linear
 
@@ -267,14 +263,6 @@ scope_ :: Now α %1 -> BO (α /\ β) a %1 -> BO β (Now α, a)
 {-# INLINE scope_ #-}
 scope_ = flip sexecBO
 
-srunBO :: (forall α. Proxy α -> BO (α /\ β) (After α a)) %1 -> BO β a
-{-# INLINE srunBO #-}
-srunBO bo = asksLinearlyM \lin ->
-  newLifetime' lin \now -> Control.do
-    (now, f) <- sexecBO (bo Proxy) now
-    Ur end <- Control.pure (endLifetime now)
-    Control.pure (withEnd end f)
-
 -- | A variant of 'borrow' that obtains 'Linearly' viar 'LinearOnly'.
 borrowLinearOnly :: forall α a. (LinearOnly a) => a %1 -> (Mut α a, Lend α a)
 borrowLinearOnly !a = case withLinearly a of
@@ -335,17 +323,16 @@ sharing' ::
   BO α' (r, Mut α a)
 {-# INLINE sharing' #-}
 sharing' v k = DataFlow.do
-  srunBO \_ ->
-    DataFlow.do
-      (v, lend) <- reborrow v
-      share v & \(Ur v) -> Control.do
-        k v Control.<&> \v -> (,) Control.<$> v Control.<*> upcast (reclaim' lend)
+  srunBO DataFlow.do
+    (v, lend) <- reborrow v
+    share v & \(Ur v) -> Control.do
+      k v Control.<&> \v -> (,) Control.<$> v Control.<*> upcast (reclaim' lend)
 
 reborrowing' ::
   Mut α a %1 ->
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') (After β r)) %1 ->
   BO α' (r, Mut α a)
-reborrowing' v k = srunBO \(Proxy :: Proxy β) -> DataFlow.do
+reborrowing' v k = srunBO DataFlow.do
   (v, lend) <- reborrow v
   Control.do
     v <- k v
@@ -435,13 +422,6 @@ modifyLinearOnlyBO_ v k = DataFlow.do
     let %1 !(mut, lend) = borrowLinearOnly v
     k mut
     Control.pure (reclaim' lend)
-
-asksLinearlyM :: (Linearly %1 -> BO α r) %1 -> BO α r
-{-# INLINE asksLinearlyM #-}
-asksLinearlyM k = Control.do
-  lin <- askLinearly
-  !a <- k lin
-  Control.pure a
 
 asksLinearly :: (Linearly %1 -> r) %1 -> BO α r
 {-# INLINE asksLinearly #-}

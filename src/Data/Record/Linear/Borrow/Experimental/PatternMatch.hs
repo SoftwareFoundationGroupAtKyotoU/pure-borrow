@@ -63,6 +63,11 @@ import GHC.TypeLits (KnownSymbol, Symbol, symbolVal')
 import Prelude.Linear hiding (All)
 import Unsafe.Linear qualified as Unsafe
 
+{- $setup
+
+>>> import Control.Monad.Borrow.Pure.Internal (BorrowKind(..))
+-}
+
 {- |
 @'RecordLabel' r f a@ witnesses that the record type @r@ has a field named @f@ of type @a@.
 Intended to be constructed with @OverloadedLabels@ extension, so that you can construct it by @#f@ syntax when the field @f@ of @a@ is imported in the current scope.
@@ -102,20 +107,26 @@ First, we need to enable @OverloadedLabels@ extension to construct 'RecordLabel'
 
 First, we just want to divide into all the fields, in arbitrary order:
 
->>> :{
-mutStrs :: Mut α (Vector String)
-mutBool :: Mut α (Ref Bool)
-mutInt :: Mut α (Ref Int)
-(mutStrs, mutBool, mutInt) = mutRec .@ (#strs, #bool, #int)
+>>> (mutStrs, mutBool, mutInt) = mutRec .@ (#strs, #bool, #int)
+>>> :t mutStrs
+mutStrs :: Borrow 'Mut α (Vector String)
+
+>>> :t mutBool
+mutBool :: Borrow 'Mut α (Ref Bool)
+
+>>> :t mutInt
+mutInt :: Borrow 'Mut α (Ref Int)
+
 :}
 
 Or, we can just divide into some of the fields (say, @bool@ and @strs@):
 
->>> :{
-mutStrs :: Mut α (Vector String)
-mutBool :: Mut α (Ref Bool)
-(mutStrs, mutBool) = mutRec .@ (#strs, #bool)
-:}
+>>> (mutStrs, mutBool) = mutRec .@ (#strs, #bool)
+>>> :t mutStrs
+mutStrs :: Borrow 'Mut α (Vector String)
+
+>>> :t mutBool
+mutBool :: Borrow 'Mut α (Ref Bool)
 
 Specifying the same field more than once results in a type error:
 

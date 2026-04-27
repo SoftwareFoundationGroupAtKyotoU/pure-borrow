@@ -142,8 +142,6 @@ And fields not listed within the eliminator are not accessible after the split.
 The examples so far uses tuples as eliminators, but you can also use 'RecordLabels'  as follows:
 
 >>> :{
-mutStrs :: Mut α (Vector String)
-mutBool :: Mut α (Ref Bool)
 mutStrs :#- mutBool :#- RNil = mutRec .@ #strs :#- #bool :#- RNil
 :}
 

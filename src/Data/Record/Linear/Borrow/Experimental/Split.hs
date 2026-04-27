@@ -32,7 +32,11 @@ module Data.Record.Linear.Borrow.Experimental.Split (
 
   -- * Single Field Accessor
   (.#),
+
+  -- * #split# Splitting a record borrow into pieces
   -- $record-splitting
+
+  -- ** APIs
   splitRecord,
   SplitRecord (),
   SplittableRecord (),
@@ -110,7 +114,8 @@ type family Delete l ls where
   Delete l ('(l', v) ': ls) = '(l', v) ': Delete l ls
 
 {- $record-splitting
-= #split# Splitting a record borrow into pieces
+
+== Overview
 
 '(.#)' is handy when you need only one field of a borrowed record, but not applicable when you need to access more than one fields.
 For that purpose, we provide 'SplitRecord' machinery and associated combinators '(-#)', '(+#)', and '(!#)' for splitting a borrow of a record into borrows of its fields.
@@ -168,8 +173,6 @@ otherFieldBor = restSplit '!#' #otherField
 @
 
 '(!#)' is analogous to '(.#)', but it acts on 'SplitRecord' instead of borrow of a record.
-
-== APIs
 -}
 
 {- |

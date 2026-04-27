@@ -35,6 +35,8 @@ module Data.Record.Linear.Borrow.Experimental.PatternMatch (
 
   -- * Single Field Accessor
   (.#),
+
+  -- * #split# Splitting a record borrow into pieces
   -- $record-splitting
 
   -- ** APIs
@@ -75,7 +77,7 @@ data RecordLabel' r fldVal where
   RecLab :: forall field r a. (HasField field r a) => RecordLabel' r '(field, a)
 
 {- $record-splitting
-= #split# Splitting a record borrow into pieces
+== Overview
 
 '(.#)' is handy when you need only one field of a borrowed record, but not applicable when you need to access more than one fields.
 For that purpose, we provide '(.@)' operator for splitting a borrow of a record into FieldBorrows of its fields.

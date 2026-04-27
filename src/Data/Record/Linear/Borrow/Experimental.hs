@@ -23,7 +23,7 @@
 An experimental module for splitting a borrow of a record.
 The API is subject to future change.
 -}
-module Data.Record.Linear.Experimental (
+module Data.Record.Linear.Borrow.Experimental (
   RecordLabel (),
   (.#),
   splitRecord,
@@ -41,7 +41,7 @@ import GHC.Base (Multiplicity (..), TYPE, Type)
 import GHC.OverloadedLabels (IsLabel (..))
 import GHC.Records (HasField (..))
 import GHC.TypeError (ErrorMessage (..), Unsatisfiable)
-import GHC.TypeLits (Symbol, TypeError)
+import GHC.TypeLits (KnownSymbol, SSymbol, Symbol, TypeError)
 import Prelude.Linear hiding (All)
 import Prelude.Linear.Generically qualified as GL
 import Unsafe.Linear qualified as Unsafe

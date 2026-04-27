@@ -63,6 +63,9 @@ import System.IO.Linear qualified as L
 import Unsafe.Coerce (unsafeCoerce#)
 import Unsafe.Linear qualified as Unsafe
 
+-- NOTE: NOINLINE here is REALLY important, otherwise GHC will inline 'UnsafeLinearly' and common subexpression elimination
+-- causes severe soundness bug that the same expression reuses the same
+-- linear resource and sometimes SEGV.
 askLinearly :: BO α Linearly
 {-# NOINLINE askLinearly #-}
 askLinearly = GHC.noinline $ Control.pure UnsafeLinearly
@@ -206,7 +209,6 @@ unsafePerformEvaluateUndupableBO (BO f) = runBO# \s ->
 
 -- | Run two computations in parallel, returning their results as a tuple.
 parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
-{-# NOINLINE parBO #-}
 parBO = Unsafe.toLinear2 \a b ->
   BO $
     Unsafe.toLinear \s ->

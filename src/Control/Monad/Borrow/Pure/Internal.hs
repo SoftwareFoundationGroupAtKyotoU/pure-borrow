@@ -422,7 +422,7 @@ genericSplit =
 
 unsafeMapAlias :: (a %1 -> b) -> Alias ak a %1 -> Alias ak b
 {-# INLINE unsafeMapAlias #-}
-unsafeMapAlias f = coerceLin f
+unsafeMapAlias f = coerceLin (\x -> let !y = f x in y)
 
 instance (GenericDistributesAlias f) => DistributesAlias (Generically1 f) where
   {-# INLINE split_ #-}

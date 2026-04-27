@@ -86,7 +86,8 @@ library
     Control.Syntax.DataFlow
     Data.Coerce.Directed
     Data.Comonad.Linear
-    Data.Record.Linear.Borrow.Experimental
+    Data.Record.Linear.Borrow.Experimental.PatternMatch
+    Data.Record.Linear.Borrow.Experimental.Split
     Data.Ref.Linear
     Data.Ref.Linear.Unlifted
     Data.Unique.Linear

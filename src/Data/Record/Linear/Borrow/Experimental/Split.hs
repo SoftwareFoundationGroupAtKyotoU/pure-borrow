@@ -20,10 +20,13 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 {- |
-An experimental module for splitting a borrow of a record.
+An experimental module for splitting a borrow of a record gradually and partially.
+To be used when you need to access more than one fields of a borrowed record, and borrow-out each field as you go.
+If you can just pattern match on the record borrow once, consider using "Data.Record.Linear.Borrow.Experimental.PatternMatch".
+
 The API is subject to future change.
 -}
-module Data.Record.Linear.Borrow.Experimental (
+module Data.Record.Linear.Borrow.Experimental.Split (
   -- * Label Type
   RecordLabel (),
 
@@ -45,7 +48,7 @@ import GHC.Base (Multiplicity (..), TYPE, Type)
 import GHC.OverloadedLabels (IsLabel (..))
 import GHC.Records (HasField (..))
 import GHC.TypeError (ErrorMessage (..), Unsatisfiable)
-import GHC.TypeLits (KnownSymbol, SSymbol, Symbol, TypeError)
+import GHC.TypeLits (Symbol, TypeError)
 import Generics.Linear.TH
 import Prelude.Linear hiding (All)
 import Prelude.Linear.Generically qualified as GL

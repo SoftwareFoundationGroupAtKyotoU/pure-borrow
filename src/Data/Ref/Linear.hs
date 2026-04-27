@@ -17,7 +17,7 @@ module Data.Ref.Linear (
 ) where
 
 import Control.Monad.Borrow.Pure.Affine
-import Control.Monad.Borrow.Pure.Affine.Unsafe (Aff (..))
+import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
 import Control.Monad.Borrow.Pure.Lifetime.Token
 import Control.Monad.Borrow.Pure.Lifetime.Token.Internal (
   LinearOnly (..),
@@ -52,7 +52,7 @@ instance (PL.Dupable a) => PL.Dupable (Ref a) where
   {-# INLINE dup2 #-}
 
 instance Affine (Ref a) where
-  aff = Unsafe.toLinear UnsafeAff
+  aff = unsafeAff
 
 atomicModify_ :: (a %1 -> a) %1 -> Ref a %1 -> Ref a
 {-# INLINE atomicModify_ #-}

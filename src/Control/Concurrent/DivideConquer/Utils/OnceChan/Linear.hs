@@ -17,7 +17,7 @@ module Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (
 
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear.Unlifted
 import Control.Monad.Borrow.Pure.Affine
-import Control.Monad.Borrow.Pure.Affine.Unsafe (Aff (..))
+import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
 import Control.Monad.Borrow.Pure.Internal
 import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnly (..),
@@ -48,7 +48,7 @@ instance LinearOnly (Source a) where
   linearOnly = UnsafeLinearOnly
 
 instance Affine (Sink a) where
-  aff = Unsafe.toLinear UnsafeAff
+  aff = unsafeAff
 
 instance Consumable (Sink a) where
   consume = Unsafe.toLinear \(Sink !_) -> ()
@@ -57,7 +57,7 @@ instance Consumable (Source a) where
   consume = Unsafe.toLinear \(Source !_) -> ()
 
 instance Affine (Source a) where
-  aff = Unsafe.toLinear UnsafeAff
+  aff = unsafeAff
 
 take :: Source a %1 -> BO α a
 {-# INLINE take #-}

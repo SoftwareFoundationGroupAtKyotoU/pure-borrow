@@ -24,8 +24,12 @@ An experimental module for splitting a borrow of a record.
 The API is subject to future change.
 -}
 module Data.Record.Linear.Borrow.Experimental (
+  -- * Label Type
   RecordLabel (),
+
+  -- * Single Field Accessor
   (.#),
+  -- $record-splitting
   splitRecord,
   SplitRecord (),
   SplittableRecord (),
@@ -42,6 +46,7 @@ import GHC.OverloadedLabels (IsLabel (..))
 import GHC.Records (HasField (..))
 import GHC.TypeError (ErrorMessage (..), Unsatisfiable)
 import GHC.TypeLits (KnownSymbol, SSymbol, Symbol, TypeError)
+import Generics.Linear.TH
 import Prelude.Linear hiding (All)
 import Prelude.Linear.Generically qualified as GL
 import Unsafe.Linear qualified as Unsafe
@@ -49,6 +54,8 @@ import Unsafe.Linear qualified as Unsafe
 {- |
 @'RecordLabel' r field a@ witnesses that the record type @r@ has a field named @field@ of type @a@.
 To be used as a label argument for '(.#)', '(-#)', '(+#)', and '(!#)'.
+
+The record label is usually constructed by overloaded labels as `#field` under `OverloadedLabels` extension.
 -}
 type RecordLabel :: TYPE rep -> Symbol -> Type -> Type
 data RecordLabel r field a where
@@ -62,7 +69,23 @@ instance (HasField field r a, field ~ field') => IsLabel field (RecordLabel r fi
 Borrow-level field accessor.
 @record '.#' #field@ returns a borrow of the @field@ of the @record@ of the same kind.
 
-For more complex, partial splitting of a record, see 'splitRecord', '(-#)', '(+#)', and '(!#)'.
+@
+{\-# LANGUAGE OverloadedLabels #-\}
+data MyRecord = MyRecord {field :: Ref Int, otherField :: Vector String}
+
+recordBor :: 'Borrow' bk α MyRecord
+recordBor = ...
+
+fieldOfRecordBor :: 'Borrow' bk α (Ref Int)
+fieldOfRecordBor = recordBor '.#' #field
+
+otherFieldOfRecordBor :: 'Borrow' bk α (Vector String)
+otherFieldOfRecordBor = recordBor '.#' #otherField
+@
+
+In above example, we annotate type of the divided field borows for clarity, but the type can be inferred by the record type and labels.
+
+For more complex, partial splitting of a record, see [Splitting a record borrow into pieces]("Data.Record.Linear.Borrow.Experimental#split") for more detail.
 -}
 (.#) ::
   forall field r a k α.
@@ -82,6 +105,69 @@ type family Delete l ls where
   Delete _ '[] = '[]
   Delete l ('(l, v) ': ls) = ls
   Delete l ('(l', v) ': ls) = '(l', v) ': Delete l ls
+
+{- $record-splitting
+= #split# Splitting a record borrow into pieces
+
+'(.#)' is handy when you need only one field of a borrowed record, but not applicable when you need to access more than one fields.
+For that purpose, we provide 'SplitRecord' machinery and associated combinators '(-#)', '(+#)', and '(!#)' for splitting a borrow of a record into borrows of its fields.
+
+In such cases, however, we must ensure that each field of a record borrow is split out @at most once@.
+Here, @'SplitRecord' a bk α fs@ comes int play: it is representationally same as @'Borrow' bk α a@, but only the fields in @fs@ remains unsplit.
+That is, a field is borrowed by splitting combinator only if it remains in @fs@ type parameter, and the field is removed from @fs@ after splitting.
+
+A record type can be converted into a 'SplitRecord' by 'splitRecord' function, which requires 'SplittableRecord' instance for the record type.
+This can be derived generically by deriving 'GL.Generic' and then 'SplittableRecord' for the record type, as follows:
+
+@
+{\-# LANGUAGE TemplateHaskell, DataKinds, TypeFamilies, LinearTypes #-\}
+import Generics.Linear.TH ('deriveGeneric')
+
+data MyRecord = MyRecord {field :: 'Data.Ref.Linear.Ref' 'Int', otherField :: 'Data.Vector.Mutable.Linear.Borrow.Vector' 'String'}
+
+'deriveGeneric' ''MyRecord
+
+deriving anyclass instance 'SplittableRecord' MyRecord
+@
+
+Once we have 'SplittableRecord' instance derived, we can now split a record borrow partially, step-by-step using '(-#)', '(+#)', and '(!#)' combinators.
+Through out this documentation, suppose we have the following record borrow in scope:
+
+@
+recordBor :: 'Mut' α MyRecord
+
+splitRec ::
+  'SplitRecord' MyRecord v'Mut' α
+      '[ '("field", '( 'One, Ref Int)), '("otherField", '( 'One, Vector String))]
+splitRec = splitRecord recordBor
+@
+
+== Borrows-out a linear field
+
+When you want to borrow-out a single linear field from the record, you can use '(-#)' combinator, as follows:
+
+@
+fieldBor :: 'Mut' α (Ref Int)
+restBor :: 'SplitRecord' MyRecord Mut α '[ '(otherField, '( 'One, Vector String)))]
+(fieldBor, restSplit) = splitRec '-#' #field
+@
+
+Here, the borrow to the @field@ of @splitRec@ is borrowed out as @fieldBor@, and the remaining borrow is represented by @restSplit@, where only @otherField@ remain unsplit.
+We can no longer borrow-out @field@ from @restSplit@ by the type constraints.
+
+== Consuming a split record
+
+When you no longer need to borrow any field of a split record, you can just 'consume' a split record, or call '(!#)' to borrow out a single field from the split record and discard the rest of the record borrow, as follows:
+
+@
+otherFieldBor :: Mut α (Vector String)
+otherFieldBor = restSplit '!#' #otherField
+@
+
+'(!#)' is analogous to '(.#)', but it acts on 'SplitRecord' instead of borrow of a record.
+
+== APIs
+-}
 
 {- |
 @'SplitRecord' a bk α fs@ represents a borrow of a value of type @a@ of borrow kind @bk@ (i.e. 'Share' or 'Mut') for lifetime @α@ with @fs@ remains unsplit.
@@ -220,3 +306,9 @@ Mnenonic: '(+#)' you can use nonlinear field _more_ (@+@) than once.
 {-# INLINE (+#) #-}
 
 infix 9 -#, +#, !#
+
+data Hoge = Hoge {foo :: Int, bar :: Ur String, buz :: Bool}
+
+deriveGeneric ''Hoge
+
+deriving anyclass instance SplittableRecord Hoge

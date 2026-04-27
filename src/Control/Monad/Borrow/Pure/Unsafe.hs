@@ -31,6 +31,7 @@ module Control.Monad.Borrow.Pure.Unsafe (
   unsafeSystemIOToBO,
   unsafeSTToBO,
   unsafeBOToST,
+  unsafeUnBO,
 ) where
 
 import Control.Monad.Borrow.Pure.Internal

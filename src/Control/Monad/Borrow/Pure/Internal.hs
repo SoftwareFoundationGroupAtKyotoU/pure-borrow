@@ -77,6 +77,10 @@ data ForBO α
 -}
 newtype BO α a = BO (State# (ForBO α) %1 -> (# State# (ForBO α), a #))
 
+unsafeUnBO :: BO α a %1 -> State# (ForBO α) %1 -> (# State# (ForBO α), a #)
+{-# INLINE unsafeUnBO #-}
+unsafeUnBO (BO f) = f
+
 assocRBO :: BO ((α /\ β) /\ γ) a %1 -> BO (α /\ (β /\ γ)) a
 {-# INLINE assocRBO #-}
 assocRBO = unsafeCastBO
@@ -203,17 +207,16 @@ unsafePerformEvaluateUndupableBO (BO f) = runBO# \s ->
 -- | Run two computations in parallel, returning their results as a tuple.
 parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
 {-# NOINLINE parBO #-}
-parBO a b = GHC.noinline
-  -- TODO: define explicit rules to when to invoke noDuplicate#.
-  -- TODO: we want to avoid 'unsafePerformEvaluateUndupableBO',
-  -- but it is not clear how to do it...
-  BO
-  \s -> case Unsafe.toLinear GHC.noDuplicate# s of
-    s -> case Unsafe.toLinear2 GHC.spark# (unsafePerformEvaluateUndupableBO a) s of
-      (# s, a #) -> case Unsafe.toLinear2 GHC.spark# (unsafePerformEvaluateUndupableBO b) s of
-        (# s, b #) -> case Unsafe.toLinear2 GHC.seq# a s of
-          (# s, !a #) -> case Unsafe.toLinear2 GHC.seq# b s of
-            (# s, !b #) -> (# s, (a, b) #)
+parBO = Unsafe.toLinear2 \a b ->
+  BO $
+    Unsafe.toLinear \s ->
+      case Unsafe.toLinear2 GHC.spark# (case unsafeUnBO a (GHC.noDuplicate# s) of (# _, a #) -> GHC.lazy a) s of
+        (# _, a #) ->
+          case Unsafe.toLinear2 GHC.spark# (case unsafeUnBO b (GHC.noDuplicate# s) of (# _, b #) -> GHC.lazy b) s of
+            (# _, b #) ->
+              case Unsafe.toLinear2 GHC.seq# a s of
+                (# s, !a #) -> case Unsafe.toLinear2 GHC.seq# b s of
+                  (# s, !b #) -> (# s, (a, b) #)
 
 evaluate :: a %1 -> BO α a
 {-# INLINE evaluate #-}

@@ -168,7 +168,7 @@ The following example code initializes a mutable vector, modifies it coordinate-
       mvec <- VL.modify 0 (* 4) mvec
       let !(Ur svec) = share mvec
       Ur n <- VL.copyAt 0 svec
-      pureAfter (n, unur $ VL.toList (reclaim @α lend))
+      pureAfter (n, unur $ VL.toList (reclaim lend))
 :}
 
 >>> example1
@@ -196,7 +196,7 @@ This is where pure concurrency with 'parBO' comes in:
           (consume Control.<$> VL.modify 1 (+ 5) mvec2)
       let !(Ur svec) = share mvec
       Ur n <- VL.copyAt 0 svec
-      pureAfter (n, unur $ VL.toList (reclaim @α lend))
+      pureAfter (n, unur $ VL.toList (reclaim lend))
 :}
 
 >>> example2
@@ -228,7 +228,7 @@ This is where our /borrow/-based /affine/ API shines, which allows you to write 
             (VL.modify 1 (+ 5) mvec2)
       let !(Ur svec) = share mvec -- (!!!)
       Ur n <- VL.copyAt 0 svec
-      pureAfter (n, unur $ VL.toList (reclaim @α lend))
+      pureAfter (n, unur $ VL.toList (reclaim lend))
 :}
 
 >>> example2

@@ -117,8 +117,6 @@ mutBool :: Borrow 'Mut α (Ref Bool)
 >>> :t mutInt
 mutInt :: Borrow 'Mut α (Ref Int)
 
-:}
-
 Or, we can just divide into some of the fields (say, @bool@ and @strs@):
 
 >>> (mutStrs, mutBool) = mutRec .@ (#strs, #bool)
@@ -147,6 +145,7 @@ The examples so far uses tuples as eliminators, but you can also use 'RecordLabe
 mutStrs :: Mut α (Vector String)
 mutBool :: Mut α (Ref Bool)
 mutStrs :#- mutBool :#- RNil = mutRec .@ #strs :#- #bool :#- RNil
+:}
 
 'RecordLabels' will be mapped to 'FieldBorrows' after the split, and you can also use '(:#-)' and 'RNil' for pattern-matching.
 

@@ -205,6 +205,8 @@ parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
 {-# NOINLINE parBO #-}
 parBO a b = GHC.noinline
   -- TODO: define explicit rules to when to invoke noDuplicate#.
+  -- TODO: we want to avoid 'unsafePerformEvaluateUndupableBO',
+  -- but it is not clear how to do it...
   BO
   \s -> case Unsafe.toLinear GHC.noDuplicate# s of
     s -> case Unsafe.toLinear2 GHC.spark# (unsafePerformEvaluateUndupableBO a) s of

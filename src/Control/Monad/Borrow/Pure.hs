@@ -47,6 +47,7 @@ module Control.Monad.Borrow.Pure (
   borrow,
   borrow_,
   borrowLinearOnly,
+  borrowM,
   sharing',
   sharing,
   (<$~),
@@ -114,7 +115,7 @@ import Data.Type.Coercion (Coercion (..))
 import Prelude.Linear
 
 {- $setup
->>> :set -XBlockArguments -XLinearTypes -XNoImplicitPrelude -XImpredicativeTypes -XTypeAbstractions -XQualifiedDo
+>>> :set -XBlockArguments -XLinearTypes -XNoImplicitPrelude -XImpredicativeTypes -XQualifiedDo
 >>> :m -Prelude
 >>> import Prelude.Linear
 >>> import qualified Data.Vector.Mutable.Linear.Borrow as VL
@@ -135,7 +136,6 @@ You need the following language extensions to use this module:
     * LinearTypes
     * NoImplicitPrelude
     * ImpredicativeTypes
-    * TypeAbstractions
     * QualifiedDo
 
 ...and import theese modules:
@@ -154,8 +154,8 @@ The following example code initializes a mutable vector, modifies it coordinate-
   example1 = linearly \lin -> DataFlow.do
     (lin, lin') <- dup lin
     vec <- VL.fromList [0, 1, 2] lin
-    runBO lin' \ @α -> Control.do
-      let !(mvec, lend) = borrowLinearOnly vec
+    runBO lin' Control.do
+      (mvec, lend) <- borrowM vec
       mvec <- VL.modify 0 (+ 3) mvec
       mvec <- VL.modify 2 (+ 5) mvec
       mvec <- VL.modify 0 (* 4) mvec
@@ -177,8 +177,8 @@ This is where pure concurrency with 'parBO' comes in:
   example2 = linearly \lin -> DataFlow.do
     (lin, lin') <- dup lin
     vec <- VL.fromList [0, 1, 2] lin
-    runBO lin' \ @α -> Control.do
-      let !(mvec, lend) = borrowLinearOnly vec
+    runBO lin' Control.do
+      (mvec, lend) <- borrowM vec
       let !(mvec1, mvec2) = VL.splitAt 1 mvec -- (*)
       (mvec, ()) <-
         parBO
@@ -206,8 +206,8 @@ This is where our /borrow/-based /affine/ API shines, which allows you to write 
   example3 = linearly \lin -> DataFlow.do
     (lin, lin') <- dup lin
     vec <- VL.fromList [0, 1, 2] lin
-    runBO lin' \ @α -> Control.do
-      let !(mvec, lend) = borrowLinearOnly vec
+    runBO lin' Control.do
+      (mvec, lend) <- borrowM vec
       -- (!)
       mvec <- reborrowing_ mvec \mvec -> Control.do
         let !(mvec1, mvec2) = VL.splitAt 1 mvec
@@ -451,3 +451,11 @@ coerceShare = coerceLin
 shareCoercion :: forall a b α. (Coercible a b) => Coercion (Share α a) (Share α b)
 {-# INLINE shareCoercion #-}
 shareCoercion = Coercion
+
+{- |
+A variant of 'borrow' that borrows the resource for the same lifetiem as the ambient 'BO'.
+This is useful when you want to eliminate the ambiguity of the lifetime parameter.
+-}
+borrowM :: a %1 -> BO α (Mut α a, Lend α a)
+{-# INLINE borrowM #-}
+borrowM !a = asksLinearly \lin -> borrow a lin

@@ -1,7 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeAbstractions #-}
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
@@ -22,12 +21,11 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Proxy (Proxy (..))
-import Data.Unrestricted.Linear (dup3)
 import Data.Vector qualified as V
 import Data.Vector.Algorithms.Intro qualified as AI
 import Data.Vector.Mutable.Linear.Borrow qualified as VL
 import Options.Applicative qualified as Opts
-import Prelude.Linear (unur)
+import Prelude.Linear (dup, unur)
 import Prelude.Linear qualified as PL
 import System.Random.Stateful
 import Test.Tasty (askOption, defaultMainWithIngredients)
@@ -93,25 +91,25 @@ qsortWith IntroSort v = V.modify AI.sort v
 qsortWith (Parallel budget) v =
   unur PL.$ linearly \lin ->
     DataFlow.do
-      (lin, l2, l3) <- dup3 lin
+      (lin, l2) <- dup lin
       runBO lin Control.do
-        (v, lend) <- Control.pure PL.$ borrow (VL.fromVector v l2) l3
+        (v, lend) <- borrowM (VL.fromVector v l2)
         VL.qsort budget v
         Control.pure PL.$ VL.toVector Control.<$> reclaim' lend
 qsortWith Sequential v =
   unur PL.$ linearly \lin ->
     DataFlow.do
-      (lin, l2, l3) <- dup3 lin
-      runBO lin \ @α -> Control.do
-        (v, lend) <- Control.pure PL.$ borrow @α (VL.fromVector v l2) l3
+      (lin, l2) <- dup lin
+      runBO lin Control.do
+        (v, lend) <- borrowM (VL.fromVector v l2)
         VL.qsort 0 v
         pureAfter (VL.toVector PL.$ reclaim lend)
 qsortWith (Worksteal p) v =
   unur PL.$ linearly \lin ->
     DataFlow.do
-      (lin, l2, l3) <- dup3 lin
-      runBO lin \ @α -> Control.do
-        (v, lend) <- Control.pure PL.$ borrow @α (VL.fromVector v l2) l3
+      (lin, l2) <- dup lin
+      runBO lin Control.do
+        (v, lend) <- borrowM (VL.fromVector v l2)
         Control.void PL.$ qsortDC p 128 v
         pureAfter (VL.toVector PL.$ reclaim lend)
 

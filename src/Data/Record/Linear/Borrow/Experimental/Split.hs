@@ -88,7 +88,7 @@ otherFieldOfRecordBor = recordBor '.#' #otherField
 
 In above example, we annotate type of the divided field borows for clarity, but the type can be inferred by the record type and labels.
 
-For more complex, partial splitting of a record, see [Splitting a record borrow into pieces]("Data.Record.Linear.Borrow.Experimental#split") for more detail.
+For more complex, partial splitting of a record, see [Splitting a record borrow into pieces](#split) for more detail.
 -}
 (.#) ::
   forall field r a k α.

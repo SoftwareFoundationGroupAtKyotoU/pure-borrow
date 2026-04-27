@@ -9,6 +9,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeAbstractions #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -29,6 +30,8 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
   foldBorrow,
   forReborrowing,
   forReborrowing_,
+  GenericFoldable,
+  genericFoldMap,
 ) where
 
 import Control.Functor.Linear qualified as Control
@@ -36,12 +39,17 @@ import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Affine
 import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
 import Control.Monad.Borrow.Pure.Unsafe
+import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Bifunctor.Linear qualified as Bi
 import Data.Coerce.Directed
 import Data.Functor.Linear qualified as Data
 import Data.Kind
+import Data.List.NonEmpty.Linear (NonEmpty)
+import Data.List.NonEmpty.Linear qualified as LNE
 import Data.Monoid (Ap (..))
+import Generics.Linear
 import Prelude.Linear hiding (foldMap)
+import Prelude.Linear qualified as PL
 import Unsafe.Linear qualified as Unsafe
 
 type Borrows :: BorrowKind -> Lifetime -> [Type] -> Type
@@ -164,3 +172,58 @@ forReborrowing_ bor t k = Control.do
 unSingleton :: Borrows bk α '[x] %1 -> Borrow bk α x
 {-# INLINE unSingleton #-}
 unSingleton = \case (bor :- BNil) -> bor
+
+instance Foldable [] where
+  foldMap = PL.foldMap
+  {-# INLINE foldMap #-}
+
+instance Foldable Maybe where
+  foldMap f = maybe mempty f
+  {-# INLINE foldMap #-}
+
+instance (Consumable e) => Foldable ((,) e) where
+  foldMap f = uncurry lseq . Bi.bimap consume f
+  {-# INLINE foldMap #-}
+
+instance (Consumable e) => Foldable (Either e) where
+  foldMap f = either ((`lseq` mempty) . consume) f
+  {-# INLINE foldMap #-}
+
+instance Foldable NonEmpty where
+  foldMap f = foldMap f . LNE.toList
+  {-# INLINE foldMap #-}
+
+instance Foldable U1 where
+  foldMap _f = \U1 -> mempty
+  {-# INLINE foldMap #-}
+
+instance Foldable V1 where
+  foldMap _ = \case {}
+  {-# INLINE foldMap #-}
+
+instance (Foldable f) => Foldable (M1 i c f) where
+  foldMap f = coerceLin $ foldMap @f f
+  {-# INLINE foldMap #-}
+
+instance (Foldable f) => Foldable (MP1 m f) where
+  foldMap f (MP1 x) = foldMap f x
+  {-# INLINE foldMap #-}
+
+instance (Foldable f, Foldable g) => Foldable (f :*: g) where
+  foldMap f (x :*: y) = foldMap f x <> foldMap f y
+
+instance (Foldable f, Foldable g) => Foldable (f :+: g) where
+  foldMap f = \case
+    L1 x -> foldMap f x
+    R1 y -> foldMap f y
+  {-# INLINE foldMap #-}
+
+type GenericFoldable t = (Generic1 t, Foldable (Rep1 t))
+
+genericFoldMap :: (GenericFoldable t, Monoid w) => (a %1 -> w) -> t a %1 -> w
+{-# INLINE genericFoldMap #-}
+genericFoldMap f = foldMap f . from1
+
+instance (GenericFoldable t) => Foldable (Generically1 t) where
+  foldMap f = genericFoldMap f . (\(Generically1 x) -> x)
+  {-# INLINE foldMap #-}

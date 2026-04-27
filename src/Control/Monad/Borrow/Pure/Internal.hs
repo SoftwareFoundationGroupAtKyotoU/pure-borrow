@@ -420,7 +420,7 @@ genericSplit =
     . gdistributeAlias @(Rep1 f)
     . unsafeMapAlias from1
 
-unsafeMapAlias :: (a %1 -> b) -> Alias ak a %1 -> Alias ak b
+unsafeMapAlias :: (a %1 -> b) %1 -> Alias ak a %1 -> Alias ak b
 {-# INLINE unsafeMapAlias #-}
 unsafeMapAlias f = coerceLin (\x -> let !y = f x in y)
 

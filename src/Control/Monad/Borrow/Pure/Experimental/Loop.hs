@@ -48,6 +48,7 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Experimental.Borrows
+import Control.Monad.Borrow.Pure.Experimental.Reborrowable
 import Control.Monad.Borrow.Pure.Unsafe
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Bifunctor.Linear qualified as Bi

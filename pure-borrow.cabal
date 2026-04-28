@@ -77,6 +77,7 @@ library
     Control.Monad.Borrow.Pure.Copyable
     Control.Monad.Borrow.Pure.Experimental.Borrows
     Control.Monad.Borrow.Pure.Experimental.Loop
+    Control.Monad.Borrow.Pure.Experimental.Reborrowable
     Control.Monad.Borrow.Pure.Internal
     Control.Monad.Borrow.Pure.Lifetime
     Control.Monad.Borrow.Pure.Lifetime.Internal

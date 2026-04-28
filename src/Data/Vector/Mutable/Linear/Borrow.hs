@@ -60,7 +60,6 @@ import Control.Monad.Borrow.Pure.Unsafe
 import Control.Monad.Borrow.Pure.Utils
 import Control.Monad.ST.Strict (ST)
 import Control.Syntax.DataFlow qualified as DataFlow
-import Data.Coerce.Directed (upcast)
 import Data.Function qualified as NonLinear
 import Data.Functor.Linear qualified as Data
 import Data.IntSet qualified as IntSet

@@ -1,7 +1,10 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ExplicitNamespaces #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PartialTypeSignatures #-}
@@ -23,30 +26,42 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
   forReborrowingN,
   forReborrowingNOf_,
   forReborrowingN_,
+  Fold,
   Foldable (..),
+  IndexedFold,
+  ifoldMapDefaultOf,
+  FoldableWithIndex (..),
   traverse_,
   for_,
-  foldBorrowOf,
-  foldBorrow,
+  toListOf,
+  toList,
   forReborrowing,
   forReborrowing_,
+  foldBorrow,
+  foldBorrowOf,
   GenericFoldable,
   genericFoldMap,
+  ifoldMapDefault,
 ) where
 
+import Control.Functor.Linear (runState)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Affine
 import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
 import Control.Monad.Borrow.Pure.Unsafe
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
+import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Bifunctor.Linear qualified as Bi
 import Data.Coerce.Directed
 import Data.Functor.Linear qualified as Data
+import Data.HashMap.Mutable.Linear qualified as LHM
 import Data.Kind
 import Data.List.NonEmpty.Linear (NonEmpty)
 import Data.List.NonEmpty.Linear qualified as LNE
 import Data.Monoid (Ap (..))
+import Data.Tuple.Linear (swap)
+import Data.Vector.Mutable.Linear qualified as LV
 import Generics.Linear
 import Prelude.Linear hiding (foldMap)
 import Prelude.Linear qualified as PL
@@ -93,6 +108,30 @@ type Fold s a = forall w. (Monoid w) => (a %1 -> w) -> s %1 -> w
 -- See https://github.com/tweag/linear-base/issues/190 for the discussion.
 class Foldable t where
   foldMap :: (Monoid w) => (a %1 -> w) -> t a %1 -> w
+
+type IndexedFold i s a = forall w. (Monoid w) => (i %1 -> a %1 -> w) -> s %1 -> w
+
+class (Foldable t) => FoldableWithIndex i t | t -> i where
+  ifoldMap :: (Monoid w) => (i %1 -> a %1 -> w) -> t a %1 -> w
+  default ifoldMap ::
+    (Foldable t, i ~ Int, Monoid w) =>
+    (i %1 -> a %1 -> w) -> t a %1 -> w
+  ifoldMap = ifoldMapDefault
+  {-# INLINE ifoldMap #-}
+
+ifoldMapDefaultOf :: Fold s a %1 -> IndexedFold Int s a
+{-# INLINE ifoldMapDefaultOf #-}
+ifoldMapDefaultOf fld k s = uncurry lseq $ swap $ runState (unAp $ fld (Ap . loop) s) (Ur 0)
+  where
+    {-# INLINE loop #-}
+    loop a = Control.do
+      Ur i <- Control.get
+      Control.put $ Ur $! i + 1
+      Control.pure $ k i a
+
+ifoldMapDefault :: (Foldable t) => IndexedFold Int (t a) a
+{-# INLINE ifoldMapDefault #-}
+ifoldMapDefault = ifoldMapDefaultOf foldMap
 
 foldBorrowOf :: Fold s a %1 -> Fold (Borrow bk α s) (Borrow bk α a)
 {-# INLINE foldBorrowOf #-}
@@ -173,13 +212,45 @@ unSingleton :: Borrows bk α '[x] %1 -> Borrow bk α x
 {-# INLINE unSingleton #-}
 unSingleton = \case (bor :- BNil) -> bor
 
+toListOf :: Fold s a %1 -> s %1 -> [a]
+{-# INLINE toListOf #-}
+toListOf fld = fromDList . fld singletonDL
+
+toList :: (Foldable t) => t a %1 -> [a]
+{-# INLINE toList #-}
+toList = toListOf foldMap
+
+newtype DList a = DList ([a] %1 -> [a])
+
+fromDList :: DList a %1 -> [a]
+{-# INLINE fromDList #-}
+fromDList (DList f) = f []
+
+singletonDL :: a %1 -> DList a
+{-# INLINE singletonDL #-}
+singletonDL a = DList (a :)
+
+instance Semigroup (DList a) where
+  DList f <> DList g = DList (f . g)
+  {-# INLINE (<>) #-}
+
+instance Monoid (DList a) where
+  mempty = DList id
+  {-# INLINE mempty #-}
+
 instance Foldable [] where
   foldMap = PL.foldMap
   {-# INLINE foldMap #-}
 
+deriving anyclass instance FoldableWithIndex Int []
+
 instance Foldable Maybe where
   foldMap f = maybe mempty f
   {-# INLINE foldMap #-}
+
+instance FoldableWithIndex () Maybe where
+  ifoldMap f = foldMap (f ())
+  {-# INLINE ifoldMap #-}
 
 instance (Consumable e) => Foldable ((,) e) where
   foldMap f = uncurry lseq . Bi.bimap consume f
@@ -227,3 +298,24 @@ genericFoldMap f = foldMap f . from1
 instance (GenericFoldable t) => Foldable (Generically1 t) where
   foldMap f = genericFoldMap f . (\(Generically1 x) -> x)
   {-# INLINE foldMap #-}
+
+instance Foldable LV.Vector where
+  foldMap f vec = DataFlow.do
+    (Ur n, vec) <- LV.size vec
+    let {-# INLINE loop #-}
+        loop !vec !i !w
+          | i < n = DataFlow.do
+              (Ur a, vec) <- LV.unsafeGet i vec
+              let !w' = w <> f a
+              loop vec (i + 1) w'
+          | otherwise = vec `lseq` w
+    loop vec 0 mempty
+  {-# INLINE foldMap #-}
+
+deriving anyclass instance FoldableWithIndex Int LV.Vector
+
+instance Foldable (LHM.HashMap k) where
+  foldMap f hm = foldMap (Unsafe.toLinear \(_, v) -> f v) $ unur $ LHM.toList hm
+
+instance FoldableWithIndex k (LHM.HashMap k) where
+  ifoldMap f = foldMap (uncurry f) . unur . LHM.toList

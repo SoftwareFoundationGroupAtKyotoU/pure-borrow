@@ -26,10 +26,8 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
   forReborrowing,
   forReborrowingOf_,
   forReborrowing_,
-  iterReborrowing_,
   Fold,
   Foldable (..),
-  Iterable (..),
   IndexedFold,
   ifoldMapDefaultOf,
   FoldableWithIndex (..),
@@ -48,12 +46,10 @@ import Control.Functor.Linear (runState)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Experimental.Borrows
-import Control.Monad.Borrow.Pure.Internal (BorrowKind (..))
 import Control.Monad.Borrow.Pure.Unsafe
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Bifunctor.Linear qualified as Bi
-import Data.Coerce.Directed
 import Data.Functor.Linear qualified as Data
 import Data.HashMap.Mutable.Linear qualified as LHM
 import Data.List.NonEmpty.Linear (NonEmpty)
@@ -274,53 +270,3 @@ instance Foldable (LHM.HashMap k) where
 
 instance FoldableWithIndex k (LHM.HashMap k) where
   ifoldMap f = foldMap (uncurry f) . unur . LHM.toList
-
-class Iterable s a | s -> a where
-  iter ::
-    (Monoid w, Control.Applicative f) =>
-    (Borrow bk α a %1 -> f w) ->
-    Borrow bk α s %1 ->
-    f w
-
-iterReborrowing_ ::
-  (Iterable s a, Reborrowable bor) =>
-  bor α xs %1 ->
-  Borrow bk α s %1 ->
-  ( forall β.
-    bor (β /\ α) xs %1 ->
-    Borrow bk (β /\ α) a %1 ->
-    BO (β /\ α) ()
-  ) ->
-  BO α (bor α xs)
-{-# INLINE iterReborrowing_ #-}
-{-# SPECIALIZE INLINE iterReborrowing_ ::
-  (Iterable s a) =>
-  Share α x %1 ->
-  Borrow bk α s %1 ->
-  (forall β. Share (β /\ α) x %1 -> Borrow bk (β /\ α) a %1 -> BO (β /\ α) ()) ->
-  BO α (Share α x)
-  #-}
-{-# SPECIALIZE INLINE iterReborrowing_ ::
-  (Iterable s a) =>
-  Mut α x %1 ->
-  Borrow bk α s %1 ->
-  (forall β. Mut (β /\ α) x %1 -> Borrow bk (β /\ α) a %1 -> BO (β /\ α) ()) ->
-  BO α (Mut α x)
-  #-}
-{-# SPECIALIZE INLINE iterReborrowing_ ::
-  (Iterable s a) =>
-  Borrows 'Mut α x %1 ->
-  Borrow bk α s %1 ->
-  (forall β. Borrows 'Mut (β /\ α) x %1 -> Borrow bk (β /\ α) a %1 -> BO (β /\ α) ()) ->
-  BO α (Borrows 'Mut α x)
-  #-}
-{-# SPECIALIZE INLINE iterReborrowing_ ::
-  (Iterable s a) =>
-  Borrows 'Share α x %1 ->
-  Borrow bk α s %1 ->
-  (forall β. Borrows 'Share (β /\ α) x %1 -> Borrow bk (β /\ α) a %1 -> BO (β /\ α) ()) ->
-  BO α (Borrows 'Share α x)
-  #-}
-iterReborrowing_ bors s k = flip Control.execStateT bors Control.do
-  flip iter s \a -> Control.StateT \bors ->
-    locally bors \bors -> k bors (upcast a)

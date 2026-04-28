@@ -58,12 +58,9 @@ module Control.Monad.Borrow.Pure (
   (<%~),
   reborrowing_,
   (<%=),
-  KnownBorrow (..),
+  Reborrowable (..),
   locally,
   locally_,
-  shareLocally',
-  shareLocally,
-  shareLocally_,
   share,
   reclaim',
   reclaim,
@@ -318,7 +315,7 @@ sharing v k = sharing' v (\mut -> Control.pure Control.<$> k mut)
 
 infix 4 <$~
 
-class KnownBorrow bk where
+class Reborrowable bor where
   {- |
   Executes an operation on a borrow in sub lifetime.
   You may need @-XImpredicativeTypes@ extension to use this function.
@@ -326,55 +323,37 @@ class KnownBorrow bk where
   Generalization of 'reborrowing'' and 'sharing'' that works for both 'Mut' and 'Share' borrows.
   -}
   locally' ::
-    Borrow bk α a %1 ->
-    (forall β. Borrow bk (β /\ α) a %1 -> BO (β /\ α') (After β r)) %1 ->
-    BO α' (r, Borrow bk α a)
+    bor α a %1 ->
+    (forall β. bor (β /\ α) a %1 -> BO (β /\ α') (After β r)) %1 ->
+    BO α' (r, bor α a)
 
-instance KnownBorrow 'Mut where
-  {-# SPECIALIZE instance KnownBorrow 'Mut #-}
+instance Reborrowable Mut where
+  {-# SPECIALIZE instance Reborrowable Mut #-}
   locally' = reborrowing'
   {-# INLINE locally' #-}
 
-instance KnownBorrow 'Share where
-  {-# SPECIALIZE instance KnownBorrow 'Share #-}
+instance Reborrowable Share where
+  {-# SPECIALIZE instance Reborrowable Share #-}
   locally' shr k = Control.do
     let %1 !(Ur sh) = move shr
     (,sh) Control.<$> srunBO (k (upcast sh))
   {-# INLINE locally' #-}
 
 locally ::
-  (KnownBorrow bk) =>
-  Borrow bk α a %1 ->
-  (forall β. Borrow bk (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
-  BO α' (r, Borrow bk α a)
+  (Reborrowable bor) =>
+  bor α a %1 ->
+  (forall β. bor (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
+  BO α' (r, bor α a)
 {-# INLINE locally #-}
 locally bor k = locally' bor \mut -> Control.pure Control.<$> k mut
 
 locally_ ::
-  (KnownBorrow bk, Consumable r) =>
-  Borrow bk α a %1 ->
-  (forall β. Borrow bk (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
-  BO α' (Borrow bk α a)
+  (Reborrowable bor, Consumable r) =>
+  bor α a %1 ->
+  (forall β. bor (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
+  BO α' (bor α a)
 {-# INLINE locally_ #-}
 locally_ bor k = uncurry lseq Control.<$> locally bor k
-
-shareLocally' ::
-  (KnownBorrow bk) =>
-  Borrow bk α a %1 ->
-  (forall β. Share (β /\ α) a -> BO (β /\ α') (After β r)) %1 ->
-  BO α' (r, Borrow bk α a)
-{-# INLINE shareLocally' #-}
-shareLocally' bor k = locally' bor \bor -> Control.do
-  let %1 !(Ur shr) = share bor
-  k shr
-
-shareLocally :: (KnownBorrow bk) => Borrow bk α a %1 -> (forall β. Share (β /\ α) a -> BO (β /\ α') r) %1 -> BO α' (r, Borrow bk α a)
-{-# INLINE shareLocally #-}
-shareLocally bor k = shareLocally' bor \shr -> Control.pure Control.<$> k shr
-
-shareLocally_ :: (KnownBorrow bk, Consumable r) => Borrow bk α a %1 -> (forall β. Share (β /\ α) a -> BO (β /\ α') r) %1 -> BO α' (Borrow bk α a)
-{-# INLINE shareLocally_ #-}
-shareLocally_ bor k = uncurry lseq Control.<$> shareLocally bor k
 
 {- | Executes an operation on 'Share'd borrow in sub lifetime.
 You may need @-XImpredicativeTypes@ extension to use this function.

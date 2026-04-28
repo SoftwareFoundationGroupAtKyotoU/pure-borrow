@@ -87,6 +87,14 @@ data ForBO α
 -}
 newtype BO α a = BO (State# (ForBO α) %1 -> (# State# (ForBO α), a #))
 
+instance (Semigroup w) => Semigroup (BO α w) where
+  (<>) = Control.liftA2 (<>)
+  {-# INLINE (<>) #-}
+
+instance (Monoid w) => Monoid (BO α w) where
+  mempty = Control.pure mempty
+  {-# INLINE mempty #-}
+
 unsafeUnBO :: BO α a %1 -> State# (ForBO α) %1 -> (# State# (ForBO α), a #)
 {-# INLINE unsafeUnBO #-}
 unsafeUnBO (BO f) = f
@@ -232,20 +240,20 @@ evaluate :: a %1 -> BO α a
 evaluate a = unsafeSystemIOToBO (Unsafe.toLinear SystemIO.evaluate a)
 
 -- | Alias of kind 'ak' to a resource of type 'a'.
-type Alias :: AliasKind -> Type -> Type
-newtype Alias ak a = UnsafeAlias a
+type Alias :: AliasKind -> Lifetime -> Type -> Type
+newtype Alias ak α a = UnsafeAlias a
 
-unsafeUnalias :: Alias ak a %1 -> a
+unsafeUnalias :: Alias ak α a %1 -> a
 unsafeUnalias (UnsafeAlias x) = x
 
-type role Alias nominal representational
+type role Alias nominal nominal representational
 
 -- | Alias kind.
 data AliasKind
   = -- | Borrower.
-    Borrow BorrowKind Lifetime
+    Borrow BorrowKind
   | -- | Lender.
-    Lend Lifetime
+    Lend
 
 -- | Borrower kind.
 data BorrowKind
@@ -256,11 +264,11 @@ data BorrowKind
 
 -- | Borrower of kind @bk@ that is active during the lifetime @α@.
 type Borrow :: BorrowKind -> Lifetime -> Type -> Type
-type Borrow bk α = Alias ('Borrow bk α)
+type Borrow bk = Alias ('Borrow bk)
 
 -- | Mutable borrower, which is affine and can update the data.
 type Mut :: Lifetime -> Type -> Type
-type Mut α = Borrow 'Mut α
+type Mut = Borrow 'Mut
 
 assocBorrowR ::
   Borrow bk ((α /\ β) /\ γ) a %1 ->
@@ -303,17 +311,17 @@ deriving via AsAffine (Borrow bk α a) instance Consumable (Borrow bk α a)
 
 -- | Shared borrower, which is unrestricted but usually can only read from the data.
 type Share :: Lifetime -> Type -> Type
-type Share α = Borrow 'Share α
+type Share = Borrow 'Share
 
 instance Affine (Borrow bk α a) where
   aff = UnsafeAff
   {-# INLINE aff #-}
 
-instance (k ~ 'Borrow 'Share α) => Dupable (Alias k a) where
+instance (k ~ 'Borrow 'Share) => Dupable (Alias k α a) where
   dup2 = Unsafe.toLinear $ NonLinear.join (,)
   {-# INLINE dup2 #-}
 
-instance (k ~ 'Borrow 'Share α) => Movable (Alias k a) where
+instance (k ~ 'Borrow 'Share) => Movable (Alias k α a) where
   move = Unsafe.toLinear Ur
   {-# INLINE move #-}
 
@@ -328,7 +336,7 @@ instance (α >= β, a <: b) => Share α a <: Share β b where
 
 -- | Lender, which can retrieve the lifetime at the lifetime @α@.
 type Lend :: Lifetime -> Type -> Type
-type Lend α = Alias ('Lend α)
+type Lend = Alias 'Lend
 
 instance (α <= β, a <: b) => Lend α a <: Lend β b where
   subtype = UnsafeSubtype
@@ -368,16 +376,16 @@ joinLend = coerceLin
 
 -- | Distribute an alias over a functor.
 class DistributesAlias f where
-  split_ :: Alias ak (f x) %1 -> f (Alias ak x)
+  split_ :: Alias ak α (f x) %1 -> f (Alias ak α x)
   default split_ ::
     (GenericDistributesAlias f) =>
-    Alias ak (f x) %1 -> f (Alias ak x)
+    Alias ak α (f x) %1 -> f (Alias ak α x)
   split_ = genericSplit
 
 split ::
-  forall f x ak.
+  forall f x ak α.
   (DistributesAlias f) =>
-  Alias ak (f x) %1 -> f (Alias ak x)
+  Alias ak α (f x) %1 -> f (Alias ak α x)
 {-# INLINE [1] split #-}
 split = split_
 
@@ -405,11 +413,11 @@ deriving anyclass instance DistributesAlias Mon.First
 
 deriving anyclass instance DistributesAlias Mon.Last
 
-splitPair :: Alias ak (a, b) %1 -> (Alias ak a, Alias ak b)
+splitPair :: Alias ak α (a, b) %1 -> (Alias ak α a, Alias ak α b)
 {-# INLINE splitPair #-}
 splitPair = coerceLin
 
-splitEither :: Alias ak (Either a b) %1 -> Either (Alias ak a) (Alias ak b)
+splitEither :: Alias ak α (Either a b) %1 -> Either (Alias ak α a) (Alias ak α b)
 {-# INLINE splitEither #-}
 splitEither = coerceLin
 
@@ -424,16 +432,16 @@ instance (Unsatisfiable ('Text "Use splitPair instead!")) => DistributesAlias ((
 type GenericDistributesAlias f = (Generic1 f, GDistributeAlias (Rep1 f))
 
 genericSplit ::
-  forall f x ak.
+  forall f x ak α.
   (GenericDistributesAlias f) =>
-  Alias ak (f x) %1 -> f (Alias ak x)
+  Alias ak α (f x) %1 -> f (Alias ak α x)
 {-# INLINE genericSplit #-}
 genericSplit =
   to1
     . gdistributeAlias @(Rep1 f)
     . unsafeMapAlias from1
 
-unsafeMapAlias :: (a %1 -> b) %1 -> Alias ak a %1 -> Alias ak b
+unsafeMapAlias :: (a %1 -> b) %1 -> Alias ak α a %1 -> Alias ak α b
 {-# INLINE unsafeMapAlias #-}
 unsafeMapAlias f = coerceLin (\x -> let !y = f x in y)
 
@@ -442,7 +450,7 @@ instance (GenericDistributesAlias f) => DistributesAlias (Generically1 f) where
   split_ = Generically1 . genericSplit . unsafeMapAlias \(Generically1 f) -> f
 
 class GDistributeAlias f where
-  gdistributeAlias :: Alias ak (f x) %1 -> f (Alias ak x)
+  gdistributeAlias :: Alias ak α (f x) %1 -> f (Alias ak α x)
 
 instance
   ( GDistributeAlias f

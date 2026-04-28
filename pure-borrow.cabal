@@ -75,6 +75,7 @@ library
     Control.Monad.Borrow.Pure.Affine.Unsafe
     Control.Monad.Borrow.Pure.Clone
     Control.Monad.Borrow.Pure.Copyable
+    Control.Monad.Borrow.Pure.Experimental.Borrows
     Control.Monad.Borrow.Pure.Experimental.Loop
     Control.Monad.Borrow.Pure.Internal
     Control.Monad.Borrow.Pure.Lifetime

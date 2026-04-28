@@ -23,11 +23,13 @@ The module also introduces 'Borrows', which is a heterogeneous list of 'Borrow's
 -}
 module Control.Monad.Borrow.Pure.Experimental.Loop (
   Borrows (..),
-  forReborrowingN,
-  forReborrowingNOf_,
-  forReborrowingN_,
+  forReborrowing,
+  forReborrowingOf_,
+  forReborrowing_,
+  iterReborrowing_,
   Fold,
   Foldable (..),
+  Iterable (..),
   IndexedFold,
   ifoldMapDefaultOf,
   FoldableWithIndex (..),
@@ -35,8 +37,6 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
   for_,
   toListOf,
   toList,
-  forReborrowing,
-  forReborrowing_,
   foldBorrow,
   foldBorrowOf,
   GenericFoldable,
@@ -47,8 +47,8 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
 import Control.Functor.Linear (runState)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Affine
-import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
+import Control.Monad.Borrow.Pure.Experimental.Borrows
+import Control.Monad.Borrow.Pure.Internal (BorrowKind (..))
 import Control.Monad.Borrow.Pure.Unsafe
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Syntax.DataFlow qualified as DataFlow
@@ -56,7 +56,6 @@ import Data.Bifunctor.Linear qualified as Bi
 import Data.Coerce.Directed
 import Data.Functor.Linear qualified as Data
 import Data.HashMap.Mutable.Linear qualified as LHM
-import Data.Kind
 import Data.List.NonEmpty.Linear (NonEmpty)
 import Data.List.NonEmpty.Linear qualified as LNE
 import Data.Monoid (Ap (..))
@@ -67,41 +66,25 @@ import Prelude.Linear hiding (foldMap)
 import Prelude.Linear qualified as PL
 import Unsafe.Linear qualified as Unsafe
 
-type Borrows :: BorrowKind -> Lifetime -> [Type] -> Type
-data Borrows bk α xs where
-  BNil :: Borrows bk α '[]
-  (:-) :: !(Borrow bk α x) %1 -> !(Borrows bk α xs) %1 -> Borrows bk α (x ': xs)
-
-instance Affine (Borrows bk α xs) where
-  aff = unsafeAff
-
-deriving via AsAffine (Borrows bk α xs) instance Consumable (Borrows bk α xs)
-
-instance (β <= α) => Borrows bk α xs <: Borrows bk' β xs where
-  subtype = UnsafeSubtype
-
-infixr 5 :-
-
 {- |
 @'forReborrowingN' iterates over the elements of 'Data.Traversable' @t@
 inside the delimited sublifetime, reborrowing the 'Borrows' in @bors@ for that sublifetime.
 -}
-forReborrowingN ::
-  (Data.Traversable t) =>
-  Borrows bk α xs %1 ->
+forReborrowing ::
+  (Data.Traversable t, Reborrowable bor) =>
+  bor α xs %1 ->
   t b %1 ->
   ( forall β.
-    Borrows bk (β /\ α) xs %1 ->
+    bor (β /\ α) xs %1 ->
     b %1 ->
     BO (β /\ α) c
   ) ->
-  BO α (t c, Borrows bk α xs)
-{-# INLINE forReborrowingN #-}
-forReborrowingN = Unsafe.toLinear \ !bors tb k -> Control.do
-  tc <- Data.forM tb \b -> srunBO Control.do
-    !c <- k (upcast bors) b
-    Control.pure $ After c
-  Control.pure (tc, bors)
+  BO α (t c, bor α xs)
+{-# INLINE forReborrowing #-}
+forReborrowing bors tb k =
+  flip Control.runStateT bors $
+    Data.for tb \a -> Control.StateT \bors ->
+      locally bors (\bors -> k bors a)
 
 type Fold s a = forall w. (Monoid w) => (a %1 -> w) -> s %1 -> w
 
@@ -153,64 +136,36 @@ unAp :: Ap m a %1 -> m a
 unAp (Ap m) = m
 {-# INLINE unAp #-}
 
-forReborrowingNOf_ ::
+forReborrowingOf_ ::
+  (Reborrowable bor) =>
   Fold s a %1 ->
-  Borrows bk α xs %1 ->
+  bor α xs %1 ->
   s %1 ->
   ( forall β.
-    Borrows bk (β /\ α) xs %1 ->
+    bor (β /\ α) xs %1 ->
     a %1 ->
     BO (β /\ α) ()
   ) ->
-  BO α (Borrows bk α xs)
-forReborrowingNOf_ fld = Unsafe.toLinear \bors s k ->
-  case fld (\a -> Ap $ srunBO $ After () Control.<$ k (upcast bors) a) s of
-    Ap m -> bors Control.<$ m
-
-forReborrowingN_ ::
-  (Foldable t) =>
-  Borrows bk α xs %1 ->
-  t a %1 ->
-  ( forall β.
-    Borrows bk (β /\ α) xs %1 ->
-    a %1 ->
-    BO (β /\ α) ()
-  ) ->
-  BO α (Borrows bk α xs)
-{-# INLINE forReborrowingN_ #-}
-forReborrowingN_ = forReborrowingNOf_ foldMap
-
-forReborrowing ::
-  (Data.Traversable t) =>
-  Borrow bk α x %1 ->
-  t b %1 ->
-  ( forall β.
-    Borrow bk (β /\ α) x %1 ->
-    b %1 ->
-    BO (β /\ α) c
-  ) ->
-  BO α (t c, Borrow bk α x)
-{-# INLINE forReborrowing #-}
-forReborrowing bor t k = Control.do
-  Bi.second unSingleton Control.<$> forReborrowingN (bor :- BNil) t (k . unSingleton)
+  BO α (bor α xs)
+{-# INLINE forReborrowingOf_ #-}
+forReborrowingOf_ fld bors s k =
+  flip Control.execStateT bors $
+    unAp $
+      flip fld s $
+        Ap . \a -> Control.StateT \bors -> locally bors (\bors -> k bors a)
 
 forReborrowing_ ::
-  (Foldable t) =>
-  Borrow bk α x %1 ->
-  t b %1 ->
+  (Foldable t, Reborrowable bor) =>
+  bor α xs %1 ->
+  t a %1 ->
   ( forall β.
-    Borrow bk (β /\ α) x %1 ->
-    b %1 ->
+    bor (β /\ α) xs %1 ->
+    a %1 ->
     BO (β /\ α) ()
   ) ->
-  BO α (Borrow bk α x)
+  BO α (bor α xs)
 {-# INLINE forReborrowing_ #-}
-forReborrowing_ bor t k = Control.do
-  unSingleton Control.<$> forReborrowingN_ (bor :- BNil) t (k . unSingleton)
-
-unSingleton :: Borrows bk α '[x] %1 -> Borrow bk α x
-{-# INLINE unSingleton #-}
-unSingleton = \case (bor :- BNil) -> bor
+forReborrowing_ = forReborrowingOf_ foldMap
 
 toListOf :: Fold s a %1 -> s %1 -> [a]
 {-# INLINE toListOf #-}
@@ -319,3 +274,49 @@ instance Foldable (LHM.HashMap k) where
 
 instance FoldableWithIndex k (LHM.HashMap k) where
   ifoldMap f = foldMap (uncurry f) . unur . LHM.toList
+
+class Iterable s a | s -> a where
+  iter :: (Borrow bk α a %1 -> w) -> Borrow bk α s %1 -> w
+
+iterReborrowing_ ::
+  (Iterable s a, Reborrowable bor) =>
+  bor α xs %1 ->
+  Borrow bk α s %1 ->
+  ( forall β.
+    bor (β /\ α) xs %1 ->
+    Borrow bk (β /\ α) a %1 ->
+    BO (β /\ α) ()
+  ) ->
+  BO α (bor α xs)
+{-# INLINE iterReborrowing_ #-}
+{-# SPECIALIZE INLINE iterReborrowing_ ::
+  (Iterable s a) =>
+  Share α x %1 ->
+  Borrow bk α s %1 ->
+  (forall β. Share (β /\ α) x %1 -> Borrow bk (β /\ α) a %1 -> BO (β /\ α) ()) ->
+  BO α (Share α x)
+  #-}
+{-# SPECIALIZE INLINE iterReborrowing_ ::
+  (Iterable s a) =>
+  Mut α x %1 ->
+  Borrow bk α s %1 ->
+  (forall β. Mut (β /\ α) x %1 -> Borrow bk (β /\ α) a %1 -> BO (β /\ α) ()) ->
+  BO α (Mut α x)
+  #-}
+{-# SPECIALIZE INLINE iterReborrowing_ ::
+  (Iterable s a) =>
+  Borrows 'Mut α x %1 ->
+  Borrow bk α s %1 ->
+  (forall β. Borrows 'Mut (β /\ α) x %1 -> Borrow bk (β /\ α) a %1 -> BO (β /\ α) ()) ->
+  BO α (Borrows 'Mut α x)
+  #-}
+{-# SPECIALIZE INLINE iterReborrowing_ ::
+  (Iterable s a) =>
+  Borrows 'Share α x %1 ->
+  Borrow bk α s %1 ->
+  (forall β. Borrows 'Share (β /\ α) x %1 -> Borrow bk (β /\ α) a %1 -> BO (β /\ α) ()) ->
+  BO α (Borrows 'Share α x)
+  #-}
+iterReborrowing_ bors s k = flip Control.execStateT bors Control.do
+  flip iter s \a -> Control.StateT \bors ->
+    locally bors \bors -> k bors (upcast a)

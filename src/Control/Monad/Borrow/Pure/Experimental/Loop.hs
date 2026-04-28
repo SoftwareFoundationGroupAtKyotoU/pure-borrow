@@ -27,6 +27,8 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
   forReborrowing,
   forReborrowingOf_,
   forReborrowing_,
+  iforReborrowingOf_,
+  iforReborrowing_,
   Fold,
   Foldable (..),
   IndexedFold,
@@ -169,6 +171,39 @@ forReborrowing_ ::
   BO α (bor α xs)
 {-# INLINE forReborrowing_ #-}
 forReborrowing_ = forReborrowingOf_ foldMap
+
+iforReborrowingOf_ ::
+  (Reborrowable bor) =>
+  IndexedFold i s a %1 ->
+  bor α xs %1 ->
+  s %1 ->
+  ( forall β.
+    bor (β /\ α) xs %1 ->
+    i %1 ->
+    a %1 ->
+    BO (β /\ α) ()
+  ) ->
+  BO α (bor α xs)
+{-# INLINE iforReborrowingOf_ #-}
+iforReborrowingOf_ fld bors s k =
+  flip Control.execStateT bors $
+    unAp $
+      flip fld s \i a ->
+        Ap $ Control.StateT \bors -> locally bors (\bors -> k bors i a)
+
+iforReborrowing_ ::
+  (FoldableWithIndex i t, Reborrowable bor) =>
+  bor α xs %1 ->
+  t a %1 ->
+  ( forall β.
+    bor (β /\ α) xs %1 ->
+    i %1 ->
+    a %1 ->
+    BO (β /\ α) ()
+  ) ->
+  BO α (bor α xs)
+{-# INLINE iforReborrowing_ #-}
+iforReborrowing_ = iforReborrowingOf_ ifoldMap
 
 toListOf :: Fold s a %1 -> s %1 -> [a]
 {-# INLINE toListOf #-}

@@ -251,16 +251,17 @@ instance (GenericFoldable t) => Foldable (Generically1 t) where
   {-# INLINE foldMap #-}
 
 instance Foldable LV.Vector where
-  foldMap f vec = DataFlow.do
-    (Ur n, vec) <- LV.size vec
-    let {-# INLINE loop #-}
-        loop !vec !i !w
-          | i < n = DataFlow.do
-              (Ur a, vec) <- LV.unsafeGet i vec
-              let !w' = w <> f a
-              loop vec (i + 1) w'
-          | otherwise = vec `lseq` w
-    loop vec 0 mempty
+  foldMap f vec =
+    LV.size vec & \case
+      (Ur n, vec) -> DataFlow.do
+        let {-# INLINE loop #-}
+            loop !vec !i !w
+              | i < n =
+                  LV.unsafeGet i vec & \(Ur a, vec) -> DataFlow.do
+                    let !w' = w <> f a
+                    loop vec (i + 1) w'
+              | otherwise = vec `lseq` w
+        loop vec 0 mempty
   {-# INLINE foldMap #-}
 
 deriving anyclass instance FoldableWithIndex Int LV.Vector

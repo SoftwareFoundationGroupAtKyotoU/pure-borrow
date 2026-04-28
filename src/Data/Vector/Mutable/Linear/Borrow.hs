@@ -117,7 +117,7 @@ fromVector = GHC.noinline $ Unsafe.toLinear \v l ->
       unsafePerformIO $!
         Unsafe.toLinear V.thaw v
 
--- | _O(n)_. Clone a 'V.MVector' from @vector@ package to a 'Vector'.
+-- | /O(n)/. Clone a 'V.MVector' from @vector@ package to a 'Vector'.
 fromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
 {-# NOINLINE fromMutable #-}
 fromMutable = GHC.noinline $ Unsafe.toLinear \v l ->
@@ -137,7 +137,7 @@ We impose 'Copyable' on 'toVector' and 'toList' to ensure elements doesn't bare 
 Is it a cheating? Maybe. Think hard about it.
 -}
 
--- | _O(1)_. Freezes @'Vector' a@ to @'V.Vector' a@ from @vector@ package, /without/ copying.
+-- | /O(1)/. Freezes @'Vector' a@ to @'V.Vector' a@ from @vector@ package, /without/ copying.
 toVector ::
   -- See Note [Unrestricted Materialization of Vector].
   (Copyable a) =>

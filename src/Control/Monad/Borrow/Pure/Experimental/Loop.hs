@@ -53,7 +53,7 @@ import Data.Functor.Linear qualified as Data
 import Data.HashMap.Mutable.Linear qualified as LHM
 import Data.List.NonEmpty.Linear (NonEmpty)
 import Data.List.NonEmpty.Linear qualified as LNE
-import Data.Monoid (Ap (..))
+import Data.Monoid.Linear
 import Data.Vector.Mutable.Linear qualified as LV
 import Generics.Linear
 import Prelude.Linear hiding (foldMap)
@@ -123,6 +123,17 @@ traverse_ f = unAp . foldMap (Ap . f)
 for_ :: (Foldable t, Data.Applicative m) => t a %1 -> (a %1 -> m ()) -> m ()
 {-# INLINE for_ #-}
 for_ = flip traverse_
+
+newtype Ap m a = Ap (m a)
+  deriving newtype (Data.Functor, Control.Functor, Data.Applicative, Control.Applicative)
+
+instance (Data.Applicative f, Semigroup w) => Semigroup (Ap f w) where
+  (<>) = Data.liftA2 (<>)
+  {-# INLINE (<>) #-}
+
+instance (Data.Applicative f, Monoid w) => Monoid (Ap f w) where
+  mempty = Data.pure mempty
+  {-# INLINE mempty #-}
 
 unAp :: Ap m a %1 -> m a
 unAp (Ap m) = m

@@ -2,7 +2,10 @@ cabal-version: 3.4
 name: pure-borrow
 version: 0.0.0.0
 synopsis: Rust-style borrowing in Linear Haskell with purity
-description: Please see README.md.
+description:
+  This package realizes rust-style borrowing in Linear Haskell with purity and concurrency support.
+  See "Control.Monad.Borrow.Pure" for the main API documentation, and see our paper [/Pure Borrowing: Linear Haskell Meets Rust-Style Borrowing/](https://arxiv.org/abs/2604.15290) by Y. Matsushita and H. Ishii for the details.
+
 license: BSD-3-Clause
 license-file: LICENSE
 author: Yusuke Matsushita and Hiromi Ishii

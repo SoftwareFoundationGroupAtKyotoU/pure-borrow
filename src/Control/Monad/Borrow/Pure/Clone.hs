@@ -43,9 +43,9 @@ import Unsafe.Linear qualified as Unsafe
 to be accessible only inside the @'BO' α@ monad.
 
 The difference between 'Clone' and 'Copyable' is that the former allows for
-cloning a shared borrow of a _mutable_ or _linear_ value, while the latter requires cloning a shared borrow of an _immutable_ value.
+cloning a shared borrow of a /mutable/ or /linear/ value, while the latter requires cloning a shared borrow of an /immutable/ value.
 This is because we can leak @'Share' α a@ via 'Prelude.Linear.Movable' instance, and
-hence it can outlive the original @'BO' α@ lifetime, which allows leaking mutable states inside @a@ into _unrestricted_ contexts, which destroys the soundness severly.
+hence it can outlive the original @'BO' α@ lifetime, which allows leaking mutable states inside @a@ into /unrestricted/ contexts, which destroys the soundness severly.
 -}
 class Clone a where
   clone :: Share α a %1 -> BO α a

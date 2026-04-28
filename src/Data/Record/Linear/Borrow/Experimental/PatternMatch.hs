@@ -133,7 +133,7 @@ mutRec .@ (#strs, #bool, #strs)
 -- error: Split record fields must be distinct, but got duplicate field: "strs"
 @
 
-In genral, '(.@)' accepts any _eliminator_ of a record borrow, which is typically one of the following:
+In genral, '(.@)' accepts any /eliminator/ of a record borrow, which is typically one of the following:
 
     1. A tuple of 'RecordLabel's without duplcations (currently 2 to 5 components), or
     2. A heterogeneous list 'RecordLabels' of 'RecordLabel's, constructed with '(:#-)' and 'RNil', without duplcations on fields.

@@ -265,7 +265,7 @@ splitRecord !bor = SplitRecord bor
 Splitting a linear field from a borrow of a record.
 @record '-#' #field@  returns a pair of the borrow of a split field and remaining split record, where @field@ is removed from the type-level list of the remaining split record.
 
-Mnemonic: '(-#)' _subtracts_ the field from the record.
+Mnemonic: '(-#)' /subtracts/ the field from the record.
 -}
 (-#) ::
   (SplittableRecord a, Lookup field fs ~ 'Just '( 'One, x)) =>
@@ -282,7 +282,7 @@ Mnemonic: '(-#)' _subtracts_ the field from the record.
 Extracting the borrow to the single linear field form a borrow of a record.
 @record '!#' #field@ returns a borrow of the @field@ of the @record@, discarding the borrow to the rest of the record.
 
-Mnemonic: '(!#)' _destructs_ a borrow of a record to that of a single field.
+Mnemonic: '(!#)' /destructs/ a borrow of a record to that of a single field.
 -}
 (!#) ::
   (SplittableRecord a, Lookup field fs ~ 'Just '( 'One, x)) =>
@@ -296,10 +296,10 @@ Mnemonic: '(!#)' _destructs_ a borrow of a record to that of a single field.
 
 {- |
 Skimming the value of a nonlinear (unrestricted) field.
-@record '+#' #field@ returns a pair of the _value_ of the @field@ of the @record@ and the original split record.
+@record '+#' #field@ returns a pair of the /value/ of the @field@ of the @record@ and the original split record.
 The returned value of @field@ is wrapped by 'Ur' and can be used more than once.
 
-Mnenonic: '(+#)' you can use nonlinear field _more_ (@+@) than once.
+Mnenonic: '(+#)' you can use nonlinear field /more/ (@+@) than once.
 -}
 (+#) ::
   (SplittableRecord a, Lookup field fs ~ 'Just '( 'Many, Ur x)) =>

@@ -137,7 +137,7 @@ We impose 'Copyable' on 'toVector' and 'toList' to ensure elements doesn't bare 
 Is it a cheating? Maybe. Think hard about it.
 -}
 
--- | _O(1)_. Freezes @'Vector' a@ to @'V.Vector' a@ from @vector@ package, _without_ copying.
+-- | _O(1)_. Freezes @'Vector' a@ to @'V.Vector' a@ from @vector@ package, /without/ copying.
 toVector ::
   -- See Note [Unrestricted Materialization of Vector].
   (Copyable a) =>

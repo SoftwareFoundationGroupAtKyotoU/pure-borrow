@@ -331,10 +331,12 @@ class KnownBorrow bk where
     BO α' (r, Borrow bk α a)
 
 instance KnownBorrow 'Mut where
+  {-# SPECIALIZE instance KnownBorrow 'Mut #-}
   locally' = reborrowing'
   {-# INLINE locally' #-}
 
 instance KnownBorrow 'Share where
+  {-# SPECIALIZE instance KnownBorrow 'Share #-}
   locally' shr k = Control.do
     let %1 !(Ur sh) = move shr
     (,sh) Control.<$> srunBO (k (upcast sh))

@@ -276,7 +276,11 @@ instance FoldableWithIndex k (LHM.HashMap k) where
   ifoldMap f = foldMap (uncurry f) . unur . LHM.toList
 
 class Iterable s a | s -> a where
-  iter :: (Borrow bk α a %1 -> w) -> Borrow bk α s %1 -> w
+  iter ::
+    (Monoid w, Control.Applicative f) =>
+    (Borrow bk α a %1 -> f w) ->
+    Borrow bk α s %1 ->
+    f w
 
 iterReborrowing_ ::
   (Iterable s a, Reborrowable bor) =>

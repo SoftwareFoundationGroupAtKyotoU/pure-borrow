@@ -15,6 +15,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
+{-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 {- |
@@ -42,20 +43,17 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
   ifoldMapDefault,
 ) where
 
-import Control.Functor.Linear (runState)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Experimental.Borrows
 import Control.Monad.Borrow.Pure.Unsafe
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
-import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Bifunctor.Linear qualified as Bi
 import Data.Functor.Linear qualified as Data
 import Data.HashMap.Mutable.Linear qualified as LHM
 import Data.List.NonEmpty.Linear (NonEmpty)
 import Data.List.NonEmpty.Linear qualified as LNE
 import Data.Monoid (Ap (..))
-import Data.Tuple.Linear (swap)
 import Data.Vector.Mutable.Linear qualified as LV
 import Generics.Linear
 import Prelude.Linear hiding (foldMap)
@@ -98,15 +96,13 @@ class (Foldable t) => FoldableWithIndex i t | t -> i where
   ifoldMap = ifoldMapDefault
   {-# INLINE ifoldMap #-}
 
-ifoldMapDefaultOf :: Fold s a %1 -> IndexedFold Int s a
+ifoldMapDefaultOf :: forall s a. Fold s a %1 -> IndexedFold Int s a
 {-# INLINE ifoldMapDefaultOf #-}
-ifoldMapDefaultOf fld k s = uncurry lseq $ swap $ runState (unAp $ fld (Ap . loop) s) (Ur 0)
-  where
-    {-# INLINE loop #-}
-    loop a = Control.do
-      Ur i <- Control.get
-      Control.put $ Ur $! i + 1
-      Control.pure $ k i a
+ifoldMapDefaultOf fld k s =
+  flip Control.evalState (Ur 0) $ unAp $ flip fld s $ \a -> Ap Control.do
+    Ur i <- Control.get
+    Control.put $ Ur $! i + 1
+    Control.pure $ k i a
 
 ifoldMapDefault :: (Foldable t) => IndexedFold Int (t a) a
 {-# INLINE ifoldMapDefault #-}

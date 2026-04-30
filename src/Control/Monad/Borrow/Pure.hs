@@ -360,6 +360,8 @@ Analogously, you can reborrow mutable borrows into sublifetimes using 'reborrowi
   'BO' α' (r, 'Mut' α a)
 @
 
+There is an experimental interface abstracting the reborrowable borrows in "Control.Monad.Borrow.Pure.Experimental.Reborrowable".
+
 == Borrow polymorphism
 
 Actually, 'Mut', 'Share', and 'Lend' are all the specific instantitation of 'Alias' type:
@@ -372,6 +374,8 @@ type 'Lend' α a = 'Borrow' 'Lend α a
 @
 
 Hence, if you see @'Borrow' bk α a@ in a function, it can be either 'Mut' or 'Share'.
+
+"Control.Monad.Borrow.Pure.Experimental.Borrows" provides an experimental API for treating a bundle of multiple borrows in the same lifetime at once.
 -}
 
 {- $copy-and-clone
@@ -413,5 +417,5 @@ splitEither :: Alias ak α (Either a b) %1 -> Either (Alias ak α a) (Alias ak �
 For other datatypes, you can use 'split' to split general parametric types into borrows.
 It is morally a instance method of 'DistributesAlias' class, and you can derive it using @anyclass@ derivation together with 'Generics.Linear.TH.deriveGenericAnd1' macro.
 
-We also provide experimental splitting on record types in "Data.Record.Borrow.Experimental.PatternMatch" and "Data.Record.Borrow.Experimental.Split".
+We also provide experimental splitting on record types in "Data.Record.Linear.Borrow.Experimental.PatternMatch" and "Data.Record.Linear.Borrow.Experimental.Split".
 -}

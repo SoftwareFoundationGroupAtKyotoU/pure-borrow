@@ -152,18 +152,19 @@ borrowLinearOnly :: forall α a. (LinearOnly a) => a %1 -> (Mut α a, Lend α a)
 borrowLinearOnly !a = case withLinearly a of
   (!lin, !a) -> borrow a lin
 
-{- | Executes an operation on 'Share'd borrow in sub lifetime.
-You may need @-XImpredicativeTypes@ extension to use this function.
+{- | A variant of 'sharing'' that discards the final result of the computation.
+There is also a flipped infix version '(<$=)'.
 
-See also: '(<$=)', 'sharing' and 'sharing''.
+See also: 'sharing'. For 'Mut'able borrows, see 'reborrowing_'.
 -}
 sharing_ ::
-  forall α α' a.
+  forall α α' a r.
+  (Consumable r) =>
   Mut α a %1 ->
-  (forall β. Share (β /\ α) a -> BO (β /\ α') ()) %1 ->
+  (forall β. Share (β /\ α) a -> BO (β /\ α') r) %1 ->
   BO α' (Mut α a)
 {-# INLINE sharing_ #-}
-sharing_ v k = sharing v k Control.<&> \((), a) -> a
+sharing_ v k = uncurry lseq Control.<$> sharing v k
 
 -- | Flipped infix version of 'sharing_', smoewhat analgous to '(Control.<$>)' and @(<%=)@ in @lens@ package.
 (<$=) ::
@@ -173,10 +174,10 @@ sharing_ v k = sharing v k Control.<&> \((), a) -> a
 {-# INLINE (<$=) #-}
 (<$=) = flip sharing_
 
-{- | Executes an operation on 'Share'd borrow in sub lifetime.
-You may need @-XImpredicativeTypes@ extension to use this function.
+{- | A variant of 'sharing'' that returns the direct value of the computation on the shared borrow.
+There is also a flipped infix version '(<$~)'.
 
-See also: '(<$~)', 'sharing'', and 'sharing_'.
+See also: 'sharing_'. For 'Mut'able borrows, see 'reborrowing'.
 -}
 sharing ::
   forall α α' a r.
@@ -199,7 +200,7 @@ infix 4 <$~
 {- | Executes an operation on 'Share'd borrow in sub lifetime.
 You may need @-XImpredicativeTypes@ extension to use this function.
 
-See also: 'sharing' and 'sharing_'.
+See also: 'sharing' and 'sharing_'. For 'Mut'able borrows, see 'reborrowing''.
 -}
 sharing' ::
   Mut α a %1 ->
@@ -212,6 +213,11 @@ sharing' v k = DataFlow.do
     share v & \(Ur v) -> Control.do
       k v Control.<&> \v -> (,) Control.<$> v Control.<*> upcast (reclaim' lend)
 
+{- | Executes an operation on 'Mut'able borrow in sub lifetime.
+You may need @-XImpredicativeTypes@ extension to use this function.
+
+See also: 'reborrowing', and 'reborrowing_'. For 'Share'd borrows, see 'sharing', 'sharing'', and 'sharing_'.
+-}
 reborrowing' ::
   Mut α a %1 ->
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') (After β r)) %1 ->
@@ -222,6 +228,11 @@ reborrowing' v k = srunBO DataFlow.do
     v <- k v
     Control.pure $ (,) Control.<$> v Control.<*> upcast (reclaim' lend)
 
+{- | A variant of 'reborrowing'' that returns the direct value of the operation on the reborrowed mutable borrow.
+There is also a flipped infix version '(<%~)'.
+
+See also: 'reborrowing_' and 'sharing'.
+-}
 reborrowing ::
   Mut α a %1 ->
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
@@ -238,6 +249,12 @@ reborrowing mutα k = reborrowing' mutα (\mut -> Control.pure Control.<$> k mut
 
 infix 4 <%~
 
+{- |
+A variant of 'reborrowing'' that discards the final result of the computation.
+There is also a flipped infix version '(<%=)'.
+
+See also: 'reborrowing' and 'sharing_'.
+-}
 reborrowing_ ::
   (Consumable r) =>
   Mut α a %1 ->

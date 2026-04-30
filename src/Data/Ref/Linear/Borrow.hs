@@ -11,7 +11,7 @@
 A reference cell. To mutate, use as @'Mut' α ('Ref' a)@.
 This module is inteted to be imported qualified.
 -}
-module Control.Monad.Borrow.Pure.Ref (
+module Data.Ref.Linear.Borrow (
   Ref (),
   update,
   modify,

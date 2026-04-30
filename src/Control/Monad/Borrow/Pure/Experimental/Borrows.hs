@@ -25,9 +25,9 @@ module Control.Monad.Borrow.Pure.Experimental.Borrows (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Affine
 import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
+import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.Experimental.Reborrowable
 import Data.Coerce.Directed.Unsafe
 import Data.Kind

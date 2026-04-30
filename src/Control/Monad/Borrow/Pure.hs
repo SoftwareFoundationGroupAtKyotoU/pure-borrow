@@ -13,7 +13,7 @@
 
 {- |
 This module is meant to be the prelude module of /Pure Borrow/, a Rust-style borrow realization in Linear Haskell.
-This module provides only a basic pieces of the API, and you may want to import other modules, e.g. "Control.Monad.Borrow.Pure.BO", for more utilities.
+This module provides only a basic pieces of the API, and you may want to import other modules, e.g. "Control.Monad.Borrow.Pure.BO", "Data.Ref.Linear.Borrow", or "Data.Vector.Mutable.Linear.Borrow", for more utilities.
 -}
 module Control.Monad.Borrow.Pure (
   -- $header
@@ -50,57 +50,68 @@ module Control.Monad.Borrow.Pure (
   asksLinearly,
   asksLinearlyM,
 
+  -- * Parallel computation
+  parBO,
+
+  -- * Borrowing
+  -- $borrow
+
+  -- ** Central Borrow types
+  Mut,
+  Share,
+  Lend,
+  Borrow,
+  Alias,
+
+  -- ** Introduction form
+  borrowM,
+  borrowLinearlyM,
+  share,
+
+  -- ** Reborrowing and computation in sublifetime
+  reborrowing',
+  reborrowing,
+  (<%~),
+  reborrowing_,
+  (<%=),
+  sharing',
+  sharing,
+  (<$~),
+  sharing_,
+  (<$=),
+
+  -- ** Finalization and reclamation
+  After (..),
+  reclaim',
+  reclaim,
+  pureAfter,
+  End,
+
   -- ** In-place modification with mutable borrows
   modifyBO,
   modifyBO_,
   modifyLinearOnlyBO,
   modifyLinearOnlyBO_,
 
-  -- * Parallel computation
-  parBO,
-
-  -- * Borrowing
-  Alias,
-  AliasKind,
-  BorrowKind,
-  Borrow,
-  Mut,
-  Share,
-  Lend,
-  End,
-  After (..),
-  coerceShare,
-  borrowM,
-  borrowLinearlyM,
-  sharing',
-  sharing,
-  (<$~),
-  sharing_,
-  (<$=),
-  reborrowing',
-  reborrowing,
-  (<%~),
-  reborrowing_,
-  (<%=),
-  share,
-  reclaim',
-  reclaim,
-  pureAfter,
+  -- ** Utility function to manipulate borrows
   joinMut,
   joinLend,
+  coerceShare,
 
   -- ** Copying and Cloning
+  -- $copy-and-clone
   Copyable (..),
   copyMut,
   Clone (..),
 
   -- ** Splitting aliases
-  DistributesAlias (),
-  split,
-  GenericDistributesAlias,
-  genericSplit,
+  -- $splitting
   splitPair,
   splitEither,
+  split,
+  DistributesAlias (),
+  GenericDistributesAlias,
+  genericSplit,
 
   -- * Re-exporting Prelude.Linear classes
   Consumable (..),
@@ -300,4 +311,107 @@ runBO_ :: 'Linearly' %1 -> (forall α. 'BO' α a) %1 -> a
 @
 
 Hence, you can retrieve 'Linearly' token via 'askLinearly', 'asksLinearlyM', etc.
+-}
+
+{- $borrow
+To treat a linear resource inside 'BO' monad, you have to borrow it first.
+Most typical introduction form is 'borrowM':
+
+@
+'borrowM' :: a %1 -> 'BO' α ('Mut' α a, 'Lend' α a)
+@
+
+This borrows a linear resource into the same lifetime as the ambient 'BO', returning 'Mut'able borrow and 'Lend'er of the original resource.
+Or, you can do the linear allocation of the resource and borrow it at the same time with 'borrowLinearlyM':
+
+@
+'borrowLinearlyM' :: (Linearly %1 -> a) %1 -> 'BO' α ('Mut' α a, 'Lend' α a)
+@
+
+In any case, the main computation with possible destructive updates are done on 'Mut'able borrows, and the original resource will be 'reclaim'ed from 'Lend'er at the end of the lifetime @α@.
+More precisely, @'Lend' α a@ must be processed in appropriate @'After' α r@ value that is to be returned to 'runBO', 'srunBO', or reborrowing operators we describe later.
+@'After' α a@ is some kind of finalizer that will be run after the lifetime @α@ has 'End'ed, and it can be used to reclaim the original resource from 'Lend'er and do futher final computation like conversion or consumption.
+
+One can 'share' the 'Mut'able borrow into 'Share'd borrow:
+
+@
+'share' :: 'Mut' α a %1 -> 'Ur' ('Share' α a)
+@
+
+As 'Share' is an immutable borrow, it can be freely duplicated and dropped, as witnessed by the 'Ur' wrapper.
+'Share'd borrows will always be introduced nonlinearly, so that you can freely use them multiple times or drop it at any time.
+If you want to share the resource temporarily into sublifetime and expect the mutation afterwards, you can use 'sharing' combinator (and its variants 'sharing'' and 'sharing_'):
+
+@
+'sharing' ::
+  forall α α' a r.
+  'Mut' α a %1 ->
+  (forall β. 'Share' (β /\ α) a -> 'BO' (β /\ α') r) %1 ->
+  'BO' α' (r, 'Mut' α a)
+@
+
+Analogously, you can reborrow mutable borrows into sublifetimes using 'reborrowing' combinator (and its variants 'reborrowing'' and 'reborrowing_').
+
+@
+'reborrowing' ::
+  forall α α' a r.
+  'Mut' α a %1 ->
+  (forall β. 'Mut' (β /\ α) a -> 'BO' (β /\ α') r) %1 ->
+  'BO' α' (r, 'Mut' α a)
+@
+
+== Borrow polymorphism
+
+Actually, 'Mut', 'Share', and 'Lend' are all the specific instantitation of 'Alias' type:
+
+@
+type 'Mut' α a = 'Borrow' 'Mut α a
+type 'Share' α a = 'Borrow' 'Share α a
+type 'Borrow' bk α a = 'Alias' ('Borrow bk) α a
+type 'Lend' α a = 'Borrow' 'Lend α a
+@
+
+Hence, if you see @'Borrow' bk α a@ in a function, it can be either 'Mut' or 'Share'.
+-}
+
+{- $copy-and-clone
+
+For some types, you can 'copy' them as the direct value out of a borrow:
+
+@
+'copy' :: 'Borrow' bk α a %1 -> a
+@
+
+Note that  'copy' consumes a borrow linearly.
+For 'Share'd borrows it doesn't matter because they are always introduced nonlinearly.
+But for 'Mut'able borrows, we cannot use value 'copy'ed value multiple times as 'Mut's are always bound linearly.
+To alleviate this problem, we also provide 'copyMut' that wraps copied value inside 'Ur':
+
+@
+'copyMut' :: 'Mut' α a %1 -> 'Ur' a
+@
+
+Precisely, if the type @a@ does not contain any mutable or foreign resources, it can be safely 'Copyable' out of borrows.
+Some examples are (but not limited to):
+
+    * Primitive types, such as 'Int', 'Bool', etc.
+    * Immutable data structures, such as lists, tuples of them, etc. (but not mutable vectors, arrays, etc.)
+
+For possibly mutable types, you can still 'clone' them out of borrows linearly.
+This includes, for examples, 'Data.Ref.Linear.Ref' or 'Data.Vector.Mutable.Linear.Borrow.Vector'.
+-}
+
+{- $splitting
+
+You can do case-splitting on 'Borrow's - for example:
+
+@
+splitPair :: Alias ak α (a, b) %1 -> (Alias ak α a, Alias ak α b)
+splitEither :: Alias ak α (Either a b) %1 -> Either (Alias ak α a) (Alias ak α b)
+@
+
+For other datatypes, you can use 'split' to split general parametric types into borrows.
+It is morally a instance method of 'DistributesAlias' class, and you can derive it using @anyclass@ derivation together with 'Generics.Linear.TH.deriveGenericAnd1' macro.
+
+We also provide experimental splitting on record types in "Data.Record.Borrow.Experimental.PatternMatch" and "Data.Record.Borrow.Experimental.Split".
 -}

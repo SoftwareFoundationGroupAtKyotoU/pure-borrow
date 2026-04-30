@@ -92,7 +92,6 @@ library
     Control.Monad.Borrow.Pure.Lifetime.Token
     Control.Monad.Borrow.Pure.Lifetime.Token.Internal
     Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe
-    Control.Monad.Borrow.Pure.Ref
     Control.Syntax.DataFlow
     Data.Coerce.Directed
     Data.Coerce.Directed.Internal
@@ -101,6 +100,7 @@ library
     Data.Record.Linear.Borrow.Experimental.PatternMatch
     Data.Record.Linear.Borrow.Experimental.Split
     Data.Ref.Linear
+    Data.Ref.Linear.Borrow
     Data.Ref.Linear.Unlifted
     Data.Unique.Linear
     Data.Vector.Mutable.Linear.Borrow

@@ -75,7 +75,11 @@ class End (α :: Lifetime) where
 neverEnds :: (HasCallStack, End Static) => a
 neverEnds = error "Unreachable: if you see this, you created an End Static in the internal code!"
 
--- | Utility type to represent an object available after the lifetime @α@.
+{- |
+Utility type to represent an object available after the lifetime @α@.
+
+You can use 'Control.Applicative' and 'Control.Monad' instances to write 'After' conveniently.
+-}
 newtype After α a = After ((End α) => a)
 
 instance (α <= β, a <: b) => After α a <: After β b where

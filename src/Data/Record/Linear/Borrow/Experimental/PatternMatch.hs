@@ -53,6 +53,7 @@ module Data.Record.Linear.Borrow.Experimental.PatternMatch (
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Affine (Affine (..), AsAffine (..))
 import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
+import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe (unsafeMapAlias)
 import Data.Kind (Constraint)
 import GHC.Base (TYPE, Type, proxy#)

@@ -13,7 +13,7 @@
 
 {- |
 This module is meant to be the prelude module of /Pure Borrow/, a Rust-style borrow realization in Linear Haskell.
-This module provides only a basic pieces of the API, and you may want to import other modules, e.g. "Control.Monad.Borrow.Pure.BO", "Data.Ref.Linear.Borrow", or "Data.Vector.Mutable.Linear.Borrow", for more utilities.
+This module provides only the basic pieces of the API, and you may want to import other modules, e.g. "Control.Monad.Borrow.Pure.BO", "Data.Ref.Linear.Borrow", or "Data.Vector.Mutable.Linear.Borrow", for more utilities.
 -}
 module Control.Monad.Borrow.Pure (
   -- $header
@@ -141,6 +141,15 @@ import Data.Unrestricted.Linear (Consumable (..), Dupable (..), Movable (..), Ur
 
 This module provides the main API of /Pure Borrow/, the pure realization of Rust-style borrowing in Linear Haskell.
 
+The core idea is that mutable resources are accessed through lifetime-indexed borrows:
+
+    * 'Linearly' proves that we are in a context where linear resources can be allocated and used safely.
+    * @'BO' α a@ is a computation that may use borrows valid during the lifetime @α@. It also provides pure API with the concurrency primitive.
+    * @'Mut' α a@ is a mutable borrow of an @a@ valid during @α@.
+    * @'Share' α a@ is an immutable borrow of an @a@ valid during @α@.
+    * @'Lend' α a@ is the capability to recover the original @a@ after @α@ ends.
+    * @'After' α a@ describes post-processing that runs after @α@ ends, such as reclaiming a 'Lend'.
+
 == Examples
 
 You need the following language extensions to use this module:
@@ -151,16 +160,19 @@ You need the following language extensions to use this module:
     * ImpredicativeTypes
     * QualifiedDo
 
-...and import theese modules:
+...and import these modules:
 
 @
 import Prelude.Linear
+import Control.Monad.Borrow.Pure
 import qualified Data.Vector.Mutable.Linear.Borrow as VL
 import Control.Syntax.DataFlow qualified as DataFlow
 import Control.Functor.Linear qualified as Control
 @
 
-The following example code initializes a mutable vector, modifies it coordinate-wise, and then read a part and all the contents at the last:
+The examples use qualified do-notation. @DataFlow.do@ is convenient for rebiding pure values, and @Control.do@ is the do-notation for linear functors and monads.
+
+The following example initializes a mutable vector, modifies it coordinate-wise, and then reads one element and the final contents:
 
 >>> :{
   example1 :: (Int, [Int])
@@ -182,7 +194,7 @@ The following example code initializes a mutable vector, modifies it coordinate-
 
 This just returns @(12, [12, 1, 7])@ as expected, which is not so surprising.
 But what if you want to modify non-overlapping segments of the vectors /in-parallel/?
-In particular, while you have to do two modifications to index @0@ sequentially, you can modify index @2@ in parallel with the first modification to index @0@.
+In particular, while you have to do two modifications to index @0@ sequentially, you can modify the segment containing original index @2@ in parallel with the first modification to index @0@.
 This is where pure concurrency with 'parBO' comes in:
 
 >>> :{
@@ -209,10 +221,10 @@ This is where pure concurrency with 'parBO' comes in:
 (12,[12,1,7])
 
 The line after @(*)@ splits the mutable vector into two non-overlapping mutable borrows, which can be safely used in parallel with 'parBO'.
-It just returns the first half of the vector and discards the second half.
+The left branch returns the modified first slice, while the right branch consumes its slice and returns @()@. The whole original vector is later recovered through @lend@.
 
-But this kind of manual discarding of resources are getting so tedious, right?
-This is where our /borrow/-based /affine/ API shines, which allows you to write the same code without manually discarding resources using 'reborrowing':
+Manual discarding of split resources becomes tedious quickly.
+This is where the /borrow/-based /affine/ API helps: 'reborrowing' lets you work in a shorter lifetime without manually reclaiming the original borrow.
 
 >>> :{
   example3 :: (Int, [Int])
@@ -237,63 +249,63 @@ This is where our /borrow/-based /affine/ API shines, which allows you to write 
       pureAfter (n, unur $ VL.toList (reclaim lend))
 :}
 
->>> example2
+>>> example3
 (12,[12,1,7])
 
-Beware that the line after @(!)@ opens the new sublifetime by 'reborrowing_'.
-Within this sublifetime, new mutable borrow @mvec@ is divided into two pieces, and then modified parallely on each slices after @(!!)@.
-But this time, the whole splitted @mvec1@ and @mvec2@ are 'consume'd after the 'parBO' returned, but after the sublifetime has been ended, the original mutable borrow to the whole vector is recovered and used in Line @(!!!)@!
+The line after @(!)@ opens a new sublifetime with 'reborrowing_'.
+Within this sublifetime, the new mutable borrow @mvec@ is divided into two pieces, and then both slices are modified in parallel after @(!!)@.
+This time, the split @mvec1@ and @mvec2@ are 'consume'd after 'parBO' returns. Once the sublifetime ends, the original mutable borrow to the whole vector is recovered and used at @(!!!)@.
 
-This way, you can treat and split mutable/immutable borrows freely without manually dropping/reuniting into the original resources.
+This way, you can treat and split mutable and immutable borrows freely without manually dropping or reuniting them into the original resources.
 -}
 
 {- $lifetimes
-Lifetime is a key concept in borrow.
-You can understand it is a version of thread parameter @s@ in @'Control.Monad.ST' s@, but refined with subtyping relation t'(<=)' (or /outlives/-relation t'(>=)').
+Lifetime is a key concept in borrowing.
+You can understand it as a version of the thread parameter @s@ in @'Control.Monad.ST' s@, but refined with the subtyping relation t'(<=)' (or /outlives/-relation t'(>=)').
 
 Every @'BO' α@ computation is parametrized with lifetime, and ordinary borrows, such as @'Mut' α a@ or @'Share' α a@, and lenders @'Lend' α a@ also have the lifetime for which they are valid.
-To accomodate the casting between different lifetimes, we also provide the 'upcast' operator that has a lifetime parameter according to the sublifetime relation.
+To accommodate casting between different lifetimes, we also provide the 'upcast' operator that has a lifetime parameter according to the sublifetime relation.
 The 'upcast' operator casts a given type along t'(<:)' relation, which extends t'(<=)' to the other types appropriately.
 
 Any two lifetimes @α@ and @β@ have the /meet/ @α '/\' β@, which is the longest lifetime that is shorter than both @α@ and @β@; i.e. @α '/\' β@ is the most generic lifetime such that @α '/\' β <= α@ and @α '/\' β <= β@.
-We use some tricks using '/\' to workaround type-checking higher-level combinators.
+We use some tricks with '/\' to work around type-checking higher-level combinators.
 For example, consider the type of 'srunBO_':
 
 @
 'srunBO_' :: (forall β. 'BO' (β '/\' α) a) %1 -> 'BO' α a
 @
 
-At first glance, the type @forall β. 'BO' (β '/\' α) a@ might looks rather cryptic.
+At first glance, the type @forall β. 'BO' (β '/\' α) a@ might look rather cryptic.
 But essentially, the above type is morally equivalent to the following:
 
 @
 'srunBO_' :: (forall β \<= α. 'BO' β a) => 'BO' α a
 @
 
-That is, all the 'srunBO_' does is that it opens a ephemeral sublifetime @β <= α@, and does all the computation inside it.
+That is, all 'srunBO_' does is open an ephemeral sublifetime @β <= α@ and run the computation inside it.
 However, without involved hacking or type-checker plugins, the type system is not good at treating transitivity of subtyping relation.
-By just quantifying over all the lifetimes and combine them with '/\', we can make the type-checker happy without losing generality.
+By quantifying over all lifetimes and combining them with '/\', we can make the type-checker happy without losing generality.
 
-So, if you see the pattern like binding other lifetimes with @forall@ and combined it with '/\', you can think of it as just quantifying over the sublifetime of the current lifetime.
+So, if you see a pattern that binds other lifetimes with @forall@ and combines them with '/\', you can think of it as quantifying over a sublifetime of the current lifetime.
 -}
 
 {- $linearly
 
-When you allocate the mutable resources, you must ensure that they are used only /linearly/; i.e. they are used exactly once.
+When you allocate mutable resources, you must ensure that they are used only /linearly/; i.e. they are used exactly once.
 In Linear Haskell, we use /linear arrow/ @%1 ->@ to express this invariant.
 More precisely, @a %1 -> b@ reads that /if the application of the function is consumed exactly once, then the argument is consumed exactly once/.
 This definition poses a subtle problem: the resource is guaranteed to be used linearly only when the resource is bound under some linear arrow context.
-Hence, we must known that we are under the linear context before allocate mutable references, otherwise the mutable state can leak outside.
+Hence, we must know that we are under a linear context before allocating mutable references, otherwise the mutable state can leak outside.
 
-The 'Linearly' witnesses exactly this invariant.
+The 'Linearly' token witnesses exactly this invariant.
 The important point is that it can be introduced into the context only by 'linearly' combinator:
 
 @
 'linearly' :: 'Movable' a => ('Linearly' %1 -> a) %1 -> a
 @
 
-This assures that 'Linearly' can be used as linearity witness that can be used when the mutable resources are allocated.
-You can duplicate 'linearly' as many as you want by 'dup' and drop it by 'consume'.
+This assures that 'Linearly' can be used as a linearity witness when mutable resources are allocated.
+You can duplicate a 'Linearly' token as many times as you want with 'dup' and drop it with 'consume'.
 
 @
 fromList :: [a] %1 -> 'Linearly' %1 -> 'Data.Vector.Mutable.Linear.Borrow.Vector' a
@@ -301,36 +313,36 @@ fromList :: [a] %1 -> 'Linearly' %1 -> 'Data.Vector.Mutable.Linear.Borrow.Vector
 
 See [Linear Constraints: the Problem with Scopes](https://www.tweag.io/blog/2023-03-23-linear-constraints-linearly/) for more details.
 
-Those mutable datatypes can only be introduced via 'Linearly' witness, so they can be seen as baring the 'Linearly' witness inside.
-'LinearOnly' is a type class for such datatypes, and it provides the 'withLinearly' combinator to borrow the linear witness from the context.
+Those mutable datatypes can only be introduced via a 'Linearly' witness, so they can be seen as carrying the 'Linearly' witness inside.
+'LinearOnly' is a type class for such datatypes and we can use it to recover a 'Linearly' witness from such values.
 
-Further, running 'BO' monad also requires 'Linearly':
+Further, running the 'BO' computation also requires 'Linearly':
 
 @
 runBO_ :: 'Linearly' %1 -> (forall α. 'BO' α a) %1 -> a
 @
 
-Hence, you can retrieve 'Linearly' token via 'askLinearly', 'asksLinearlyM', etc.
+Hence, you can retrieve a 'Linearly' token inside 'BO' via 'askLinearly', 'asksLinearlyM', etc.
 -}
 
 {- $borrow
 To treat a linear resource inside 'BO' monad, you have to borrow it first.
-Most typical introduction form is 'borrowM':
+The most typical introduction form is 'borrowM':
 
 @
 'borrowM' :: a %1 -> 'BO' α ('Mut' α a, 'Lend' α a)
 @
 
-This borrows a linear resource into the same lifetime as the ambient 'BO', returning 'Mut'able borrow and 'Lend'er of the original resource.
+This borrows a linear resource into the same lifetime as the ambient 'BO', returning a 'Mut'able borrow and a 'Lend'er of the original resource.
 Or, you can do the linear allocation of the resource and borrow it at the same time with 'borrowLinearlyM':
 
 @
 'borrowLinearlyM' :: (Linearly %1 -> a) %1 -> 'BO' α ('Mut' α a, 'Lend' α a)
 @
 
-In any case, the main computation with possible destructive updates are done on 'Mut'able borrows, and the original resource will be 'reclaim'ed from 'Lend'er at the end of the lifetime @α@.
-More precisely, @'Lend' α a@ must be processed in appropriate @'After' α r@ value that is to be returned to 'runBO', 'srunBO', or reborrowing operators we describe later.
-@'After' α a@ is some kind of finalizer that will be run after the lifetime @α@ has 'End'ed, and it can be used to reclaim the original resource from 'Lend'er and do futher final computation like conversion or consumption.
+In any case, the main computation with possible destructive updates is done on 'Mut'able borrows, and the original resource will be 'reclaim'ed from the 'Lend'er at the end of the lifetime @α@.
+More precisely, @'Lend' α a@ must be processed in an appropriate @'After' α r@ value that is returned to 'runBO', 'srunBO', or the reborrowing operators described later.
+@'After' α a@ is a kind of finalizer that will be run after the lifetime @α@ has 'End'ed, and it can be used to reclaim the original resource from a 'Lend'er and do further final computation such as conversion or consumption.
 
 One can 'share' the 'Mut'able borrow into 'Share'd borrow:
 
@@ -339,8 +351,8 @@ One can 'share' the 'Mut'able borrow into 'Share'd borrow:
 @
 
 As 'Share' is an immutable borrow, it can be freely duplicated and dropped, as witnessed by the 'Ur' wrapper.
-'Share'd borrows will always be introduced nonlinearly, so that you can freely use them multiple times or drop it at any time.
-If you want to share the resource temporarily into sublifetime and expect the mutation afterwards, you can use 'sharing' combinator (and its variants 'sharing'' and 'sharing_'):
+'Share'd borrows are always introduced nonlinearly, so that you can freely use them multiple times or drop them at any time.
+Note that 'share' consumes the original 'Mut'. If you want to share the resource temporarily into a sublifetime and then continue mutating afterwards, you can use the 'sharing' combinator (and its variants 'sharing'' and 'sharing_'):
 
 @
 'sharing' ::
@@ -350,7 +362,7 @@ If you want to share the resource temporarily into sublifetime and expect the mu
   'BO' α' (r, 'Mut' α a)
 @
 
-Analogously, you can reborrow mutable borrows into sublifetimes using 'reborrowing' combinator (and its variants 'reborrowing'' and 'reborrowing_').
+Analogously, you can reborrow mutable borrows into sublifetimes using the 'reborrowing' combinator (and its variants 'reborrowing'' and 'reborrowing_').
 
 @
 'reborrowing' ::
@@ -364,7 +376,7 @@ There is an experimental interface abstracting the reborrowable borrows in "Cont
 
 == Borrow polymorphism
 
-Actually, 'Mut', 'Share', and 'Lend' are all the specific instantitation of 'Alias' type:
+'Mut', 'Share', and 'Lend' are all specific instantiations of the 'Alias' type:
 
 @
 type 'Mut' α a = 'Borrow' 'Mut α a
@@ -373,9 +385,18 @@ type 'Borrow' bk α a = 'Alias' ('Borrow bk) α a
 type 'Lend' α a = 'Borrow' 'Lend α a
 @
 
-Hence, if you see @'Borrow' bk α a@ in a function, it can be either 'Mut' or 'Share'.
+Hence, if you see @'Borrow' bk α a@ in a function, it can be either 'Mut' or 'Share'. If you see @'Alias' ak α a@, it may also be a 'Lend'.
 
 "Control.Monad.Borrow.Pure.Experimental.Borrows" provides an experimental API for treating a bundle of multiple borrows in the same lifetime at once.
+
+== Which combinator should I use?
+
+    * Use 'borrowM' to borrow an existing linear value inside 'BO'.
+    * Use 'borrowLinearlyM' to allocate a linear value and immediately borrow it inside 'BO'.
+    * Use 'share' to permanently turn a 'Mut' into an unrestricted 'Share'.
+    * Use 'sharing' or 'sharing_' to share temporarily and then regain the original 'Mut'.
+    * Use 'reborrowing' or 'reborrowing_' to create a shorter-lived 'Mut' and then regain the original 'Mut'.
+    * Use 'reclaim' or 'reclaim'' to recover the original resource from a 'Lend' after the lifetime ends.
 -}
 
 {- $copy-and-clone
@@ -386,9 +407,9 @@ For some types, you can 'copy' them as the direct value out of a borrow:
 'copy' :: 'Borrow' bk α a %1 -> a
 @
 
-Note that  'copy' consumes a borrow linearly.
+Note that 'copy' consumes a borrow linearly.
 For 'Share'd borrows it doesn't matter because they are always introduced nonlinearly.
-But for 'Mut'able borrows, we cannot use value 'copy'ed value multiple times as 'Mut's are always bound linearly.
+But for 'Mut'able borrows, we cannot use a 'copy'ed value multiple times as 'Mut's are always bound linearly.
 To alleviate this problem, we also provide 'copyMut' that wraps copied value inside 'Ur':
 
 @
@@ -402,7 +423,7 @@ Some examples are (but not limited to):
     * Immutable data structures, such as lists, tuples of them, etc. (but not mutable vectors, arrays, etc.)
 
 For possibly mutable types, you can still 'clone' them out of borrows linearly.
-This includes, for examples, 'Data.Ref.Linear.Ref' or 'Data.Vector.Mutable.Linear.Borrow.Vector'.
+This includes, for example, 'Data.Ref.Linear.Ref' or 'Data.Vector.Mutable.Linear.Borrow.Vector'.
 -}
 
 {- $splitting
@@ -415,7 +436,7 @@ splitEither :: Alias ak α (Either a b) %1 -> Either (Alias ak α a) (Alias ak �
 @
 
 For other datatypes, you can use 'split' to split general parametric types into borrows.
-It is morally a instance method of 'DistributesAlias' class, and you can derive it using @anyclass@ derivation together with 'Generics.Linear.TH.deriveGenericAnd1' macro.
+It is morally an instance method of the 'DistributesAlias' class, and you can derive it using @anyclass@ derivation together with the 'Generics.Linear.TH.deriveGenericAnd1' macro.
 
 We also provide experimental splitting on record types in "Data.Record.Linear.Borrow.Experimental.PatternMatch" and "Data.Record.Linear.Borrow.Experimental.Split".
 -}

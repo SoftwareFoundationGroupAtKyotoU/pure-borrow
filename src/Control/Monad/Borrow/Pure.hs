@@ -317,6 +317,10 @@ See [Linear Constraints: the Problem with Scopes](https://www.tweag.io/blog/2023
 Those mutable datatypes can only be introduced via a 'Linearly' witness, so they can be seen as carrying the 'Linearly' witness inside.
 'LinearOnly' is a type class for such datatypes and we can use it to recover a 'Linearly' witness from such values.
 
+@
+'withLinearly' :: ('LinearOnly' a) => a %1 -> ('Linearly', a)
+@
+
 Further, running the 'BO' computation also requires 'Linearly':
 
 @

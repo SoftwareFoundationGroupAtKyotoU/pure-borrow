@@ -18,6 +18,14 @@ This module provides only a basic pieces of the API, and you may want to import 
 module Control.Monad.Borrow.Pure (
   -- $header
 
+  -- * Core 'BO' monad
+  BO (),
+  runBO,
+  runBOLend,
+  runBO_,
+  srunBO,
+  srunBO_,
+
   -- * Lifetimes and Subtyping
   -- $lifetimes
 
@@ -30,27 +38,17 @@ module Control.Monad.Borrow.Pure (
   neverEnds,
 
   -- ** Subtyping and upcasting
-  type (<:),
   upcast,
+  type (<:),
 
   -- * Linearity witnesses
   -- $linearly
   Linearly,
   linearly,
   LinearOnly,
-
-  -- * Core 'BO' monad
-  BO (),
-  runBO,
-  runBOLend,
-  runBO_,
-  srunBO,
-  srunBO_,
   askLinearly,
   asksLinearly,
   asksLinearlyM,
-
-  -- ** Subtyping
 
   -- ** In-place modification with mutable borrows
   modifyBO,

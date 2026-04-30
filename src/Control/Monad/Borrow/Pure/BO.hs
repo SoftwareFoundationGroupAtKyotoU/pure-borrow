@@ -114,6 +114,11 @@ import Data.Coerce.Directed
 import Data.Type.Coercion (Coercion (..))
 import Prelude.Linear
 
+{- |
+Runs a 'BO' computation and returns the result of postprocessing 'After' the lifetime has ended.
+
+See also: 'runBOLend' and 'runBO_'.
+-}
 runBO :: forall a. Linearly %1 -> (forall α. BO α (After α a)) %1 -> a
 {-# INLINE runBO #-}
 runBO lin bo =
@@ -123,12 +128,14 @@ runBO lin bo =
       case endLifetime now of
         Ur end -> withEnd @α end f
 
+-- | A variant of 'runBO' that returns the original rsource retained by the 'Lend'er
 runBOLend :: Linearly %1 -> (forall α. BO α (Lend α a)) %1 -> a
 {-# INLINE runBOLend #-}
 runBOLend lin bo = runBO lin Control.do
   lend <- bo
   Control.pure (reclaim' lend)
 
+-- | A variant of 'runBO' that returns the direct value of 'BO' computation.
 runBO_ :: Linearly %1 -> (forall α. BO α a) %1 -> a
 {-# INLINE runBO_ #-}
 runBO_ lin bo = runBO lin Control.do
@@ -342,6 +349,7 @@ srunBO bo = asksLinearlyM \lin ->
     Ur end <- Control.pure (endLifetime now)
     Control.pure (withEnd end f)
 
+-- | A variant of 'srunBO' that returns the direct value of 'BO' computation.
 srunBO_ :: (forall α. BO (α /\ β) a) %1 -> BO β a
 {-# INLINE srunBO_ #-}
 srunBO_ k = srunBO Control.do a <- k; Control.pure $ After a

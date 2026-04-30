@@ -46,6 +46,7 @@ module Control.Monad.Borrow.Pure (
   Linearly,
   linearly,
   LinearOnly,
+  withLinearly,
   askLinearly,
   asksLinearly,
   asksLinearlyM,

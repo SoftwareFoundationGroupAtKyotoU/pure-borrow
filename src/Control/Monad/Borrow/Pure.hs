@@ -21,17 +21,20 @@ module Control.Monad.Borrow.Pure (
   -- * Lifetimes and Subtyping
   -- $lifetimes
 
-  -- ** Lifetime-related machineries
-
-  -- | The kind (type) of lifetimes.
+  -- ** Lifetime
   Lifetime,
   type (/\),
-  type (<=),
+  type (<=) (),
   type (>=),
   type Static,
   neverEnds,
 
+  -- ** Subtyping and upcasting
+  type (<:),
+  upcast,
+
   -- * Linearity witnesses
+  -- $linearly
   Linearly,
   linearly,
   LinearOnly,
@@ -48,8 +51,6 @@ module Control.Monad.Borrow.Pure (
   asksLinearlyM,
 
   -- ** Subtyping
-  type (<:),
-  upcast,
 
   -- ** In-place modification with mutable borrows
   modifyBO,
@@ -102,11 +103,20 @@ module Control.Monad.Borrow.Pure (
   genericSplit,
   splitPair,
   splitEither,
+
+  -- * Re-exporting Prelude.Linear classes
+  Consumable (..),
+  Dupable (..),
+  dup,
+  dup3,
+  Movable (..),
+  Ur (..),
 ) where
 
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.Clone
 import Control.Monad.Borrow.Pure.Copyable
+import Data.Unrestricted.Linear (Consumable (..), Dupable (..), Movable (..), Ur (..), dup, dup3)
 
 {- $setup
 >>> :set -XBlockArguments -XLinearTypes -XNoImplicitPrelude -XImpredicativeTypes -XQualifiedDo
@@ -118,7 +128,7 @@ import Control.Monad.Borrow.Pure.Copyable
 -}
 
 {- $header
-= Pure Borrow
+= Pure Borrow: An Overview
 
 This module provides the main API of /Pure Borrow/, the pure realization of Rust-style borrowing in Linear Haskell.
 
@@ -248,7 +258,7 @@ At first glance, the type @forall β. 'BO' (β '/\' α) a@ might looks rather cr
 But essentially, the above type is morally equivalent to the following:
 
 @
-'srunBO_' :: (forall β <= α. 'BO' β a) => 'BO' α a
+'srunBO_' :: (forall β \<= α. 'BO' β a) => 'BO' α a
 @
 
 That is, all the 'srunBO_' does is that it opens a ephemeral sublifetime @β <= α@, and does all the computation inside it.
@@ -256,4 +266,40 @@ However, without involved hacking or type-checker plugins, the type system is no
 By just quantifying over all the lifetimes and combine them with '/\', we can make the type-checker happy without losing generality.
 
 So, if you see the pattern like binding other lifetimes with @forall@ and combined it with '/\', you can think of it as just quantifying over the sublifetime of the current lifetime.
+-}
+
+{- $linearly
+
+When you allocate the mutable resources, you must ensure that they are used only /linearly/; i.e. they are used exactly once.
+In Linear Haskell, we use /linear arrow/ @%1 ->@ to express this invariant.
+More precisely, @a %1 -> b@ reads that /if the application of the function is consumed exactly once, then the argument is consumed exactly once/.
+This definition poses a subtle problem: the resource is guaranteed to be used linearly only when the resource is bound under some linear arrow context.
+Hence, we must known that we are under the linear context before allocate mutable references, otherwise the mutable state can leak outside.
+
+The 'Linearly' witnesses exactly this invariant.
+The important point is that it can be introduced into the context only by 'linearly' combinator:
+
+@
+'linearly' :: 'Movable' a => ('Linearly' %1 -> a) %1 -> a
+@
+
+This assures that 'Linearly' can be used as linearity witness that can be used when the mutable resources are allocated.
+You can duplicate 'linearly' as many as you want by 'dup' and drop it by 'consume'.
+
+@
+fromList :: [a] %1 -> 'Linearly' %1 -> 'Data.Vector.Mutable.Linear.Borrow.Vector' a
+@
+
+See [Linear Constraints: the Problem with Scopes](https://www.tweag.io/blog/2023-03-23-linear-constraints-linearly/) for more details.
+
+Those mutable datatypes can only be introduced via 'Linearly' witness, so they can be seen as baring the 'Linearly' witness inside.
+'LinearOnly' is a type class for such datatypes, and it provides the 'withLinearly' combinator to borrow the linear witness from the context.
+
+Further, running 'BO' monad also requires 'Linearly':
+
+@
+runBO_ :: 'Linearly' %1 -> (forall α. 'BO' α a) %1 -> a
+@
+
+Hence, you can retrieve 'Linearly' token via 'askLinearly', 'asksLinearlyM', etc.
 -}

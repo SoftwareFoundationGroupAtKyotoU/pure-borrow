@@ -18,7 +18,7 @@ module Control.Monad.Borrow.Pure.Experimental.Reborrowable (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure
+import Control.Monad.Borrow.Pure.BO
 import Prelude.Linear
 
 class Reborrowable bor where

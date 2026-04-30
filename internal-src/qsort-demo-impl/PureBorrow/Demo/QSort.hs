@@ -23,7 +23,7 @@ import Control.Concurrent.DivideConquer.Linear (qsortDC)
 import Control.DeepSeq (force)
 import Control.Exception (evaluate)
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure
+import Control.Monad.Borrow.Pure.BO
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Functor (void)
 import Data.Vector qualified as V

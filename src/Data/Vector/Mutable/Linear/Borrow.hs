@@ -51,12 +51,14 @@ module Data.Vector.Mutable.Linear.Borrow (
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad qualified as NonLinear
-import Control.Monad.Borrow.Pure
+import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.Pure.BO.Unsafe
+import Control.Monad.Borrow.Pure.Clone
+import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )
-import Control.Monad.Borrow.Pure.Unsafe
 import Control.Monad.Borrow.Pure.Utils
 import Control.Monad.ST.Strict (ST)
 import Control.Syntax.DataFlow qualified as DataFlow

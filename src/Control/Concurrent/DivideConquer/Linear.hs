@@ -31,9 +31,10 @@ import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (Sink, Source)
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear qualified as Once
 import Control.Concurrent.DivideConquer.Utils.QueuePool (QueuePool, newQueuePool, popWork, pushWork, pushWorkMaster)
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Affine (Affine, GenericallyAffine (..))
-import Control.Monad.Borrow.Pure.Internal
+import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.Pure.BO.Unsafe
+import Control.Monad.Borrow.Pure.Copyable
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
 import Data.List.Linear qualified as LL

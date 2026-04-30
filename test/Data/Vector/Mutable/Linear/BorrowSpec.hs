@@ -12,7 +12,8 @@ module Data.Vector.Mutable.Linear.BorrowSpec (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure
+import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.Pure.Copyable
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Bifunctor.Linear qualified as Bi
 import Data.List qualified as List

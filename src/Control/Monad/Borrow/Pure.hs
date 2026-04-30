@@ -11,18 +11,38 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
+{- |
+This module is meant to be the prelude module of /Pure Borrow/, a Rust-style borrow realization in Linear Haskell.
+This module provides only a basic pieces of the API, and you may want to import other modules, e.g. "Control.Monad.Borrow.Pure.BO", for more utilities.
+-}
 module Control.Monad.Borrow.Pure (
   -- $header
 
+  -- * Lifetimes and Subtyping
+  -- $lifetimes
+
+  -- ** Lifetime-related machineries
+
+  -- | The kind (type) of lifetimes.
+  Lifetime,
+  type (/\),
+  type (<=),
+  type (>=),
+  type Static,
+  neverEnds,
+
+  -- * Linearity witnesses
+  Linearly,
+  linearly,
+  LinearOnly,
+
   -- * Core 'BO' monad
   BO (),
-  execBO,
   runBO,
   runBOLend,
   runBO_,
-  sexecBO,
-  scope_,
   srunBO,
+  srunBO_,
   askLinearly,
   asksLinearly,
   asksLinearlyM,
@@ -48,8 +68,9 @@ module Control.Monad.Borrow.Pure (
   Mut,
   Share,
   Lend,
+  End,
+  After (..),
   coerceShare,
-  shareCoercion,
   borrowM,
   borrowLinearlyM,
   sharing',
@@ -66,17 +87,13 @@ module Control.Monad.Borrow.Pure (
   reclaim',
   reclaim,
   pureAfter,
-  reborrow,
   joinMut,
   joinLend,
 
-  -- *** Lower-level operators
-  borrow,
-  borrowLinearOnly,
-
   -- ** Copying and Cloning
-  module Control.Monad.Borrow.Pure.Copyable,
-  module Control.Monad.Borrow.Pure.Clone,
+  Copyable (..),
+  copyMut,
+  Clone (..),
 
   -- ** Splitting aliases
   DistributesAlias (),
@@ -85,41 +102,11 @@ module Control.Monad.Borrow.Pure (
   genericSplit,
   splitPair,
   splitEither,
-
-  -- ** Misc Utilities
-
-  -- *** Manual lifetime reassociation
-  assocRBO,
-  assocLBO,
-  assocBOEq,
-  assocBorrowL,
-  assocBorrowR,
-  assocBorrowEq,
-  assocLendL,
-  assocLendR,
-  assocLendEq,
-
-  -- * References
-  module Control.Monad.Borrow.Pure.Ref,
-
-  -- * Re-exports
-  module Control.Monad.Borrow.Pure.Lifetime,
-  module Control.Monad.Borrow.Pure.Lifetime.Token,
 ) where
 
-import Control.Functor.Linear qualified as Control
+import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.Clone
 import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Internal
-import Control.Monad.Borrow.Pure.Lifetime
-import Control.Monad.Borrow.Pure.Lifetime.Token
-import Control.Monad.Borrow.Pure.Ref
-import Control.Monad.Borrow.Pure.Utils (coerceLin)
-import Control.Syntax.DataFlow qualified as DataFlow
-import Data.Coerce (Coercible)
-import Data.Coerce.Directed
-import Data.Type.Coercion (Coercion (..))
-import Prelude.Linear
 
 {- $setup
 >>> :set -XBlockArguments -XLinearTypes -XNoImplicitPrelude -XImpredicativeTypes -XQualifiedDo
@@ -241,221 +228,32 @@ But this time, the whole splitted @mvec1@ and @mvec2@ are 'consume'd after the '
 This way, you can treat and split mutable/immutable borrows freely without manually dropping/reuniting into the original resources.
 -}
 
-runBO :: forall a. Linearly %1 -> (forall α. BO α (After α a)) %1 -> a
-{-# INLINE runBO #-}
-runBO lin bo =
-  case newLifetime lin of
-    MkSomeNow (now :: Now α) -> DataFlow.do
-      (now, f) <- execBO @α @(After α a) bo now
-      case endLifetime now of
-        Ur end -> withEnd @α end f
+{- $lifetimes
+Lifetime is a key concept in borrow.
+You can understand it is a version of thread parameter @s@ in @'Control.Monad.ST' s@, but refined with subtyping relation t'(<=)' (or /outlives/-relation t'(>=)').
 
-runBOLend :: Linearly %1 -> (forall α. BO α (Lend α a)) %1 -> a
-{-# INLINE runBOLend #-}
-runBOLend lin bo = runBO lin Control.do
-  lend <- bo
-  Control.pure (reclaim' lend)
+Every @'BO' α@ computation is parametrized with lifetime, and ordinary borrows, such as @'Mut' α a@ or @'Share' α a@, and lenders @'Lend' α a@ also have the lifetime for which they are valid.
+To accomodate the casting between different lifetimes, we also provide the 'upcast' operator that has a lifetime parameter according to the sublifetime relation.
+The 'upcast' operator casts a given type along t'(<:)' relation, which extends t'(<=)' to the other types appropriately.
 
-runBO_ :: Linearly %1 -> (forall α. BO α a) %1 -> a
-{-# INLINE runBO_ #-}
-runBO_ lin bo = runBO lin Control.do
-  a <- bo
-  pureAfter a
+Any two lifetimes @α@ and @β@ have the /meet/ @α '/\' β@, which is the longest lifetime that is shorter than both @α@ and @β@; i.e. @α '/\' β@ is the most generic lifetime such that @α '/\' β <= α@ and @α '/\' β <= β@.
+We use some tricks using '/\' to workaround type-checking higher-level combinators.
+For example, consider the type of 'srunBO_':
 
--- | Flipped version of 'sexecBO'.
-scope_ :: Now α %1 -> BO (α /\ β) a %1 -> BO β (Now α, a)
-{-# INLINE scope_ #-}
-scope_ = flip sexecBO
+@
+'srunBO_' :: (forall β. 'BO' (β '/\' α) a) %1 -> 'BO' α a
+@
 
--- | A variant of 'borrow' that obtains 'Linearly' viar 'LinearOnly'.
-borrowLinearOnly :: forall α a. (LinearOnly a) => a %1 -> (Mut α a, Lend α a)
-borrowLinearOnly !a = case withLinearly a of
-  (!lin, !a) -> borrow a lin
+At first glance, the type @forall β. 'BO' (β '/\' α) a@ might looks rather cryptic.
+But essentially, the above type is morally equivalent to the following:
 
-{- | Executes an operation on 'Share'd borrow in sub lifetime.
-You may need @-XImpredicativeTypes@ extension to use this function.
+@
+'srunBO_' :: (forall β <= α. 'BO' β a) => 'BO' α a
+@
 
-See also: '(<$=)', 'sharing' and 'sharing''.
+That is, all the 'srunBO_' does is that it opens a ephemeral sublifetime @β <= α@, and does all the computation inside it.
+However, without involved hacking or type-checker plugins, the type system is not good at treating transitivity of subtyping relation.
+By just quantifying over all the lifetimes and combine them with '/\', we can make the type-checker happy without losing generality.
+
+So, if you see the pattern like binding other lifetimes with @forall@ and combined it with '/\', you can think of it as just quantifying over the sublifetime of the current lifetime.
 -}
-sharing_ ::
-  forall α α' a.
-  Mut α a %1 ->
-  (forall β. Share (β /\ α) a -> BO (β /\ α') ()) %1 ->
-  BO α' (Mut α a)
-{-# INLINE sharing_ #-}
-sharing_ v k = sharing v k Control.<&> \((), a) -> a
-
--- | Flipped infix version of 'sharing_', smoewhat analgous to '(Control.<$>)' and @(<%=)@ in @lens@ package.
-(<$=) ::
-  (forall β. Share (β /\ α) a -> BO (β /\ α') ()) %1 ->
-  Mut α a %1 ->
-  BO α' (Mut α a)
-{-# INLINE (<$=) #-}
-(<$=) = flip sharing_
-
-{- | Executes an operation on 'Share'd borrow in sub lifetime.
-You may need @-XImpredicativeTypes@ extension to use this function.
-
-See also: '(<$~)', 'sharing'', and 'sharing_'.
--}
-sharing ::
-  forall α α' a r.
-  Mut α a %1 ->
-  (forall β. Share (β /\ α) a -> BO (β /\ α') r) %1 ->
-  BO α' (r, Mut α a)
-{-# INLINE sharing #-}
-sharing v k = sharing' v (\mut -> Control.pure Control.<$> k mut)
-
--- | Flipped infix version of 'sharing', smoewhat analgous to '(Control.<$>)' and @(<%~)@ in @lens@ package.
-(<$~) ::
-  (forall β. Share (β /\ α) a -> BO (β /\ α') r) %1 ->
-  Mut α a %1 ->
-  BO α' (r, Mut α a)
-{-# INLINE (<$~) #-}
-(<$~) = flip sharing
-
-infix 4 <$~
-
-{- | Executes an operation on 'Share'd borrow in sub lifetime.
-You may need @-XImpredicativeTypes@ extension to use this function.
-
-See also: 'sharing' and 'sharing_'.
--}
-sharing' ::
-  Mut α a %1 ->
-  (forall β. Share (β /\ α) a -> BO (β /\ α') (After β r)) %1 ->
-  BO α' (r, Mut α a)
-{-# INLINE sharing' #-}
-sharing' v k = DataFlow.do
-  srunBO DataFlow.do
-    (v, lend) <- reborrow v
-    share v & \(Ur v) -> Control.do
-      k v Control.<&> \v -> (,) Control.<$> v Control.<*> upcast (reclaim' lend)
-
-reborrowing' ::
-  Mut α a %1 ->
-  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') (After β r)) %1 ->
-  BO α' (r, Mut α a)
-reborrowing' v k = srunBO DataFlow.do
-  (v, lend) <- reborrow v
-  Control.do
-    v <- k v
-    Control.pure $ (,) Control.<$> v Control.<*> upcast (reclaim' lend)
-
-reborrowing ::
-  Mut α a %1 ->
-  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
-  BO α' (r, Mut α a)
-reborrowing mutα k = reborrowing' mutα (\mut -> Control.pure Control.<$> k mut)
-
--- | Flipped infix version of 'reborrowing', smoewhat analgous to '(Control.<$>)' and @(<%~)@ in @lens@ package.
-(<%~) ::
-  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
-  Mut α a %1 ->
-  BO α' (r, Mut α a)
-{-# INLINE (<%~) #-}
-(<%~) = flip reborrowing
-
-infix 4 <%~
-
-reborrowing_ ::
-  (Consumable r) =>
-  Mut α a %1 ->
-  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
-  BO α' (Mut α a)
-reborrowing_ mutα k = reborrowing mutα (Control.fmap consume . k) Control.<&> \((), a) -> a
-
--- | Flipped infix version of 'reborrowing_', smoewhat analgous to '(Control.<$>)' and @(<%=)@ in @lens@ package.
-(<%=) ::
-  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') ()) %1 ->
-  Mut α a %1 ->
-  BO α' (Mut α a)
-{-# INLINE (<%=) #-}
-(<%=) = flip reborrowing_
-
-infix 4 <%=
-
--- | Modifies linear resources in-place, together with results.
-modifyBO ::
-  a %1 ->
-  Linearly %1 ->
-  (forall α. Mut α a %1 -> BO α r) %1 ->
-  (r, a)
-modifyBO v lin k = DataFlow.do
-  (lin, lin') <- dup lin
-  runBO lin Control.do
-    let %1 !(mut, lend) = borrow v lin'
-    r <- k mut
-    Control.pure $ (r,) Control.<$> reclaim' lend
-
--- | Modifies linear resources in-place, without results.
-modifyBO_ ::
-  a %1 ->
-  Linearly %1 ->
-  (forall α. Mut α a %1 -> BO α ()) %1 ->
-  a
-modifyBO_ v lin k = DataFlow.do
-  (lin, lin') <- dup lin
-  runBO lin Control.do
-    let %1 !(mut, lend) = borrow v lin'
-    k mut
-    Control.pure $ reclaim' lend
-
--- | Modifies linear resources in-place, together with results.
-modifyLinearOnlyBO ::
-  (LinearOnly a) =>
-  a %1 ->
-  (forall α. Mut α a %1 -> BO α r) %1 ->
-  (r, a)
-modifyLinearOnlyBO v k = DataFlow.do
-  (lin, v) <- withLinearly v
-  runBO lin Control.do
-    let %1 !(mut, lend) = borrowLinearOnly v
-    !r <- k mut
-    Control.pure $ (r,) Control.<$> reclaim' lend
-
--- | Modifies linear resources in-place, together with results.
-modifyLinearOnlyBO_ ::
-  (LinearOnly a) =>
-  a %1 ->
-  (forall α. Mut α a %1 -> BO α ()) %1 ->
-  a
-modifyLinearOnlyBO_ v k = DataFlow.do
-  (lin, v) <- withLinearly v
-  runBO lin Control.do
-    let %1 !(mut, lend) = borrowLinearOnly v
-    k mut
-    Control.pure (reclaim' lend)
-
-asksLinearly :: (Linearly %1 -> r) %1 -> BO α r
-{-# INLINE asksLinearly #-}
-asksLinearly k = asksLinearlyM $ Control.pure . k
-
-pureAfter :: ((End α) => a) %1 -> BO α (After α a)
-{-# INLINE pureAfter #-}
-pureAfter a = Control.pure (After a)
-
-coerceShare :: forall b α a. (Coercible a b) => Share α a %1 -> Share α b
-{-# INLINE coerceShare #-}
-coerceShare = coerceLin
-
-shareCoercion :: forall a b α. (Coercible a b) => Coercion (Share α a) (Share α b)
-{-# INLINE shareCoercion #-}
-shareCoercion = Coercion
-
-{- |
-Borrow a resource linearly for the same lifetime as the ambient 'BO' computation.
-Returns the pair of the mutable borrow to the resource, and 'Lend'er to be invoked later to 'reclaim' the resource at the 'End' of the lifetime.
-
-See also 'borrowLinearlyM'.
-
-If you want to borrow a resource indepdendent of the ambient lifetime, you can use 'borrow' instead.
--}
-borrowM :: a %1 -> BO α (Mut α a, Lend α a)
-{-# INLINE borrowM #-}
-borrowM !a = asksLinearly \lin -> borrow a lin
-
--- | A variant of 'borrowM' that does linear allocation first.
-borrowLinearlyM :: (Linearly %1 -> a) %1 -> BO α (Mut α a, Lend α a)
-{-# INLINE borrowLinearlyM #-}
-borrowLinearlyM k = asksLinearlyM $ borrowM . k

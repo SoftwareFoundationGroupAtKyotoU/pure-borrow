@@ -25,6 +25,7 @@ data Lifetime = Al Nat | Lifetime :/\ Lifetime | Static
 
 type Al = 'Al
 
+-- | 'Static' lifetime, which lives forever and 'Control.Monad.Borrow.Pure.Lifetime.Token.neverEnds'.
 type Static = 'Static
 
 infix 2 <=, <=!, <=!!

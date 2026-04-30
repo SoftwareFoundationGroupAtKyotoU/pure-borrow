@@ -36,8 +36,8 @@ import Control.Concurrent.STM (STM, atomically, retry)
 import Control.Concurrent.STM.TMDeque (TMDeque, closeTMDeque, isClosedTMDeque, newTMDequeIO, pushFrontTMDeque, sizeTMDeque, tryPopBackTMDeque, tryPopFrontTMDeque)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
-import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Unsafe (Alias (..), unsafeSystemIOToBO)
+import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (..), unsafeSystemIOToBO)
 import Data.Coerce (coerce)
 import Data.Foldable qualified as P
 import Data.Function (fix)

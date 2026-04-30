@@ -17,7 +17,7 @@ This module is meant for library authors who want to build a new API on top of P
 This module provides internals of 'BO' and 'Alias', which can break the soundness guarded by the role system.
 We __STRONGLY__ recommend to you to import only the needed parts of the definitions, and not to import everything or qualified.
 -}
-module Control.Monad.Borrow.Pure.Unsafe (
+module Control.Monad.Borrow.Pure.BO.Unsafe (
   -- * Internal definitions and utilities of core types.
   BO (..),
   Alias (..),
@@ -34,4 +34,4 @@ module Control.Monad.Borrow.Pure.Unsafe (
   unsafeUnBO,
 ) where
 
-import Control.Monad.Borrow.Pure.Internal
+import Control.Monad.Borrow.Pure.BO.Internal

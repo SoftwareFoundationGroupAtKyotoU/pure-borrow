@@ -45,7 +45,7 @@ module Data.Record.Linear.Borrow.Experimental.Split (
   (!#),
 ) where
 
-import Control.Monad.Borrow.Pure.Internal
+import Control.Monad.Borrow.Pure.BO.Internal
 import Control.Monad.Borrow.Pure.Lifetime
 import Data.Kind (Constraint)
 import GHC.Base (Multiplicity (..), TYPE, Type)

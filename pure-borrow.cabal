@@ -79,19 +79,20 @@ library
     Control.Monad.Borrow.Pure.Affine
     Control.Monad.Borrow.Pure.Affine.Internal
     Control.Monad.Borrow.Pure.Affine.Unsafe
+    Control.Monad.Borrow.Pure.BO
+    Control.Monad.Borrow.Pure.BO.Internal
+    Control.Monad.Borrow.Pure.BO.Unsafe
     Control.Monad.Borrow.Pure.Clone
     Control.Monad.Borrow.Pure.Copyable
     Control.Monad.Borrow.Pure.Experimental.Borrows
     Control.Monad.Borrow.Pure.Experimental.Loop
     Control.Monad.Borrow.Pure.Experimental.Reborrowable
-    Control.Monad.Borrow.Pure.Internal
     Control.Monad.Borrow.Pure.Lifetime
     Control.Monad.Borrow.Pure.Lifetime.Internal
     Control.Monad.Borrow.Pure.Lifetime.Token
     Control.Monad.Borrow.Pure.Lifetime.Token.Internal
     Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe
     Control.Monad.Borrow.Pure.Ref
-    Control.Monad.Borrow.Pure.Unsafe
     Control.Syntax.DataFlow
     Data.Coerce.Directed
     Data.Coerce.Directed.Internal

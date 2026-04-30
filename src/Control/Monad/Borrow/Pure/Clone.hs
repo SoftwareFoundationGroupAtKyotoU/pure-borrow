@@ -21,17 +21,14 @@ module Control.Monad.Borrow.Pure.Clone (
 ) where
 
 import Control.Functor.Linear qualified as Control
+import Control.Monad.Borrow.Pure.BO.Internal
 import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Internal
-import Control.Monad.Borrow.Pure.Ref
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Coerce (Coercible, coerce)
 import Data.Data (Proxy)
 import Data.Int
 import Data.Kind (Constraint, Type)
 import Data.List.NonEmpty (NonEmpty)
-import Data.Ref.Linear (freeRef)
-import Data.Ref.Linear qualified as Ref
 import Data.Word
 import GHC.Exts (Multiplicity (..))
 import Generics.Linear
@@ -51,13 +48,6 @@ class Clone a where
   clone :: Share α a %1 -> BO α a
   default clone :: (GenericClone a) => Share α a %1 -> BO α a
   clone = genericClone
-
-instance (Dupable a) => Clone (Ref a) where
-  clone = Unsafe.toLinear \(UnsafeAlias ref) -> Control.do
-    !a <- Control.pure $ freeRef ref
-    !a' <- Unsafe.toLinear (\(!_, !a') -> Control.pure a') $ dup a
-    Ref.new a' Control.<$> askLinearly
-  {-# INLINE clone #-}
 
 newtype AsCopyable a = AsCopyable a
   deriving newtype (Copyable)

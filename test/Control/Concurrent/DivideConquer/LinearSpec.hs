@@ -13,7 +13,8 @@ module Control.Concurrent.DivideConquer.LinearSpec (
 
 import Control.Concurrent.DivideConquer.Linear
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure
+import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.Pure.Copyable
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.List qualified as List
 import Data.List qualified as NonLinear

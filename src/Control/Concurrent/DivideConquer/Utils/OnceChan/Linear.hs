@@ -18,11 +18,10 @@ module Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear.Unlifted
 import Control.Monad.Borrow.Pure.Affine
 import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
-import Control.Monad.Borrow.Pure.Internal
+import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
-  Linearly (..),
  )
 import Data.Unrestricted.Linear
 import Prelude.Linear hiding (take)
@@ -61,8 +60,8 @@ instance Affine (Source a) where
 
 take :: Source a %1 -> BO α a
 {-# INLINE take #-}
-take (Source v) = evaluate $ take# v
+take (Source v) = evaluateBO $ take# v
 
 put :: Sink a %1 -> a %1 -> BO α ()
 {-# INLINE put #-}
-put (Sink v) !a = evaluate $ put# v a
+put (Sink v) !a = evaluateBO $ put# v a

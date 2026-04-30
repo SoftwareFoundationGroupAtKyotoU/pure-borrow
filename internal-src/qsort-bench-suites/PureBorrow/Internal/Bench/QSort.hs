@@ -18,7 +18,7 @@ import Control.Applicative
 import Control.Concurrent (getNumCapabilities)
 import Control.Concurrent.DivideConquer.Linear (qsortDC)
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure
+import Control.Monad.Borrow.Pure.BO
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Proxy (Proxy (..))
 import Data.Vector qualified as V

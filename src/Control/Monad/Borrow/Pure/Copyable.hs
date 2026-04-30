@@ -39,12 +39,11 @@ module Control.Monad.Borrow.Pure.Copyable (
   genericLiftCopy,
 ) where
 
-import Control.Monad.Borrow.Pure.Internal
+import Control.Monad.Borrow.Pure.BO.Internal
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Array.Mutable.Linear (Array)
 import Data.Int
 import Data.Kind (Constraint, Type)
-import Data.Ref.Linear (Ref)
 import Data.Semigroup qualified as Sem
 import Data.Vector.Mutable.Linear (Vector)
 import Data.Word
@@ -60,12 +59,6 @@ class Copyable a where
 instance Copyable (Ur a) where
   copy (UnsafeAlias (Ur !a)) = Ur a
   {-# INLINE copy #-}
-
-instance
-  (Unsatisfiable (ShowType (Ref a) :<>: Text " cannot be copied!")) =>
-  Copyable (Ref a)
-  where
-  copy = unsatisfiable
 
 instance
   (Unsatisfiable (ShowType (Array a) :<>: Text " cannot be copied!")) =>

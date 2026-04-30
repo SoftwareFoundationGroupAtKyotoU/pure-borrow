@@ -26,8 +26,8 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# OPTIONS_HADDOCK hide #-}
 
-module Control.Monad.Borrow.Pure.Internal (
-  module Control.Monad.Borrow.Pure.Internal,
+module Control.Monad.Borrow.Pure.BO.Internal (
+  module Control.Monad.Borrow.Pure.BO.Internal,
 ) where
 
 import Control.Exception qualified as SystemIO
@@ -235,9 +235,9 @@ parBO = Unsafe.toLinear2 \a b ->
                 (# s, !a #) -> case Unsafe.toLinear2 GHC.seq# b s of
                   (# s, !b #) -> (# s, (a, b) #)
 
-evaluate :: a %1 -> BO α a
-{-# INLINE evaluate #-}
-evaluate a = unsafeSystemIOToBO (Unsafe.toLinear SystemIO.evaluate a)
+evaluateBO :: a %1 -> BO α a
+{-# INLINE evaluateBO #-}
+evaluateBO a = unsafeSystemIOToBO (Unsafe.toLinear SystemIO.evaluate a)
 
 -- | Alias of kind 'ak' to a resource of type 'a'.
 type Alias :: AliasKind -> Lifetime -> Type -> Type
@@ -522,11 +522,3 @@ instance
 instance GDistributeAlias U1 where
   gdistributeAlias = coerceLin
   {-# INLINE gdistributeAlias #-}
-
-srunBO :: (forall α. BO (α /\ β) (After α a)) %1 -> BO β a
-{-# INLINE srunBO #-}
-srunBO bo = asksLinearlyM \lin ->
-  newLifetime' lin \now -> Control.do
-    (now, f) <- sexecBO bo now
-    Ur end <- Control.pure (endLifetime now)
-    Control.pure (withEnd end f)

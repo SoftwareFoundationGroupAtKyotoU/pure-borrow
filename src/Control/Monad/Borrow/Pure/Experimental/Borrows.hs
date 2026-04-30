@@ -29,7 +29,7 @@ import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Affine
 import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
 import Control.Monad.Borrow.Pure.Experimental.Reborrowable
-import Data.Coerce.Directed
+import Data.Coerce.Directed.Unsafe
 import Data.Kind
 import Prelude.Linear hiding (foldMap)
 import Unsafe.Linear qualified as Unsafe

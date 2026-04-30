@@ -34,7 +34,6 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Affine (Affine, GenericallyAffine (..))
 import Control.Monad.Borrow.Pure.Internal
-import Data.Coerce.Directed
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
 import Data.List.Linear qualified as LL

@@ -19,7 +19,7 @@ module Control.Monad.Borrow.Pure.Lifetime.Token.Internal (
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Lifetime.Internal
-import Data.Coerce.Directed (SubtypeWitness (UnsafeSubtype), type (<:) (..))
+import Data.Coerce.Directed.Unsafe
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Constraint)
 import Data.Unrestricted.Linear

@@ -41,7 +41,7 @@ import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Monad.ST.Strict (ST)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce qualified
-import Data.Coerce.Directed
+import Data.Coerce.Directed.Unsafe
 import Data.Functor.Identity (Identity)
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)

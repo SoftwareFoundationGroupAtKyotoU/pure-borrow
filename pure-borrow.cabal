@@ -94,6 +94,8 @@ library
     Control.Monad.Borrow.Pure.Unsafe
     Control.Syntax.DataFlow
     Data.Coerce.Directed
+    Data.Coerce.Directed.Internal
+    Data.Coerce.Directed.Unsafe
     Data.Comonad.Linear
     Data.Record.Linear.Borrow.Experimental.PatternMatch
     Data.Record.Linear.Borrow.Experimental.Split

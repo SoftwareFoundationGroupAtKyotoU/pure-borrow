@@ -28,6 +28,7 @@ module Control.Monad.Borrow.Pure (
   asksLinearlyM,
 
   -- ** Subtyping
+  type (<:),
   upcast,
 
   -- ** In-place modification with mutable borrows
@@ -116,7 +117,7 @@ import Control.Monad.Borrow.Pure.Ref
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce (Coercible)
-import Data.Coerce.Directed (upcast)
+import Data.Coerce.Directed
 import Data.Type.Coercion (Coercion (..))
 import Prelude.Linear
 

@@ -280,7 +280,7 @@ At first glance, the type @forall β. 'BO' (β '/\' α) a@ might look rather cry
 But essentially, the above type is morally equivalent to the following:
 
 @
-'srunBO_' :: (forall β \<= α. 'BO' β a) => 'BO' α a
+'srunBO_' :: (forall β \<= α. 'BO' β a) %1 -> 'BO' α a
 @
 
 That is, all 'srunBO_' does is open an ephemeral sublifetime @β <= α@ and run the computation inside it.

@@ -387,7 +387,7 @@ There is an experimental interface abstracting the reborrowable borrows in "Cont
 type 'Mut' α a = 'Borrow' 'Mut α a
 type 'Share' α a = 'Borrow' 'Share α a
 type 'Borrow' bk α a = 'Alias' ('Borrow bk) α a
-type 'Lend' α a = 'Borrow' 'Lend α a
+type 'Lend' α a = 'Alias' 'Lend α a
 @
 
 Hence, if you see @'Borrow' bk α a@ in a function, it can be either 'Mut' or 'Share'. If you see @'Alias' ak α a@, it may also be a 'Lend'.

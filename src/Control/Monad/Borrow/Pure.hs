@@ -363,7 +363,7 @@ Note that 'share' consumes the original 'Mut'. If you want to share the resource
 'sharing' ::
   forall α α' a r.
   'Mut' α a %1 ->
-  (forall β. 'Share' (β /\ α) a -> 'BO' (β /\ α') r) %1 ->
+  (forall β. 'Share' (β '/\' α) a -> 'BO' (β '/\' α') r) %1 ->
   'BO' α' (r, 'Mut' α a)
 @
 
@@ -373,7 +373,7 @@ Analogously, you can reborrow mutable borrows into sublifetimes using the 'rebor
 'reborrowing' ::
   forall α α' a r.
   'Mut' α a %1 ->
-  (forall β. 'Mut' (β /\ α) a -> 'BO' (β /\ α') r) %1 ->
+  (forall β. 'Mut' (β '/\' α) a -> 'BO' (β '/\' α') r) %1 ->
   'BO' α' (r, 'Mut' α a)
 @
 
@@ -427,8 +427,14 @@ Some examples are (but not limited to):
     * Primitive types, such as 'Int', 'Bool', etc.
     * Immutable data structures, such as lists, tuples of them, etc. (but not mutable vectors, arrays, etc.)
 
-For possibly mutable types, you can still 'clone' them out of borrows linearly.
+For possibly mutable types, you can still 'clone' them out of borrows linearly inside 'BO'-monad:
+
+@
+'clone' :: 'Clone' a => 'Share' α a %1 -> 'BO' α a
+@
+
 This includes, for example, 'Data.Ref.Linear.Ref' or 'Data.Vector.Mutable.Linear.Borrow.Vector'.
+The fact that the 'clone'd value is only accessible inside 'BO' ensures that we cannot leak mutable states inside @a@ into /unrestricted/ contexts -- otherwise, we can introduce mutable values into unrestricted context via @'move' :: 'Share' α a -> 'Ur' ('Share' α a)@.
 -}
 
 {- $splitting
@@ -436,8 +442,8 @@ This includes, for example, 'Data.Ref.Linear.Ref' or 'Data.Vector.Mutable.Linear
 You can do case-splitting on 'Borrow's - for example:
 
 @
-splitPair :: Alias ak α (a, b) %1 -> (Alias ak α a, Alias ak α b)
-splitEither :: Alias ak α (Either a b) %1 -> Either (Alias ak α a) (Alias ak α b)
+'splitPair' :: 'Alias' ak α (a, b) %1 -> ('Alias' ak α a, 'Alias' ak α b)
+'splitEither' :: 'Alias' ak α ('Either' a b) %1 -> 'Either' ('Alias' ak α a) ('Alias' ak α b)
 @
 
 For other datatypes, you can use 'split' to split general parametric types into borrows.

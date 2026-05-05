@@ -146,6 +146,7 @@ jobs:
           enable-stack: false
           cabal-version: ${{env.cabal-version}}
           ghc-version: ${{env.ghc}}
+          cabal-update: true
       - name: Restore ~/.cabal/store
         uses: actions/cache/restore@v3
         with:
@@ -160,7 +161,6 @@ jobs:
           restore-keys: ${{steps.cache-keys.outputs.dist-restore}}
       - name: Build Haddock for Hackage
         run: |
-          ${{env.cabal}} update
           TARBALL_PATH=$(${{env.cabal}} haddock --haddock-for-hackage pure-borrow | tail -n1)
           echo "TARBALL_PATH=${TARBALL_PATH}" >> "${GITHUB_ENV}"
       - name: Extract Haddock Tarball

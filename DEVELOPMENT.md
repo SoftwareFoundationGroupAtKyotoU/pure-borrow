@@ -23,3 +23,10 @@ Recommendation:
 - Add freeze file downloaded from Stackage to `ci/configs`.
   + Run e.g.: `curl -s -L https://www.stackage.org/lts/cabal.config -o ci-configs/ghc-9.8.4.project` and add `import: ../../cabal.project` on top of it.
 - CI script automatically enumerates the config files and generates matrix CI.
+
+## Release
+
+To create a release, first create a GitHub Release with tag `vX.Y.Z.W`, where `X.Y.Z.W` can be any valid version number obeying [Package Versioning Policy](https://pvp.haskell.org).
+
+The release will be made after at least one of administrator approves it.
+Hackage upload was made as a release candidate, so human must open the Hackage

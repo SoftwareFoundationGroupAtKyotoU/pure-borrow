@@ -13,20 +13,20 @@ module Main (main) where
 
 import Control.Applicative ((<**>))
 import Control.Exception (throwIO)
-import qualified Data.ByteString.Char8 as BS8
-import qualified Data.ByteString.Lazy as LBS
+import Data.ByteString.Char8 qualified as BS8
+import Data.ByteString.Lazy qualified as LBS
 import Data.Coerce (coerce)
 import Data.Csv
 import Data.Functor
-import qualified Data.HashMap.Strict as HM
+import Data.HashMap.Strict qualified as HM
 import Data.IntMap.Monoidal.Strict (MonoidalIntMap)
-import qualified Data.IntMap.Monoidal.Strict as MIM
+import Data.IntMap.Monoidal.Strict qualified as MIM
 import Data.Maybe (fromMaybe)
 import Data.Monoid (Sum (..))
-import qualified Data.Text as T
-import qualified Data.Vector as V
+import Data.Text qualified as T
+import Data.Vector qualified as V
 import GHC.Generics
-import qualified Options.Applicative as Opts
+import Options.Applicative qualified as Opts
 import Text.Read (readEither)
 
 data CLIOptions = CLIOptions

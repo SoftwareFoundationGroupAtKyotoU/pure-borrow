@@ -4,7 +4,6 @@
 {-# LANGUAGE LinearTypes #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeAbstractions #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
@@ -13,7 +12,8 @@ module Data.Vector.Mutable.Linear.BorrowSpec (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure
+import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.Pure.Copyable
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Bifunctor.Linear qualified as Bi
 import Data.List qualified as List
@@ -31,12 +31,11 @@ import Prelude qualified as NonLinear
 
 qsortVec :: (Ord a, Copyable a) => V.Vector a -> V.Vector a
 qsortVec v = unur $ linearly \lin -> DataFlow.do
-  (l1, l2, l3) <- dup3 lin
-  runBO l1 \ @α ->
-    borrow @α (VL.fromVector v l2) l3
-      & \(v, lend) -> Control.do
-        VL.qsort 8 v
-        pureAfter $ VL.toVector (reclaim lend)
+  (l1, l2) <- dup lin
+  runBO l1 Control.do
+    (v, lend) <- borrowM (VL.fromVector v l2)
+    VL.qsort 8 v
+    pureAfter $ VL.toVector (reclaim lend)
 
 divideList :: [Int] -> (Int, [Int])
 divideList [] = (0, [])
@@ -44,16 +43,15 @@ divideList xs =
   let v0 = (V.fromList xs)
       pivot = v0 V.! (V.length v0 `quot` 2)
    in Bi.second unur $ linearly \lin -> DataFlow.do
-        (l1, l2, l3) <- dup3 lin
-        runBO l1 \ @α ->
-          borrow @α (VL.fromList xs l2) l3
-            & \(v, lend) ->
-              VL.size v & \(Ur len, v) -> Control.do
-                (lo, hi) <- VL.divide pivot v 0 len
-                VL.size lo & \(Ur n, lo) -> DataFlow.do
-                  consume lo
-                  consume hi
-                  pureAfter (n, VL.toList $ reclaim lend)
+        (l1, l2) <- dup lin
+        runBO l1 Control.do
+          (v, lend) <- borrowM (VL.fromList xs l2)
+          VL.size v & \(Ur len, v) -> Control.do
+            (lo, hi) <- VL.divide pivot v 0 len
+            VL.size lo & \(Ur n, lo) -> DataFlow.do
+              consume lo
+              consume hi
+              pureAfter (n, VL.toList $ reclaim lend)
 
 test_divideList :: TestTree
 test_divideList =
@@ -109,8 +107,8 @@ example1 :: (Int, [Int])
 example1 = linearly \lin -> DataFlow.do
   (lin, lin') <- dup lin
   vec <- VL.fromList [0, 1, 2] lin
-  runBO lin' \ @α -> Control.do
-    let !(mvec, lend) = borrowLinearOnly @α vec
+  runBO lin' Control.do
+    (mvec, lend) <- borrowM vec
     mvec <- VL.modify 0 (+ 3) mvec
     mvec <- VL.modify 2 (+ 5) mvec
     mvec <- VL.modify 0 (* 4) mvec
@@ -127,8 +125,8 @@ example2 :: (Int, [Int])
 example2 = linearly \lin -> DataFlow.do
   (lin, lin') <- dup lin
   vec <- VL.fromList [0, 1, 2] lin
-  runBO lin' \ @α -> Control.do
-    let !(mvec, lend) = borrowLinearOnly @α vec
+  runBO lin' Control.do
+    (mvec, lend) <- borrowM vec
     let !(mvec1, mvec2) = VL.splitAt 1 mvec
     (mvec, ()) <-
       parBO
@@ -150,8 +148,8 @@ example3 :: (Int, [Int])
 example3 = linearly \lin -> DataFlow.do
   (lin, lin') <- dup lin
   vec <- VL.fromList [0, 1, 2] lin
-  runBO lin' \ @α -> Control.do
-    let !(mvec, lend) = borrowLinearOnly @α vec
+  runBO lin' Control.do
+    (mvec, lend) <- borrowM vec
     mvec <- reborrowing_ mvec \mvec -> Control.do
       let !(mvec1, mvec2) = VL.splitAt 1 mvec
       consume

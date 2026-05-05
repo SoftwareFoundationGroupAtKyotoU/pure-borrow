@@ -7,7 +7,6 @@
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeAbstractions #-}
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
@@ -23,17 +22,17 @@ import Control.Concurrent (getNumCapabilities)
 import Control.Concurrent.DivideConquer.Linear (qsortDC)
 import Control.DeepSeq (force)
 import Control.Exception (evaluate)
-import qualified Control.Functor.Linear as Control
-import Control.Monad.Borrow.Pure
-import qualified Control.Syntax.DataFlow as DataFlow
+import Control.Functor.Linear qualified as Control
+import Control.Monad.Borrow.Pure.BO
+import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Functor (void)
-import qualified Data.Vector as V
-import qualified Data.Vector.Algorithms.Intro as AI
-import qualified Data.Vector.Mutable.Linear.Borrow as VL
+import Data.Vector qualified as V
+import Data.Vector.Algorithms.Intro qualified as AI
+import Data.Vector.Mutable.Linear.Borrow qualified as VL
 import GHC.Generics (Generic)
-import qualified Options.Applicative as Opts
+import Options.Applicative qualified as Opts
 import Prelude.Linear hiding (Eq, Ord, Semigroup (..), ($), ($!))
-import qualified Prelude.Linear as PL hiding (($!))
+import Prelude.Linear qualified as PL hiding (($!))
 import System.Mem (performGC)
 import System.Random
 import System.Random.Stateful (runStateGen_, uniformM)
@@ -70,26 +69,26 @@ qsortWith IntroSort _ v = V.modify AI.sort v
 qsortWith (Parallel bud) _ v =
   unur PL.$ linearly \lin ->
     DataFlow.do
-      (lin, l2, l3) <- dup3 lin
-      runBO lin \ @α -> Control.do
-        (v, lend) <- Control.pure PL.$ borrow @α (VL.fromVector v l2) l3
+      (lin, l2) <- dup lin
+      runBO lin Control.do
+        (v, lend) <- borrowM (VL.fromVector v l2)
         VL.qsort bud v
         pureAfter (VL.toVector PL.$ reclaim lend)
 qsortWith Sequential _ v =
   unur PL.$ linearly \lin ->
     DataFlow.do
-      (lin, l2, l3) <- dup3 lin
-      runBO lin \ @α -> Control.do
-        (v, lend) <- Control.pure PL.$ borrow @α (VL.fromVector v l2) l3
+      (lin, l2) <- dup lin
+      runBO lin Control.do
+        (v, lend) <- borrowM (VL.fromVector v l2)
         VL.qsort 0 v
         pureAfter (VL.toVector PL.$ reclaim lend)
-qsortWith (Worksteal workers thresh) g v =
+qsortWith (Worksteal workers thresh) _ v =
   unur PL.$ linearly \lin ->
     DataFlow.do
-      (lin, l2, l3) <- dup3 lin
-      runBO lin \ @α -> Control.do
-        (v, lend) <- Control.pure PL.$ borrow @α (VL.fromVector v l2) l3
-        Control.void PL.$ qsortDC workers thresh g v
+      (lin, l2) <- dup lin
+      runBO lin Control.do
+        (v, lend) <- borrowM (VL.fromVector v l2)
+        Control.void PL.$ qsortDC workers thresh v
         pureAfter (VL.toVector PL.$ reclaim lend)
 
 defaultMainWith :: CLIOpts -> IO ()

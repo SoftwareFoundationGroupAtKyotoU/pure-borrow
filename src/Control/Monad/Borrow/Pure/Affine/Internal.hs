@@ -15,17 +15,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 
 module Control.Monad.Borrow.Pure.Affine.Internal (
-  -- * Affine Types
-  Affine (..),
-  AsAffine (..),
-  Aff (..),
-  affu,
-  unaff,
-  pop,
-
-  -- ** Linear Generics
-  GenericAffine,
-  GenericallyAffine (..),
+  module Control.Monad.Borrow.Pure.Affine.Internal,
 ) where
 
 import Data.Comonad.Linear qualified as Data

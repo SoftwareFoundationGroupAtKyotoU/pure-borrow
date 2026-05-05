@@ -24,9 +24,10 @@
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
+{-# OPTIONS_HADDOCK hide #-}
 
-module Control.Monad.Borrow.Pure.Internal (
-  module Control.Monad.Borrow.Pure.Internal,
+module Control.Monad.Borrow.Pure.BO.Internal (
+  module Control.Monad.Borrow.Pure.BO.Internal,
 ) where
 
 import Control.Exception qualified as SystemIO
@@ -39,28 +40,22 @@ import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Monad.ST.Strict (ST)
 import Control.Syntax.DataFlow qualified as DataFlow
-import Data.Array.Mutable.Linear (Array)
 import Data.Coerce qualified
-import Data.Coerce.Directed
+import Data.Coerce.Directed.Unsafe
 import Data.Functor.Identity (Identity)
 import Data.Functor.Linear qualified as Data
-import Data.Int
-import Data.Kind (Constraint, Type)
+import Data.Kind (Type)
 import Data.Monoid qualified as Mon
 import Data.Ord qualified as Ord
-import Data.Ref.Linear (Ref)
 import Data.Semigroup qualified as Sem
 import Data.Tuple (Solo (..))
 import Data.Type.Equality ((:~:) (Refl))
-import Data.Vector.Mutable.Linear (Vector)
-import Data.Word
 import GHC.Base (TYPE)
 import GHC.Base qualified as GHC
 import GHC.Exts (State#, runRW#)
 import GHC.ST qualified as ST
 import GHC.TypeError (ErrorMessage (..))
 import Generics.Linear
-import Numeric.Natural (Natural)
 import Prelude.Linear
 import Prelude.Linear qualified as PL
 import Prelude.Linear.Unsatisfiable (Unsatisfiable, unsatisfiable)
@@ -68,9 +63,19 @@ import System.IO.Linear qualified as L
 import Unsafe.Coerce (unsafeCoerce#)
 import Unsafe.Linear qualified as Unsafe
 
+-- NOTE: NOINLINE here is REALLY important, otherwise GHC will inline 'UnsafeLinearly' and common subexpression elimination
+-- causes severe soundness bug that the same expression reuses the same
+-- linear resource and sometimes SEGV.
 askLinearly :: BO α Linearly
 {-# NOINLINE askLinearly #-}
 askLinearly = GHC.noinline $ Control.pure UnsafeLinearly
+
+asksLinearlyM :: (Linearly %1 -> BO α r) %1 -> BO α r
+{-# INLINE asksLinearlyM #-}
+asksLinearlyM k = Control.do
+  lin <- askLinearly
+  !a <- k lin
+  Control.pure a
 
 -- NOTE: We want to use @TypeData@ extension for 'ForBO', but it makes Haddock panic!
 
@@ -81,6 +86,18 @@ data ForBO α
      Internally it is a linear ST monad.
 -}
 newtype BO α a = BO (State# (ForBO α) %1 -> (# State# (ForBO α), a #))
+
+instance (Semigroup w) => Semigroup (BO α w) where
+  (<>) = Control.liftA2 (<>)
+  {-# INLINE (<>) #-}
+
+instance (Monoid w) => Monoid (BO α w) where
+  mempty = Control.pure mempty
+  {-# INLINE mempty #-}
+
+unsafeUnBO :: BO α a %1 -> State# (ForBO α) %1 -> (# State# (ForBO α), a #)
+{-# INLINE unsafeUnBO #-}
+unsafeUnBO (BO f) = f
 
 assocRBO :: BO ((α /\ β) /\ γ) a %1 -> BO (α /\ (β /\ γ)) a
 {-# INLINE assocRBO #-}
@@ -125,9 +142,20 @@ instance Control.Monad (BO α) where
     (# s', a #) -> (f a) PL.& \(BO g) -> g s'
   {-# INLINE (>>=) #-}
 
+-- | Unsafely converts a 'BO' computation to linear 'L.IO'.
 unsafeBOToLinIO :: BO α a %1 -> L.IO a
 {-# INLINE unsafeBOToLinIO #-}
 unsafeBOToLinIO (BO f) = L.IO (Unsafe.coerce f)
+
+{- |
+Unsafely performs a linear 'L.IO' computation in 'BO' monad.
+
+This is really, really unsafe. If you don't know what you are doing,
+you MUST NOT use this function, otherwise you can break purity in a hard way.
+-}
+unsafeLinIOToBO :: L.IO a %1 -> BO α a
+{-# INLINE unsafeLinIOToBO #-}
+unsafeLinIOToBO (L.IO f) = BO (Unsafe.coerce f)
 
 runBO# :: forall {rep} α (o :: TYPE rep). (State# (ForBO α) %1 -> o) %1 -> o
 {-# INLINE runBO# #-}
@@ -144,31 +172,46 @@ dropState# :: State# a %1 -> ()
 {-# INLINE dropState# #-}
 dropState# = Unsafe.toLinear \ !_ -> ()
 
--- | See also 'scope'.
+-- | See also 'Control.Monad.Borrow.Pure.scope'.
 sexecBO :: BO (α /\ β) a %1 -> Now α %1 -> BO β (Now α, a)
 {-# INLINE sexecBO #-}
 sexecBO f now = unsafeCastBO ((now,) PL.. Unsafe.toLinear (\ !a -> a) Control.<$> f)
 
+{- |
+Coerces lifetime in 'BO' computation usafely and brutally.
+
+This is really, really unsafe. If you don't know what you are doing,
+you MUST NOT use this function, otherwise you will break the soundness of the type system.
+-}
 unsafeCastBO :: BO α a %1 -> BO β a
 {-# INLINE unsafeCastBO #-}
 unsafeCastBO = Unsafe.coerce
 
+-- | Unsafely peforms a 'ST' computation in 'BO' monad.
 unsafeSTToBO :: ST s a %1 -> BO α a
 {-# INLINE unsafeSTToBO #-}
 unsafeSTToBO (ST.ST f) = BO (Unsafe.coerce f)
 
+{- |
+Unsafely peforms a 'BO' computation in 'ST' monad.
+
+This is really unsafe. If you don't know what you are doing, you MUST NOT use this function, otherwise you can break purity in a hard way.
+-}
 unsafeBOToST :: BO α a %1 -> ST s a
 {-# INLINE unsafeBOToST #-}
 unsafeBOToST (BO f) = ST.ST (Unsafe.coerce f)
 
-unsafeIOToBO :: L.IO a %1 -> BO α a
-{-# INLINE unsafeIOToBO #-}
-unsafeIOToBO (L.IO f) = BO (Unsafe.coerce f)
+{- |
+Unsafely performs a standard, non-linear 'IO' computation in 'BO' monad.
 
+This is really, really unsafe. If you don't know what you are doing,
+you MUST NOT use this function, otherwise you can break purity in a hard way.
+-}
 unsafeSystemIOToBO :: IO a %1 -> BO α a
 {-# INLINE unsafeSystemIOToBO #-}
 unsafeSystemIOToBO (GHC.IO a) = BO (Unsafe.coerce a)
 
+-- | Unsafely performs a 'BO' in the standard, non-linear 'IO' monad.
 unsafeBOToSystemIO :: BO α a %1 -> IO a
 {-# INLINE unsafeBOToSystemIO #-}
 unsafeBOToSystemIO (BO f) = GHC.IO (Unsafe.coerce f)
@@ -181,36 +224,36 @@ unsafePerformEvaluateUndupableBO (BO f) = runBO# \s ->
 
 -- | Run two computations in parallel, returning their results as a tuple.
 parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
-{-# NOINLINE parBO #-}
-parBO a b = GHC.noinline
-  -- TODO: define explicit rules to when to invoke noDuplicate#.
-  BO
-  \s -> case Unsafe.toLinear GHC.noDuplicate# s of
-    s -> case Unsafe.toLinear2 GHC.spark# (unsafePerformEvaluateUndupableBO a) s of
-      (# s, a #) -> case Unsafe.toLinear2 GHC.spark# (unsafePerformEvaluateUndupableBO b) s of
-        (# s, b #) -> case Unsafe.toLinear2 GHC.seq# a s of
-          (# s, !a #) -> case Unsafe.toLinear2 GHC.seq# b s of
-            (# s, !b #) -> (# s, (a, b) #)
+parBO = Unsafe.toLinear2 \a b ->
+  BO $
+    Unsafe.toLinear \s ->
+      case Unsafe.toLinear2 GHC.spark# (case unsafeUnBO a (GHC.noDuplicate# s) of (# _, a #) -> GHC.lazy a) s of
+        (# _, a #) ->
+          case Unsafe.toLinear2 GHC.spark# (case unsafeUnBO b (GHC.noDuplicate# s) of (# _, b #) -> GHC.lazy b) s of
+            (# _, b #) ->
+              case Unsafe.toLinear2 GHC.seq# a s of
+                (# s, !a #) -> case Unsafe.toLinear2 GHC.seq# b s of
+                  (# s, !b #) -> (# s, (a, b) #)
 
-evaluate :: a %1 -> BO α a
-{-# INLINE evaluate #-}
-evaluate a = unsafeSystemIOToBO (Unsafe.toLinear SystemIO.evaluate a)
+evaluateBO :: a %1 -> BO α a
+{-# INLINE evaluateBO #-}
+evaluateBO a = unsafeSystemIOToBO (Unsafe.toLinear SystemIO.evaluate a)
 
 -- | Alias of kind 'ak' to a resource of type 'a'.
-type Alias :: AliasKind -> Type -> Type
-newtype Alias ak a = UnsafeAlias a
+type Alias :: AliasKind -> Lifetime -> Type -> Type
+newtype Alias ak α a = UnsafeAlias a
 
-unsafeUnalias :: Alias ak a %1 -> a
+unsafeUnalias :: Alias ak α a %1 -> a
 unsafeUnalias (UnsafeAlias x) = x
 
-type role Alias nominal representational
+type role Alias nominal nominal representational
 
 -- | Alias kind.
 data AliasKind
   = -- | Borrower.
-    Borrow BorrowKind Lifetime
+    Borrow BorrowKind
   | -- | Lender.
-    Lend Lifetime
+    Lend
 
 -- | Borrower kind.
 data BorrowKind
@@ -221,11 +264,11 @@ data BorrowKind
 
 -- | Borrower of kind @bk@ that is active during the lifetime @α@.
 type Borrow :: BorrowKind -> Lifetime -> Type -> Type
-type Borrow bk α = Alias ('Borrow bk α)
+type Borrow bk = Alias ('Borrow bk)
 
 -- | Mutable borrower, which is affine and can update the data.
 type Mut :: Lifetime -> Type -> Type
-type Mut α = Borrow 'Mut α
+type Mut = Borrow 'Mut
 
 assocBorrowR ::
   Borrow bk ((α /\ β) /\ γ) a %1 ->
@@ -268,17 +311,17 @@ deriving via AsAffine (Borrow bk α a) instance Consumable (Borrow bk α a)
 
 -- | Shared borrower, which is unrestricted but usually can only read from the data.
 type Share :: Lifetime -> Type -> Type
-type Share α = Borrow 'Share α
+type Share = Borrow 'Share
 
 instance Affine (Borrow bk α a) where
   aff = UnsafeAff
   {-# INLINE aff #-}
 
-instance (k ~ 'Borrow 'Share α) => Dupable (Alias k a) where
+instance (k ~ 'Borrow 'Share) => Dupable (Alias k α a) where
   dup2 = Unsafe.toLinear $ NonLinear.join (,)
   {-# INLINE dup2 #-}
 
-instance (k ~ 'Borrow 'Share α) => Movable (Alias k a) where
+instance (k ~ 'Borrow 'Share) => Movable (Alias k α a) where
   move = Unsafe.toLinear Ur
   {-# INLINE move #-}
 
@@ -293,20 +336,19 @@ instance (α >= β, a <: b) => Share α a <: Share β b where
 
 -- | Lender, which can retrieve the lifetime at the lifetime @α@.
 type Lend :: Lifetime -> Type -> Type
-type Lend α = Alias ('Lend α)
+type Lend = Alias 'Lend
 
 instance (α <= β, a <: b) => Lend α a <: Lend β b where
   subtype = UnsafeSubtype
 
--- | Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim the resource to lend at the 'End' of the lifetime.
+{- |
+Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim the resource to lend at the 'End' of the lifetime.
+
+For typical usage, you should use 'Control.Monad.Borrow.Pure.borrowM' to avoid type ambiguity.
+-}
 borrow :: forall α a. a %1 -> Linearly %1 -> (Mut α a, Lend α a)
 borrow = Unsafe.toLinear2 \ !a !_ ->
   (UnsafeAlias a, UnsafeAlias a)
-
--- | Analogous to 'borrow', but does not return the original 'Lend' to be reclaimed.
-borrow_ :: forall α a. a %1 -> Linearly %1 -> Mut α a
-borrow_ = Unsafe.toLinear2 \ !a !_ ->
-  UnsafeAlias a
 
 -- | Shares a mutable borrow, invalidating the original one.
 share :: Borrow k α a %1 -> Ur (Share α a)
@@ -334,16 +376,16 @@ joinLend = coerceLin
 
 -- | Distribute an alias over a functor.
 class DistributesAlias f where
-  split_ :: Alias ak (f x) %1 -> f (Alias ak x)
+  split_ :: Alias ak α (f x) %1 -> f (Alias ak α x)
   default split_ ::
     (GenericDistributesAlias f) =>
-    Alias ak (f x) %1 -> f (Alias ak x)
+    Alias ak α (f x) %1 -> f (Alias ak α x)
   split_ = genericSplit
 
 split ::
-  forall f x ak.
+  forall f x ak α.
   (DistributesAlias f) =>
-  Alias ak (f x) %1 -> f (Alias ak x)
+  Alias ak α (f x) %1 -> f (Alias ak α x)
 {-# INLINE [1] split #-}
 split = split_
 
@@ -371,11 +413,11 @@ deriving anyclass instance DistributesAlias Mon.First
 
 deriving anyclass instance DistributesAlias Mon.Last
 
-splitPair :: Alias ak (a, b) %1 -> (Alias ak a, Alias ak b)
+splitPair :: Alias ak α (a, b) %1 -> (Alias ak α a, Alias ak α b)
 {-# INLINE splitPair #-}
 splitPair = coerceLin
 
-splitEither :: Alias ak (Either a b) %1 -> Either (Alias ak a) (Alias ak b)
+splitEither :: Alias ak α (Either a b) %1 -> Either (Alias ak α a) (Alias ak α b)
 {-# INLINE splitEither #-}
 splitEither = coerceLin
 
@@ -390,25 +432,25 @@ instance (Unsatisfiable ('Text "Use splitPair instead!")) => DistributesAlias ((
 type GenericDistributesAlias f = (Generic1 f, GDistributeAlias (Rep1 f))
 
 genericSplit ::
-  forall f x ak.
+  forall f x ak α.
   (GenericDistributesAlias f) =>
-  Alias ak (f x) %1 -> f (Alias ak x)
+  Alias ak α (f x) %1 -> f (Alias ak α x)
 {-# INLINE genericSplit #-}
 genericSplit =
   to1
     . gdistributeAlias @(Rep1 f)
     . unsafeMapAlias from1
 
-unsafeMapAlias :: (a %1 -> b) -> Alias ak a %1 -> Alias ak b
+unsafeMapAlias :: (a %1 -> b) %1 -> Alias ak α a %1 -> Alias ak α b
 {-# INLINE unsafeMapAlias #-}
-unsafeMapAlias f = coerceLin f
+unsafeMapAlias f = coerceLin (\x -> let !y = f x in y)
 
 instance (GenericDistributesAlias f) => DistributesAlias (Generically1 f) where
   {-# INLINE split_ #-}
   split_ = Generically1 . genericSplit . unsafeMapAlias \(Generically1 f) -> f
 
 class GDistributeAlias f where
-  gdistributeAlias :: Alias ak (f x) %1 -> f (Alias ak x)
+  gdistributeAlias :: Alias ak α (f x) %1 -> f (Alias ak α x)
 
 instance
   ( GDistributeAlias f
@@ -480,170 +522,3 @@ instance
 instance GDistributeAlias U1 where
   gdistributeAlias = coerceLin
   {-# INLINE gdistributeAlias #-}
-
-class Copyable a where
-  copy :: Share α a %1 -> a
-
-instance (Copyable a) => Copyable (Ur a) where
-  copy (UnsafeAlias (Ur !a)) = Ur $! copy $! UnsafeAlias a
-  {-# INLINE copy #-}
-
-instance
-  (Unsatisfiable (ShowType (Ref a) :<>: Text " cannot be copied!")) =>
-  Copyable (Ref a)
-  where
-  copy = unsatisfiable
-
-instance
-  (Unsatisfiable (ShowType (Array a) :<>: Text " cannot be copied!")) =>
-  Copyable (Array a)
-  where
-  copy = unsatisfiable
-
-instance
-  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copied!")) =>
-  Copyable (Vector a)
-  where
-  copy = unsatisfiable
-
-copyMut :: (Copyable a) => Mut α a %1 -> Ur a
-copyMut mut = let !(Ur shr) = share mut in Ur (copy shr)
-
-newtype UnsafeAssumeNoVar a = UnsafeAssumeNoVar a
-
-instance Copyable (UnsafeAssumeNoVar a) where
-  copy = \(UnsafeAlias !a) -> a
-  {-# INLINE copy #-}
-
-deriving via UnsafeAssumeNoVar Int instance Copyable Int
-
-deriving via UnsafeAssumeNoVar Int8 instance Copyable Int8
-
-deriving via UnsafeAssumeNoVar Int16 instance Copyable Int16
-
-deriving via UnsafeAssumeNoVar Int32 instance Copyable Int32
-
-deriving via UnsafeAssumeNoVar Int64 instance Copyable Int64
-
-deriving via UnsafeAssumeNoVar Word instance Copyable Word
-
-deriving via UnsafeAssumeNoVar Word8 instance Copyable Word8
-
-deriving via UnsafeAssumeNoVar Word16 instance Copyable Word16
-
-deriving via UnsafeAssumeNoVar Word32 instance Copyable Word32
-
-deriving via UnsafeAssumeNoVar Word64 instance Copyable Word64
-
-deriving via UnsafeAssumeNoVar Integer instance Copyable Integer
-
-deriving via UnsafeAssumeNoVar Natural instance Copyable Natural
-
-deriving via UnsafeAssumeNoVar Float instance Copyable Float
-
-deriving via UnsafeAssumeNoVar Double instance Copyable Double
-
-deriving via UnsafeAssumeNoVar Char instance Copyable Char
-
-deriving via UnsafeAssumeNoVar Bool instance Copyable Bool
-
-type GenericCopyable a = (Generic a, GCopyable (Rep a))
-
-genericCopyShare :: (GenericCopyable a) => Share α a %1 -> a
-{-# INLINE genericCopyShare #-}
-genericCopyShare (UnsafeAlias x) = to (gcopy (UnsafeAlias (from x)))
-
-type GCopyable :: forall {k}. (k -> Type) -> Constraint
-class GCopyable f where
-  gcopy :: Share α (f x) %1 -> f x
-
-instance (Copyable a) => GCopyable (K1 i a) where
-  gcopy = \(UnsafeAlias (K1 !a)) -> K1 (copy (UnsafeAlias a))
-  {-# INLINE gcopy #-}
-
-instance (GCopyable f, GCopyable g) => GCopyable (f :*: g) where
-  gcopy (UnsafeAlias (!f :*: !g)) =
-    gcopy (UnsafeAlias f) :*: gcopy (UnsafeAlias g)
-
-instance (GCopyable f) => GCopyable (M1 i c f) where
-  gcopy = \case
-    UnsafeAlias (M1 !x) -> M1 (gcopy (UnsafeAlias x))
-
-instance (GCopyable f) => GCopyable (MP1 m f) where
-  gcopy = \case
-    UnsafeAlias (MP1 !x) -> MP1 (gcopy (UnsafeAlias x))
-
-instance (GCopyable f, GCopyable g) => GCopyable (f :+: g) where
-  gcopy = \case
-    UnsafeAlias (L1 !x) -> L1 (gcopy (UnsafeAlias x))
-    UnsafeAlias (R1 !x) -> R1 (gcopy (UnsafeAlias x))
-
-instance GCopyable U1 where
-  gcopy = \case
-    UnsafeAlias U1 -> U1
-
-instance GCopyable V1 where
-  gcopy = \case {} . unsafeUnalias
-
-instance (GenericCopyable a) => Copyable (Generically a) where
-  copy = Generically . genericCopyShare . unsafeMapAlias (\(Generically x) -> x)
-
-deriving via Generically () instance Copyable ()
-
-deriving via
-  Generically (Sum a)
-  instance
-    (Copyable a) => Copyable (Sum a)
-
-deriving via
-  Generically (Product a)
-  instance
-    (Copyable a) => Copyable (Product a)
-
-deriving via
-  Generically [a]
-  instance
-    (Copyable a) => Copyable [a]
-
-deriving via
-  Generically (Sem.Max a)
-  instance
-    (Copyable a) => Copyable (Sem.Max a)
-
-deriving via
-  Generically (Maybe a)
-  instance
-    (Copyable a) => Copyable (Maybe a)
-
-deriving via
-  Generically (Sem.Min a)
-  instance
-    (Copyable a) => Copyable (Sem.Min a)
-
-deriving via
-  Generically (a, b)
-  instance
-    (Copyable a, Copyable b) =>
-    Copyable (a, b)
-
-deriving via
-  Generically (a, b, c)
-  instance
-    (Copyable a, Copyable b, Copyable c) =>
-    Copyable (a, b, c)
-
-deriving via
-  Generically (a, b, c, d)
-  instance
-    (Copyable a, Copyable b, Copyable c, Copyable d) =>
-    Copyable (a, b, c, d)
-
-deriving via
-  Generically (Either a b)
-  instance
-    (Copyable a, Copyable b) => Copyable (Either a b)
-
-deriving via
-  Generically (Sem.Arg a b)
-  instance
-    (Copyable a, Copyable b) => Copyable (Sem.Arg a b)

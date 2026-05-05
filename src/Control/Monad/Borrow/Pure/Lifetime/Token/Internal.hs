@@ -19,7 +19,7 @@ module Control.Monad.Borrow.Pure.Lifetime.Token.Internal (
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Affine.Internal
 import Control.Monad.Borrow.Pure.Lifetime.Internal
-import Data.Coerce.Directed (SubtypeWitness (UnsafeSubtype), type (<:) (..))
+import Data.Coerce.Directed.Unsafe
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Constraint)
 import Data.Unrestricted.Linear
@@ -75,7 +75,11 @@ class End (α :: Lifetime) where
 neverEnds :: (HasCallStack, End Static) => a
 neverEnds = error "Unreachable: if you see this, you created an End Static in the internal code!"
 
--- | Utility type to represent an object available after the lifetime @α@.
+{- |
+Utility type to represent an object available after the lifetime @α@.
+
+You can use 'Control.Applicative' and 'Control.Monad' instances to write 'After' conveniently.
+-}
 newtype After α a = After ((End α) => a)
 
 instance (α <= β, a <: b) => After α a <: After β b where

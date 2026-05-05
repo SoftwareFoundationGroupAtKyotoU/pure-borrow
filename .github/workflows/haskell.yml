@@ -122,18 +122,11 @@ jobs:
     name: Haddock
     needs: [ ci-enumerate, build ]
     runs-on: ubuntu-latest
-    strategy:
-      # Run only ghc == 9.14.1
-      matrix:
-        ghc: [ "9.14.1" ]
-        is_head: [ false ]
-        path: [ "ci/configs/ghc-9.14.1.project" ]
-        name: [ "ghc-9.14.1" ]
     env:
-      ghc: ${{matrix.plan.ghc}}
-      project-file: ${{matrix.plan.path}}
-      plan: ${{matrix.plan.name}}
-      artifact: artifact-${{matrix.plan.name}}
+      ghc: "9.14.1"
+      project-file: "ci/configs/ghc-9.14.1.project"
+      plan: "ghc-9.14.1"
+      cabal: "cabal --project-file=ci/configs/ghc-9.14.1.project"
     steps:
       - name: Checkout
         uses: actions/checkout@v3

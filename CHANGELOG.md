@@ -1,6 +1,6 @@
 # Revision history for pure-borrow
 
-## 0.0.0.0 -- 2026-05-XX
+## 0.0.0.0 -- 2026-05-05
 
 This is the first release on Hackage :tada:
 Please refer to our paper for details.

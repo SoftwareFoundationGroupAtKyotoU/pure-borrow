@@ -25,7 +25,7 @@ data-files:
   dockerfiles/artifact/Dockerfile
   scripts/genplot.gnuplot
 
-tested-with: ghc ==9.10.2 || ==9.12.4 || ==9.14.1
+tested-with: ghc ==9.10.3 || ==9.12.4 || ==9.14.1
 
 source-repository head
   type: git

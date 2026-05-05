@@ -24,7 +24,6 @@
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
-{-# OPTIONS_HADDOCK hide #-}
 
 module Control.Monad.Borrow.Pure.Copyable (
   Copyable (..),

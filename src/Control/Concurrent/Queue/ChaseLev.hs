@@ -100,11 +100,11 @@ pushFronts q !a = do
     !stat <- getStat q
     let !size = occupancy stat
     arr <-
-      if size == capa - n
+      if size + n >= capa - 1
         then do
           let !start = stat.top .&. (capa - 1)
               !end = stat.bottom .&. (capa - 1)
-              !newCapa = (2 * capa) `max` (2 ^ intLog2' n)
+              !newCapa = (2 * capa) `max` (2 ^ (intLog2' (size + n) + 1))
           oldArr <- readIORef q.activeArray
           newArr <- Array.newArray newCapa Nothing
           if end >= start

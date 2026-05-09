@@ -31,7 +31,7 @@ module Control.Concurrent.DivideConquer.Utils.QueuePool (
 
 import Control.Applicative qualified as P
 import Control.Concurrent (yield)
-import Control.Concurrent.Queue.ChaseLev (ChaseLevDeq, close, estimateSize, newDeq, pushFront, pushFronts, tryPopBack, tryPopFront)
+import Control.Concurrent.Queue.ChaseLev (ChaseLevDeq, close, estimateSize, isClosed, newDeq, pushFront, pushFronts, tryPopBack, tryPopFront)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure.BO
@@ -141,8 +141,12 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
         case progress of
           Nothing -> P.pure Nothing
           Just Nothing -> do
-            -- traceEventIO "WORK[S]: All queues are empty. Yielding and retrying..."
-            yield P.*> self
+            closed <- isClosed mine
+            if closed
+              then P.pure Nothing
+              else
+                -- traceEventIO "WORK[S]: All queues are empty. Yielding and retrying..."
+                yield P.*> self
           Just (Just x) -> do
             -- traceEventIO "WORK[S]: Work found. Stolen!"
             P.pure $ Just (x, qs)

@@ -31,7 +31,7 @@ module Control.Concurrent.DivideConquer.Utils.QueuePool (
 
 import Control.Applicative qualified as P
 import Control.Concurrent (yield)
-import Control.Concurrent.Queue.ChaseLev (ChaseLevDeq, StealResult (..), close, estimateSize, isClosed, newDeq, pushFront, pushFronts, stealHalf, tryPopFront)
+import Control.Concurrent.Queue.ChaseLev (ChaseLevDeq, StealResult (..), close, estimateSize, isClosed, newDeq, pushFront, pushFronts, stealHalf, tryPopBack, tryPopFront)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure.BO
@@ -142,14 +142,14 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
                 -- traceEventIO "WORK[P]: non avail. retry..."
                 yield P.*> self
               else do
-                progress <- stealHalf targ
+                progress <- tryPopBack targ
                 case progress of
                   Nothing -> do
                     -- traceEventIO "WORK[P]: Seems we are done"
                     P.pure Nothing
-                  Just (Found (x :| xs)) -> do
+                  Just (Found (x)) -> do
                     -- traceEventIO $ "WORK[P]: steal success (" <> P.show (P.length xs + 1) <> " items)!"
-                    pushFronts mine xs
+                    -- pushFronts mine xs
                     P.pure $ Just (x, qs)
                   Just {} -> do
                     -- traceEventIO $ "WORK[P]: failed to steal (" <> kind p <> "). retrying..."

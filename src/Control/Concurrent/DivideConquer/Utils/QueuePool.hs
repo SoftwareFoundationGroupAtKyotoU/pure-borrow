@@ -48,6 +48,7 @@ import Data.Vector qualified as V
 import Data.Vector.Algorithms.Intro qualified as AI
 import Data.Vector.Hybrid.Mutable qualified as HMV
 import Data.Vector.Mutable (RealWorld)
+import Debug.Trace (traceEventIO)
 import GHC.Exts qualified as GHC
 import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownNat)
@@ -129,13 +130,12 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
       Nothing -> P.pure Nothing
       Just (Just x) -> P.pure $ Just (x, qs)
       Just Nothing -> fix \self -> do
-        !ranks <-
-          V.unsafeThaw
-            P.=<< V.mapM estimateSize
-            P.=<< V.unsafeFreeze others
+        !ranks <- V.unsafeThaw P.=<< V.mapM estimateSize P.=<< V.unsafeFreeze others
         let ranked = HMV.unsafeZip ranks others
         !() <- AI.sortBy (P.comparing P.$ Down P.. P.fst) ranked
         others' <- V.unsafeFreeze others
+        ranks <- V.unsafeFreeze ranks
+        traceEventIO $ "Ranks: " <> show (V.toList ranks)
 
         progress <-
           V.foldr

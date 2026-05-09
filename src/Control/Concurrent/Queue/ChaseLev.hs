@@ -98,20 +98,18 @@ tryPopFront q = do
   !b <- subtract 1 <$> readCounter q.bottom
   writeCounter q.bottom b
   storeLoadBarrier
-  !tTicket <- readCounterForCAS q.top
-  let !t = peekCTicket tTicket
+  !t <- readCounterForCAS q.top
 
   !arr <- readIORef q.activeArray
   let !capa = Array.sizeofMutableArray arr
 
   -- NOTE: Do not force, otherwise undefined will hit
   task <- Array.readArray arr (b .&. (capa - 1))
-  if b > t
-    then pure $ Just task
-    else do
+  if b == t
+    then do
       -- last one element - might be stolen!
       let !t' = t + 1
-      (!success, _) <- casCounter q.top tTicket t'
+      (!success, _) <- casCounter q.top t t'
       writeCounter q.bottom t'
       if success
         then pure $ Just $ task
@@ -120,6 +118,7 @@ tryPopFront q = do
           if closed
             then pure Nothing
             else pure $ Just Nothing
+    else pure $ Just task
 
 {- |
   * @Nothing@         — closed (end-of-stream)
@@ -128,8 +127,7 @@ tryPopFront q = do
 -}
 tryPopBack :: ChaseLevDeq a -> IO (Maybe (Maybe a))
 tryPopBack q = fix \self -> do
-  !tTicket <- readCounterForCAS q.top
-  let !t = peekCTicket tTicket
+  !t <- readCounterForCAS q.top
   loadLoadBarrier
   b <- readCounter q.bottom
   if t == b
@@ -144,14 +142,14 @@ tryPopBack q = fix \self -> do
       -- NOTE: we must not force, otherwise undefined will hit
       task <- Array.readArray arr (t .&. (capa - 1))
       let !t' = t + 1
-      (!success, _) <- casCounter q.top tTicket t'
+      (!success, _) <- casCounter q.top t t'
       if success
         then pure $! Just task
-        else self -- TODO: perhaps we can return 'Abort' to continue to other queue?
+        else yield *> self -- TODO: perhaps we can return 'Abort' to continue to other queue?
 
 estimateSize :: ChaseLevDeq a -> IO Int
 {-# INLINE estimateSize #-}
-estimateSize = fmap occupancy . getStat
+estimateSize = fmap (max 0 . occupancy) . getStat
 
 close :: ChaseLevDeq a -> IO ()
 {-# INLINE close #-}

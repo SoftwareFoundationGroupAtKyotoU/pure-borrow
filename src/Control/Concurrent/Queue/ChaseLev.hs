@@ -160,7 +160,6 @@ tryPopFront q = do
   -- NOTE: Do not force, otherwise undefined will hit
   task <- Array.readArray arr (b .&. (capa - 1))
   if
-    | b > t -> pure $ Just $ Just $ fromJust task
     | b == t -> do
         -- last one element - might be stolen!
         let !t' = t + 1
@@ -173,6 +172,7 @@ tryPopFront q = do
             if closed
               then pure Nothing
               else pure $ Just Nothing
+    | b > t -> pure $ Just $ Just $ fromJust task
     | otherwise -> do
         writeCounter q.bottom t
         pure $ Just Nothing

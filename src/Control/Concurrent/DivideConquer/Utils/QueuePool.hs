@@ -45,7 +45,7 @@ import Data.Vector qualified as V
 import Data.Vector.Generic qualified as GV
 import Data.Vector.Hybrid qualified as HV
 import Data.Vector.Mutable (RealWorld)
-import Debug.Trace (traceEventIO)
+-- import Debug.Trace (traceEventIO)
 import GHC.Exts qualified as GHC
 import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownNat)
@@ -103,7 +103,7 @@ pushWorkMaster = Unsafe.toLinear2 \(UnsafeAlias (MasterQueuePool pools)) work ->
 pushWork :: Mut α (QueuePool a) %1 -> a %1 -> BO α (Mut α (QueuePool a))
 pushWork = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) work ->
   unsafeSystemIOToBO do
-    traceEventIO $ "Pushing work..."
+    -- traceEventIO $ "Pushing work..."
     pushFront mine work
     P.pure $ UnsafeAlias QueuePool {..}
 
@@ -111,7 +111,7 @@ pushWork = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) work ->
 pushWorks :: Mut α (QueuePool a) %1 -> [a] %1 -> BO α (Mut α (QueuePool a))
 pushWorks = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) works ->
   unsafeSystemIOToBO do
-    traceEventIO ("Pushing " P.<> P.show (P.length works) P.<> " works...")
+    -- traceEventIO ("Pushing " P.<> P.show (P.length works) P.<> " works...")
     pushFronts mine works
     P.pure $ UnsafeAlias QueuePool {..}
 
@@ -120,40 +120,41 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
   unsafeSystemIOToBO do
     tryPopFront mine P.>>= \case
       Nothing -> do
-        traceEventIO "WORK[P]: Queue closed!"
+        -- traceEventIO "WORK[P]: Queue closed!"
         P.pure Nothing
       Just (Just x) -> do
-        traceEventIO "WORK[P]: hit!"
+        -- traceEventIO "WORK[P]: hit!"
         P.pure $ Just (x, qs)
       Just Nothing -> fix \self -> do
-        traceEventIO "WORK[P]: no hit. stealing from others..."
+        -- traceEventIO "WORK[P]: no hit. stealing from others..."
         cls <- isClosed mine
         if cls
           then do
-            traceEventIO "WORK[P]: Seems we are done"
+            -- traceEventIO "WORK[P]: Seems we are done"
             P.pure Nothing
           else do
             !others0 <- V.unsafeFreeze others
             !ranks <- V.mapM estimateSize others0
-            traceEventIO $ "WORK[P]: ranks = " <> show ranks
+            -- traceEventIO $ "WORK[P]: ranks = " <> show ranks
             let (rank, targ) = GV.maximumOn fst $ HV.unsafeZip ranks others0
             -- ranks <- V.unsafeFreeze ranks
             if rank <= 0
               then do
-                traceEventIO "WORK[P]: non avail. retry..."
+                -- traceEventIO "WORK[P]: non avail. retry..."
                 yield P.*> self
               else do
                 progress <- tryPopBack targ
                 case progress of
                   Nothing -> do
-                    traceEventIO "WORK[P]: Seems we are done"
+                    -- traceEventIO "WORK[P]: Seems we are done"
                     P.pure Nothing
-                  Just Race -> do
-                    traceEventIO "WORK[P]: failed to steal (race). retrying..."
-                    yield P.*> self
-                  Just Empty -> do
-                    traceEventIO "WORK[P]: failed to steal (empty). retrying..."
-                    yield P.*> self
                   Just (Found x) -> do
-                    traceEventIO "WORK[P]: steal success!"
+                    -- traceEventIO "WORK[P]: steal success!"
                     P.pure $ Just (x, qs)
+                  Just _ -> do
+                    --  traceEventIO "WORK[P]: failed to steal (race). retrying..."
+                    yield P.*> self
+
+{- Just Empty -> do
+  -- traceEventIO "WORK[P]: failed to steal (empty). retrying..."
+  yield P.*> self -}

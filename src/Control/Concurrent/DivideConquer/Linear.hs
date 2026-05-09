@@ -43,7 +43,7 @@ import Data.V.Linear (V)
 import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
 import Data.Vector.Mutable.Linear.Borrow qualified as LV
-import Debug.Trace (traceEventIO)
+-- import Debug.Trace (traceEventIO)
 import GHC.Exts qualified as GHC
 import GHC.Generics qualified as GHC
 import GHC.TypeNats (SomeNat (..), someNatVal)
@@ -62,7 +62,7 @@ data Result β t a = Done | Continue (t (Mut β a))
 data Work α a (t :: Type -> Type) where
   Process :: Mut α a %1 -> Sink () %1 -> Work α a t %1 -> Work α a t
   Unite :: t (Source ()) %1 -> Sink () %1 -> Work α a t
-  Final :: Work α a t
+  NoOp :: Work α a t
 
 newtype Thread = Thread ThreadId
 
@@ -89,38 +89,32 @@ toListD :: DList a %1 -> [a]
 toListD (DList f) = f []
 {-# INLINE toListD #-}
 
-data QState α a t
-  = Next !(Work α a t) !(Mut α (QueuePool (Work α a t)))
-  | Idle !(Mut α (QueuePool (Work α a t)))
+newtype QState α a t = Idle (Mut α (QueuePool (Work α a t)))
 
 popQState ::
   QState α a t %1 ->
   BO α (Maybe (Work α a t, QState α a t))
 popQState = \case
   Idle q -> Control.do
-    unsafeSystemIOToBO $ traceEventIO "WORK[S]: popping work from queue..."
+    -- unsafeSystemIOToBO $ traceEventIO "WORK[S]: popping work from queue..."
     Data.fmap (BiL.second Idle) Control.<$> popWork q
-  Next work q -> Control.do
-    unsafeSystemIOToBO $ traceEventIO "WORK[S]: using the next direct work."
-    Control.pure $ Just (work, Idle q)
 
 enqueue :: QState α a t %1 -> Work α a t %1 -> BO α (QState α a t)
+enqueue q NoOp = Control.pure q
 enqueue q work = case q of
-  Idle q -> Control.pure $ Next work q
-  Next next0 q -> Next work Control.<$> pushWork q next0
+  Idle q -> Idle Control.<$> pushWork q work
 
 doAndEnqueue ::
   QState α a t %1 ->
   Work α a t %1 ->
   Work α a t %1 ->
   BO α (QState α a t)
+doAndEnqueue q NoOp cont = enqueue q cont
+doAndEnqueue q next NoOp = enqueue q next
 doAndEnqueue q next cont = case q of
   Idle q -> Control.do
-    unsafeSystemIOToBO $ traceEventIO "WORK[D]: Idle. Adding direct next task."
-    Next next Control.<$> pushWork q cont
-  Next next0 q -> Control.do
-    unsafeSystemIOToBO $ traceEventIO "WORK[D]: Already full. pushing forward"
-    Next next Control.<$> pushWorks q [cont, next0]
+    -- unsafeSystemIOToBO $ traceEventIO "WORK[D]: Idle. Adding direct next task."
+    Idle Control.<$> pushWorks q [next, cont]
 
 data P a where
   P :: {-# UNPACK #-} !Int -> !a %1 -> P a
@@ -143,29 +137,30 @@ divideAndConquer n DivideConquer {..} ini
             (masterQ, masterLend) <- asksLinearly $ borrow master
             (rootSink, rootSource) <- asksLinearly Once.new
 
-            Control.void $ pushWorkMaster masterQ $ Process ini rootSink Final
+            Control.void $ pushWorkMaster masterQ $ Process ini rootSink NoOp
 
             concurrentMap_ worker workers
             Once.take rootSource
+            -- unsafeSystemIOToBO $ traceEventIO "WORK[DC]: All work done."
 
             Control.pure (upcast $ consume Control.<$> reclaim' masterLend)
   where
     worker :: (α >= α') => Mut α' (QueuePool (Work α' a t)) %1 -> BO α' ()
-    worker q =
+    worker q = Control.do
       whileJust_ (Idle q) popQState \q -> \case
-        Final -> Control.do
-          unsafeSystemIOToBO $ traceEventIO "WORK[WF]: Final work reached."
+        NoOp -> Control.do
+          -- unsafeSystemIOToBO $ traceEventIO "WORK[WF]: NoOp."
           Control.pure q
         Process ini sink next -> Control.do
           q <- enqueue q next
           resl <- divide ini
           case resl of
             Done -> Control.do
-              unsafeSystemIOToBO $ traceEventIO "WORK[WP]: No more division needed. Return"
+              -- unsafeSystemIOToBO $ traceEventIO "WORK[WP]: No more division needed. Return"
               Once.put sink ()
               Control.pure q
             Continue ts -> Control.do
-              unsafeSystemIOToBO $ traceEventIO "WORK[WP]: Division occurred."
+              -- unsafeSystemIOToBO $ traceEventIO "WORK[WP]: Division occurred."
               (sources, P num ks) <-
                 flip Control.runStateT (P 0 mempty) $ Data.for ts \work -> Control.StateT \(P num ks) -> Control.do
                   (sink, source) <- asksLinearly Once.new
@@ -174,13 +169,15 @@ divideAndConquer n DivideConquer {..} ini
               let %1 !(ls, rs) = splitAt (num `quot` 2) $ toListD ks
               doAndEnqueue
                 q
-                (foldr (uncurry Process) Final ls)
+                (foldr (uncurry Process) NoOp ls)
                 (foldr (uncurry Process) (Unite sources sink) rs)
         Unite children sink -> Control.do
-          unsafeSystemIOToBO $ traceEventIO "WORK[WU]: Unite work reached."
+          -- unsafeSystemIOToBO $ traceEventIO "WORK[WU]: Unite work reached."
           Control.void $ Data.traverse Once.take children
           Once.put sink ()
           Control.pure q
+
+-- unsafeSystemIOToBO $ traceEventIO "WORK[W-]: All job done!"
 
 concurrentMap_ ::
   forall n a α.

@@ -61,10 +61,12 @@ library
   import: defaults
   build-depends:
     array,
+    atomic-primops,
     containers,
     deepseq,
     hybrid-vectors,
     linear-generics,
+    primitive,
     stm,
     vector,
     vector-algorithms,
@@ -73,6 +75,7 @@ library
   -- cabal-gild: discover src --exclude src/**/Utils.hs --exclude src/**/Utils/**/*.hs
   exposed-modules:
     Control.Concurrent.DivideConquer.Linear
+    Control.Concurrent.Queue.ChaseLev
     Control.Concurrent.STM.TMDeque
     Control.Concurrent.STM.TMDequeRingBuffer
     Control.Monad.Borrow.Pure

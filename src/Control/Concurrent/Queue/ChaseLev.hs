@@ -30,7 +30,7 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Primitive.Array (MutableArray)
 import Data.Primitive.Array qualified as Array
-import Data.Traversable (for)
+import Data.Vector qualified as V
 import GHC.Exts (RealWorld)
 import Math.NumberTheory.Logarithms (intLog2')
 
@@ -184,16 +184,16 @@ stealHalf q = do
         else pure $ Just Empty
     else do
       let !avail = b - t
-      let !count = if avail == 1 then 1 else avail `quot` 2
+          !count = if avail == 1 then 1 else avail `quot` 2
+          !t' = t + count
       arr <- readIORef q.activeArray
       let !capa = Array.sizeofMutableArray arr
       -- NOTE: we must not force, otherwise undefined will hit
-      tasks <- for [count - 1, count - 2 .. 0] \i ->
-        Array.readArray arr $ (t + i) .&. (capa - 1)
-      let !t' = t + count
+      tasks <- V.generateM count \i ->
+        Array.readArray arr $ (t + count - i - 1) .&. (capa - 1)
       (!success, _) <- casCounter q.top t t'
       if success
-        then pure $! Just $ Found $ NE.fromList tasks
+        then pure $! Just $ Found $ NE.fromList $ V.toList tasks
         else pure $ Just Race
 
 estimateSize :: ChaseLevDeq a -> IO Int

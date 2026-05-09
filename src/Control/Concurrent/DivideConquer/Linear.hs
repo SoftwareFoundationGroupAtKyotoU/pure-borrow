@@ -93,9 +93,7 @@ data Work α a (t :: Type -> Type) where
   Process ::
     Mut α a %1 ->
     {-# UNPACK #-} !Switch %1 ->
-    Work α a t %1 ->
     Work α a t
-  NoOp :: Work α a t
 
 newtype Thread = Thread ThreadId
 
@@ -128,17 +126,18 @@ popQState = \case
     Data.fmap (BiL.second Idle) Control.<$> popWork q
 
 enqueue :: QState α a t %1 -> Work α a t %1 -> BO α (QState α a t)
-enqueue q NoOp = Control.pure q
 enqueue q work = case q of
   Idle q -> Idle Control.<$> pushWork q work
+
+enqueues :: QState α a t %1 -> [Work α a t] %1 -> BO α (QState α a t)
+enqueues q work = case q of
+  Idle q -> Idle Control.<$> pushWorks q work
 
 doAndEnqueue ::
   QState α a t %1 ->
   Work α a t %1 ->
   Work α a t %1 ->
   BO α (QState α a t)
-doAndEnqueue q NoOp cont = enqueue q cont
-doAndEnqueue q next NoOp = enqueue q next
 doAndEnqueue q next cont = case q of
   Idle q -> Control.do
     -- unsafeSystemIOToBO $ traceEventIO "WORK[D]: Idle. Adding direct next task."
@@ -165,7 +164,7 @@ divideAndConquer n DivideConquer {..} ini
             (masterQ, masterLend) <- asksLinearly $ borrow master
             (switch, rootSource) <- newRootSwitch 1
 
-            Control.void $ pushWorkMaster masterQ $ Process ini switch NoOp
+            Control.void $ pushWorkMaster masterQ $ Process ini switch
 
             concurrentMap_ worker workers
             Once.take rootSource
@@ -176,11 +175,7 @@ divideAndConquer n DivideConquer {..} ini
     worker :: (α >= α') => Mut α' (QueuePool (Work α' a t)) %1 -> BO α' ()
     worker q = Control.do
       whileJust_ (Idle q) popQState \q -> \case
-        NoOp -> Control.do
-          -- unsafeSystemIOToBO $ traceEventIO "WORK[WF]: NoOp."
-          Control.pure q
-        Process ini switch next -> Control.do
-          q <- enqueue q next
+        Process ini switch -> Control.do
           resl <- divide ini
           case resl of
             Done -> Control.do
@@ -199,11 +194,7 @@ divideAndConquer n DivideConquer {..} ini
                   toListD ks `lseq` Control.pure q
                 else Control.do
                   Ur switch' <- Unsafe.toLinear Ur Control.<$> newSwitch num switch
-                  let %1 !(ls, rs) = splitAt (num `quot` 2) $ toListD ks
-                  doAndEnqueue
-                    q
-                    (foldr (`Process` switch') NoOp ls)
-                    (foldr (`Process` switch') NoOp rs)
+                  enqueues q $ map (`Process` switch') $ toListD ks
 
 {- Unite children sink -> Control.do
   unsafeSystemIOToBO $ traceEventIO "WORK[WU]: Unite work reached."

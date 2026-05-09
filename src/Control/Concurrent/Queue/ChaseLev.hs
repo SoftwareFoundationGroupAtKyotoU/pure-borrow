@@ -13,6 +13,7 @@ module Control.Concurrent.Queue.ChaseLev (
   pushFront,
   pushFronts,
   tryPopBack,
+  stealHalf,
   StealResult (..),
   tryPopFront,
   estimateSize,
@@ -24,12 +25,12 @@ import Control.Monad (forM_, unless, (<$!>))
 import Data.Atomics (loadLoadBarrier, storeLoadBarrier, writeBarrier)
 import Data.Atomics.Counter (AtomicCounter, casCounter, newCounter, readCounter, readCounterForCAS, writeCounter)
 import Data.Bits ((.&.))
-import Data.Coerce (coerce)
-import Data.Foldable (traverse_)
-import Data.Function ((&))
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified as NE
 import Data.Primitive.Array (MutableArray)
 import Data.Primitive.Array qualified as Array
+import Data.Traversable (for)
 import GHC.Exts (RealWorld)
 import Math.NumberTheory.Logarithms (intLog2')
 
@@ -64,17 +65,6 @@ occupancy = (-) <$> (.bottom) <*> (.top)
 
 pushFront :: ChaseLevDeq a -> a -> IO ()
 pushFront q = pushFronts q . (: [])
-
-newtype Backwards f a = Backwards (f a)
-  deriving newtype (Functor)
-
-instance (Applicative f) => Applicative (Backwards f) where
-  pure = Backwards . pure
-  Backwards f <*> Backwards x = Backwards $ liftA2 (&) x f
-
-runBackwards :: Backwards f a -> f a
-{-# INLINE runBackwards #-}
-runBackwards = coerce
 
 pushFronts :: ChaseLevDeq a -> [a] -> IO ()
 pushFronts _ [] = pure ()
@@ -176,8 +166,35 @@ tryPopBack q = do
         then pure $! Just $ Found task
         else pure $ Just Race
 
--- yield *> self
--- TODO: perhaps we can return 'Abort' to continue to other queue?
+{- |
+  * @Nothing@         — closed (end-of-stream)
+  * @Just Nothing@    — open and empty (would block)
+  * @Just (Just a)@   — got an element
+-}
+stealHalf :: ChaseLevDeq a -> IO (Maybe (StealResult (NonEmpty a)))
+stealHalf q = do
+  !t <- readCounterForCAS q.top
+  loadLoadBarrier
+  !b <- readCounter q.bottom
+  if t >= b
+    then do
+      closed <- readIORef q.closed
+      if closed
+        then pure Nothing
+        else pure $ Just Empty
+    else do
+      let !avail = b - t
+      let !count = if avail == 1 then 1 else avail `quot` 2
+      arr <- readIORef q.activeArray
+      let !capa = Array.sizeofMutableArray arr
+      -- NOTE: we must not force, otherwise undefined will hit
+      tasks <- for [count - 1, count - 2 .. 0] \i ->
+        Array.readArray arr $ (t + i) .&. (capa - 1)
+      let !t' = t + count
+      (!success, _) <- casCounter q.top t t'
+      if success
+        then pure $! Just $ Found $ NE.fromList tasks
+        else pure $ Just Race
 
 estimateSize :: ChaseLevDeq a -> IO Int
 {-# INLINE estimateSize #-}

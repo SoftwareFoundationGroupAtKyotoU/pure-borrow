@@ -65,6 +65,7 @@ library
     containers,
     deepseq,
     hybrid-vectors,
+    integer-logarithms,
     linear-generics,
     primitive,
     stm,

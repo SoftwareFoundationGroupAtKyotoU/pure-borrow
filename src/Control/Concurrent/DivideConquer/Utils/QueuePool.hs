@@ -31,13 +31,12 @@ module Control.Concurrent.DivideConquer.Utils.QueuePool (
 
 import Control.Applicative qualified as P
 import Control.Concurrent (yield)
-import Control.Concurrent.Queue.ChaseLev (ChaseLevDeq, close, estimateSize, newDeq, pushFront, tryPopBack, tryPopFront)
+import Control.Concurrent.Queue.ChaseLev (ChaseLevDeq, close, estimateSize, newDeq, pushFront, pushFronts, tryPopBack, tryPopFront)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (..), unsafeSystemIOToBO)
 import Data.Coerce (coerce)
-import Data.Foldable qualified as P
 import Data.Function (fix)
 import Data.List qualified as L
 import Data.Ord (Down (..))
@@ -48,7 +47,6 @@ import Data.Vector qualified as V
 import Data.Vector.Algorithms.Intro qualified as AI
 import Data.Vector.Hybrid.Mutable qualified as HMV
 import Data.Vector.Mutable (RealWorld)
-import Debug.Trace (traceEventIO)
 import GHC.Exts qualified as GHC
 import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownNat)
@@ -109,18 +107,11 @@ pushWork = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) work ->
     pushFront mine work
     P.pure $ UnsafeAlias QueuePool {..}
 
-newtype Backwards f a = Backwards {runBackwards :: f a}
-  deriving newtype (P.Functor)
-
-instance (P.Applicative f) => P.Applicative (Backwards f) where
-  pure = Backwards P.. P.pure
-  Backwards f <*> Backwards x = Backwards (x P.<**> f)
-
 -- | Pushes works, the first element is on top.
 pushWorks :: Mut α (QueuePool a) %1 -> [a] %1 -> BO α (Mut α (QueuePool a))
-pushWorks = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) work ->
+pushWorks = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) works ->
   unsafeSystemIOToBO do
-    runBackwards P.$ P.traverse_ (Backwards P.. pushFront mine) work
+    pushFronts mine works
     P.pure $ UnsafeAlias QueuePool {..}
 
 popWork :: Mut α (QueuePool a) %1 -> BO α (Maybe (a, Mut α (QueuePool a)))
@@ -134,8 +125,8 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
         let ranked = HMV.unsafeZip ranks others
         !() <- AI.sortBy (P.comparing P.$ Down P.. P.fst) ranked
         others' <- V.unsafeFreeze others
-        ranks <- V.unsafeFreeze ranks
-        traceEventIO $ "Ranks: " <> show (V.toList ranks)
+        -- ranks <- V.unsafeFreeze ranks
+        -- traceEventIO $ "WORK[S]: Ranks: " <> show (V.toList ranks)
 
         progress <-
           V.foldr
@@ -149,5 +140,9 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
             others'
         case progress of
           Nothing -> P.pure Nothing
-          Just Nothing -> yield P.*> self
-          Just (Just x) -> P.pure $ Just (x, qs)
+          Just Nothing -> do
+            -- traceEventIO "WORK[S]: All queues are empty. Yielding and retrying..."
+            yield P.*> self
+          Just (Just x) -> do
+            -- traceEventIO "WORK[S]: Work found. Stolen!"
+            P.pure $ Just (x, qs)

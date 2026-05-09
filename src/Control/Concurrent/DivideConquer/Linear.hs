@@ -29,17 +29,15 @@ import Control.Applicative qualified as NonLinear
 import Control.Concurrent (ThreadId, forkIO, killThread)
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (Sink, Source)
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear qualified as Once
-import Control.Concurrent.DivideConquer.Utils.QueuePool (QueuePool, newQueuePool, popWork, pushWork, pushWorkMaster)
+import Control.Concurrent.DivideConquer.Utils.QueuePool (QueuePool, newQueuePool, popWork, pushWork, pushWorkMaster, pushWorks)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Affine (Affine, GenericallyAffine (..))
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe
 import Control.Monad.Borrow.Pure.Copyable
+import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
-import Data.List.Linear qualified as LL
-import Data.List.NonEmpty.Linear (NonEmpty (..))
-import Data.List.NonEmpty.Linear qualified as NEL
 import Data.Proxy (Proxy (..))
 import Data.V.Linear (V)
 import Data.V.Linear.Internal (V (..))
@@ -49,7 +47,7 @@ import GHC.Exts qualified as GHC
 import GHC.Generics qualified as GHC
 import GHC.TypeNats (SomeNat (..), someNatVal)
 import Generics.Linear.TH (deriveGenericAnd1)
-import Prelude.Linear
+import Prelude.Linear hiding (foldMap)
 import Prelude.Linear.Generically (Generically, Generically1)
 import System.IO.Unsafe (unsafePerformIO)
 import Unsafe.Linear qualified as Unsafe
@@ -72,50 +70,41 @@ instance Consumable Thread where
   consume = GHC.noinline $ Unsafe.toLinear \(Thread tid) -> unsafePerformIO $ do
     killThread tid
 
-newtype DList a = DList ([a] %1 -> [a])
+newtype DList a = DList (forall r. (a %1 -> r %1 -> r) -> r %1 -> r)
 
 instance Semigroup (DList a) where
-  DList f <> DList g = DList (f . g)
+  DList lFold <> DList rFold = DList \k -> lFold k . rFold k
   {-# INLINE (<>) #-}
 
 instance Monoid (DList a) where
-  mempty = DList id
+  mempty = DList \_ ini -> ini
   {-# INLINE mempty #-}
 
 singletonD :: a %1 -> DList a
-singletonD = DList . (:)
+singletonD = DList . (\a k -> k a)
 {-# INLINE singletonD #-}
 
-toListD :: DList a %1 -> [a]
-toListD (DList f) = f []
-{-# INLINE toListD #-}
+foldrd :: (a %1 -> b %1 -> b) -> b %1 -> DList a %1 -> b
+foldrd k ini (DList f) = f k ini
+{-# INLINE foldrd #-}
 
--- TODO: perhaps we can use atomic counter here again?
-
-data QState α a t
-  = Idle !(Mut α (QueuePool (Work α a t)))
-  | DoThen !(Work α a t) !(Mut α (QueuePool (Work α a t)))
+newtype QState α a t = Idle (Mut α (QueuePool (Work α a t)))
 
 popQState ::
   QState α a t %1 ->
   BO α (Maybe (Work α a t, QState α a t))
 popQState = \case
-  Idle q -> Control.do
-    m <- popWork q
-    case m of
-      Nothing -> Control.pure Nothing
-      Just (work, q) -> Control.pure (Just (work, Idle q))
-  DoThen work q -> Control.pure $ Just (work, Idle q)
+  Idle q -> coerceLin Control.<$> popWork q
 
 enqueue :: QState α a t %1 -> Work α a t %1 -> BO α (QState α a t)
 enqueue q work = case q of
   Idle q -> Idle Control.<$> pushWork q work
-  DoThen work' q -> error "Could not happen!" work q work'
 
-doAndEnqueue :: QState α a t %1 -> Work α a t %1 -> Work α a t %1 -> BO α (QState α a t)
-doAndEnqueue q work cont = case q of
-  Idle q -> DoThen work Control.<$> pushWork q cont
-  DoThen work' q -> error "Could not happen!" work cont work' q
+enqueues :: QState α a t %1 -> [Work α a t] %1 -> BO α (QState α a t)
+enqueues q work = case q of
+  Idle q -> Idle Control.<$> pushWorks q work
+
+data T a where T :: !Bool -> !(DList a) %1 -> !(DList a) %1 -> T a
 
 divideAndConquer ::
   forall α β t a.
@@ -145,29 +134,36 @@ divideAndConquer n DivideConquer {..} ini
     worker :: (α >= α') => Mut α' (QueuePool (Work α' a t)) %1 -> BO α' ()
     worker q =
       whileJust_ (Idle q) popQState \q -> \case
-        Final -> Control.pure q
+        Final -> Control.do
+          -- unsafeSystemIOToBO $ traceEventIO "WORK[F]: Final work reached."
+          Control.pure q
         Process ini sink next -> Control.do
           q <- enqueue q next
           resl <- divide ini
           case resl of
             Done -> Control.do
+              -- unsafeSystemIOToBO $ traceEventIO "WORK[P]: No more division needed. Return"
               Once.put sink ()
               Control.pure q
             Continue ts -> Control.do
-              (sources, ks) <-
-                flip Control.runStateT mempty $ Data.for ts \work -> Control.do
-                  (sink, source) <- Control.lift $ asksLinearly Once.new
-                  Control.modify (<> singletonD (work, sink))
-                  Control.pure source
-              let %1 !cont = Unite sources sink
-              case NEL.nonEmpty $ toListD ks of
-                Nothing -> enqueue q cont
-                Just ((ini, sink) :| ks) ->
-                  doAndEnqueue
-                    q
-                    (Process ini sink Final)
-                    $ LL.foldr (uncurry Process) cont ks
+              -- unsafeSystemIOToBO $ traceEventIO "WORK[P]: Division occurred."
+              (sources, T _ ls rs) <-
+                flip Control.runStateT (T True mempty mempty) $ Data.for ts \work -> Control.StateT \(T toLeft ls rs) -> Control.do
+                  (sink, source) <- asksLinearly Once.new
+                  let %1 !(ls', rs') =
+                        if toLeft
+                          then
+                            (ls <> singletonD (work, sink), rs)
+                          else
+                            (ls, rs <> singletonD (work, sink))
+                  Control.pure (source, T (not toLeft) ls' rs')
+              enqueues
+                q
+                [ foldrd (uncurry Process) Final ls
+                , foldrd (uncurry Process) (Unite sources sink) rs
+                ]
         Unite children sink -> Control.do
+          -- unsafeSystemIOToBO $ traceEventIO "WORK[U]: Unite work reached."
           Control.void $ Data.traverse Once.take children
           Once.put sink ()
           Control.pure q

@@ -9,6 +9,7 @@ module Control.Concurrent.Queue.ChaseLev (
   ChaseLevDeq,
   newDeq,
   pushFront,
+  pushFronts,
   tryPopBack,
   tryPopFront,
   estimateSize,
@@ -17,15 +18,16 @@ module Control.Concurrent.Queue.ChaseLev (
 ) where
 
 import Control.Concurrent (yield)
-import Control.Monad (unless, (<$!>))
+import Control.Monad (forM_, unless, (<$!>))
 import Data.Atomics (loadLoadBarrier, storeLoadBarrier, writeBarrier)
-import Data.Atomics.Counter (AtomicCounter, casCounter, newCounter, peekCTicket, readCounter, readCounterForCAS, writeCounter)
+import Data.Atomics.Counter (AtomicCounter, casCounter, newCounter, readCounter, readCounterForCAS, writeCounter)
 import Data.Bits ((.&.))
 import Data.Function (fix)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Primitive.Array (MutableArray)
 import Data.Primitive.Array qualified as Array
 import GHC.Exts (RealWorld)
+import Math.NumberTheory.Logarithms (intLog2')
 
 data ChaseLevDeq a = CL
   { top :: {-# UNPACK #-} !AtomicCounter
@@ -87,6 +89,41 @@ pushFront q !a = do
     Array.writeArray arr (stat.bottom .&. (curCapa - 1)) (Just a)
     writeBarrier
     writeCounter q.bottom $! stat.bottom + 1
+
+pushFronts :: ChaseLevDeq a -> [a] -> IO ()
+pushFronts _ [] = pure ()
+pushFronts q !a = do
+  let !n = length a
+  closed <- readIORef q.closed
+  unless closed do
+    !capa <- capacity q
+    !stat <- getStat q
+    let !size = occupancy stat
+    arr <-
+      if size == capa - n
+        then do
+          let !start = stat.top .&. (capa - 1)
+              !end = stat.bottom .&. (capa - 1)
+              !newCapa = (2 * capa) `max` (2 ^ intLog2' n)
+          oldArr <- readIORef q.activeArray
+          newArr <- Array.newArray newCapa Nothing
+          if end >= start
+            then do
+              Array.copyMutableArray newArr start oldArr start size
+            else do
+              let !lhSize = capa - start
+                  !rhSize = size - lhSize
+              Array.copyMutableArray newArr start oldArr start lhSize
+              Array.copyMutableArray newArr (start + lhSize) oldArr 0 rhSize
+          writeIORef q.activeArray newArr
+          pure newArr
+        else readIORef q.activeArray
+
+    let !curCapa = Array.sizeofMutableArray arr
+    forM_ (zip [0 ..] a) $ \(i, x) ->
+      Array.writeArray arr ((stat.bottom + n - i) .&. (curCapa - 1)) (Just x)
+    writeBarrier
+    writeCounter q.bottom $! stat.bottom + n
 
 {- |
   * @Nothing@         — closed (end-of-stream)

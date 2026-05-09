@@ -20,7 +20,7 @@ module Control.Concurrent.Queue.ChaseLev (
   isClosed,
 ) where
 
-import Control.Monad (unless, (<$!>))
+import Control.Monad (forM_, unless, (<$!>))
 import Data.Atomics (loadLoadBarrier, storeLoadBarrier, writeBarrier)
 import Data.Atomics.Counter (AtomicCounter, casCounter, newCounter, readCounter, readCounterForCAS, writeCounter)
 import Data.Bits ((.&.))
@@ -31,6 +31,7 @@ import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Primitive.Array (MutableArray)
 import Data.Primitive.Array qualified as Array
 import GHC.Exts (RealWorld)
+import Math.NumberTheory.Logarithms (intLog2')
 
 data ChaseLevDeq a = CL
   { top :: {-# UNPACK #-} !AtomicCounter
@@ -62,18 +63,34 @@ occupancy :: Stat -> Int
 occupancy = (-) <$> (.bottom) <*> (.top)
 
 pushFront :: ChaseLevDeq a -> a -> IO ()
-pushFront q !a = do
+pushFront q = pushFronts q . (: [])
+
+newtype Backwards f a = Backwards (f a)
+  deriving newtype (Functor)
+
+instance (Applicative f) => Applicative (Backwards f) where
+  pure = Backwards . pure
+  Backwards f <*> Backwards x = Backwards $ liftA2 (&) x f
+
+runBackwards :: Backwards f a -> f a
+{-# INLINE runBackwards #-}
+runBackwards = coerce
+
+pushFronts :: ChaseLevDeq a -> [a] -> IO ()
+pushFronts _ [] = pure ()
+pushFronts q !a = do
+  let !n = length a
   closed <- readIORef q.closed
   unless closed do
     !capa <- capacity q
     !stat <- getStat q
     let !size = occupancy stat
     arr <-
-      if size == capa - 1
+      if size + n >= capa - 1
         then do
           let !start = stat.top .&. (capa - 1)
               !end = stat.bottom .&. (capa - 1)
-              !newCapa = 2 * capa
+              !newCapa = (2 * capa) `max` (2 ^ (intLog2' (size + n) + 1))
           oldArr <- readIORef q.activeArray
           newArr <- Array.newArray newCapa undefined
           if end >= start
@@ -89,57 +106,10 @@ pushFront q !a = do
         else readIORef q.activeArray
 
     let !curCapa = Array.sizeofMutableArray arr
-    Array.writeArray arr (stat.bottom .&. (curCapa - 1)) a
+    forM_ (zip [n - 1, n - 2 ..] a) $ \(!i, !x) ->
+      Array.writeArray arr ((stat.bottom + i) .&. (curCapa - 1)) x
     writeBarrier
-    writeCounter q.bottom $! stat.bottom + 1
-
-newtype Backwards f a = Backwards (f a)
-  deriving newtype (Functor)
-
-instance (Applicative f) => Applicative (Backwards f) where
-  pure = Backwards . pure
-  Backwards f <*> Backwards x = Backwards $ liftA2 (&) x f
-
-runBackwards :: Backwards f a -> f a
-{-# INLINE runBackwards #-}
-runBackwards = coerce
-
-pushFronts :: ChaseLevDeq a -> [a] -> IO ()
-pushFronts q = runBackwards . traverse_ (Backwards . pushFront q)
-
-{- pushFronts _ [] = pure ()
-pushFronts q !a = do
-  let !n = length a
-  closed <- readIORef q.closed
-  unless closed do
-    !capa <- capacity q
-    !stat <- getStat q
-    let !size = occupancy stat
-    arr <-
-      if size + n >= capa - 1
-        then do
-          let !start = stat.top .&. (capa - 1)
-              !end = stat.bottom .&. (capa - 1)
-              !newCapa = (2 * capa) `max` (2 ^ (intLog2' (size + n) + 1))
-          oldArr <- readIORef q.activeArray
-          newArr <- Array.newArray newCapa Nothing
-          if end >= start
-            then do
-              Array.copyMutableArray newArr start oldArr start size
-            else do
-              let !lhSize = capa - start
-                  !rhSize = size - lhSize
-              Array.copyMutableArray newArr start oldArr start lhSize
-              Array.copyMutableArray newArr (start + lhSize) oldArr 0 rhSize
-          writeIORef q.activeArray newArr
-          pure newArr
-        else readIORef q.activeArray
-
-    let !curCapa = Array.sizeofMutableArray arr
-    forM_ (zip [n - 1, n - 2 ..] a) $ \(i, x) ->
-      Array.writeArray arr ((stat.bottom + i) .&. (curCapa - 1)) (Just x)
-    writeBarrier
-    writeCounter q.bottom $! stat.bottom + n -}
+    writeCounter q.bottom $! stat.bottom + n
 
 {- |
   * @Nothing@         — closed (end-of-stream)

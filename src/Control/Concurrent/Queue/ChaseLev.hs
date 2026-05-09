@@ -28,14 +28,13 @@ import Data.Coerce (coerce)
 import Data.Foldable (traverse_)
 import Data.Function ((&))
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
-import Data.Maybe (fromJust)
 import Data.Primitive.Array (MutableArray)
 import Data.Primitive.Array qualified as Array
 import GHC.Exts (RealWorld)
 
 data ChaseLevDeq a = CL
   { top :: {-# UNPACK #-} !AtomicCounter
-  , activeArray :: !(IORef (MutableArray RealWorld (Maybe a)))
+  , activeArray :: !(IORef (MutableArray RealWorld a))
   , closed :: {-# UNPACK #-} !(IORef Bool)
   , bottom :: {-# UNPACK #-} !AtomicCounter
   }
@@ -45,7 +44,7 @@ data Stat = Stat {top, bottom :: !Int}
 newDeq :: IO (ChaseLevDeq a)
 newDeq = do
   !top <- newCounter 0
-  !activeArray <- newIORef =<< Array.newArray 128 Nothing
+  !activeArray <- newIORef =<< Array.newArray 128 undefined
   !closed <- newIORef False
   !bottom <- newCounter 0
   pure CL {..}
@@ -76,7 +75,7 @@ pushFront q !a = do
               !end = stat.bottom .&. (capa - 1)
               !newCapa = 2 * capa
           oldArr <- readIORef q.activeArray
-          newArr <- Array.newArray newCapa Nothing
+          newArr <- Array.newArray newCapa undefined
           if end >= start
             then do
               Array.copyMutableArray newArr start oldArr start size
@@ -90,7 +89,7 @@ pushFront q !a = do
         else readIORef q.activeArray
 
     let !curCapa = Array.sizeofMutableArray arr
-    Array.writeArray arr (stat.bottom .&. (curCapa - 1)) (Just a)
+    Array.writeArray arr (stat.bottom .&. (curCapa - 1)) a
     writeBarrier
     writeCounter q.bottom $! stat.bottom + 1
 
@@ -166,13 +165,13 @@ tryPopFront q = do
         (!success, _) <- casCounter q.top t t'
         writeCounter q.bottom t'
         if success
-          then pure $ Just $ Just $ fromJust task
+          then pure $ Just $ Just task
           else do
             closed <- readIORef q.closed
             if closed
               then pure Nothing
               else pure $ Just Nothing
-    | b > t -> pure $ Just $ Just $ fromJust task
+    | b > t -> pure $ Just $ Just task
     | otherwise -> do
         writeCounter q.bottom t
         pure $ Just Nothing
@@ -204,7 +203,7 @@ tryPopBack q = do
       let !t' = t + 1
       (!success, _) <- casCounter q.top t t'
       if success
-        then pure $! Just $ Found $ fromJust task
+        then pure $! Just $ Found task
         else pure $ Just Race
 
 -- yield *> self

@@ -31,7 +31,7 @@ module Control.Concurrent.DivideConquer.Utils.QueuePool (
 
 import Control.Applicative qualified as P
 import Control.Concurrent (yield)
-import Control.Concurrent.Queue.ChaseLev (ChaseLevDeq, close, estimateSize, isClosed, newDeq, pushFront, pushFronts, tryPopBack, tryPopFront)
+import Control.Concurrent.Queue.ChaseLev (ChaseLevDeq, StealResult (..), close, estimateSize, isClosed, newDeq, pushFront, pushFronts, tryPopBack, tryPopFront)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure.BO
@@ -39,14 +39,13 @@ import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (..), unsafeSystemIOToBO)
 import Data.Coerce (coerce)
 import Data.Function (fix)
 import Data.List qualified as L
-import Data.Ord (Down (..))
-import Data.Ord qualified as P
 import Data.V.Linear (V, theLength)
 import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
-import Data.Vector.Algorithms.Intro qualified as AI
-import Data.Vector.Hybrid.Mutable qualified as HMV
+import Data.Vector.Generic qualified as GV
+import Data.Vector.Hybrid qualified as HV
 import Data.Vector.Mutable (RealWorld)
+import Debug.Trace (traceEventIO)
 import GHC.Exts qualified as GHC
 import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownNat)
@@ -104,6 +103,7 @@ pushWorkMaster = Unsafe.toLinear2 \(UnsafeAlias (MasterQueuePool pools)) work ->
 pushWork :: Mut α (QueuePool a) %1 -> a %1 -> BO α (Mut α (QueuePool a))
 pushWork = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) work ->
   unsafeSystemIOToBO do
+    traceEventIO $ "Pushing work..."
     pushFront mine work
     P.pure $ UnsafeAlias QueuePool {..}
 
@@ -111,6 +111,7 @@ pushWork = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) work ->
 pushWorks :: Mut α (QueuePool a) %1 -> [a] %1 -> BO α (Mut α (QueuePool a))
 pushWorks = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) works ->
   unsafeSystemIOToBO do
+    traceEventIO ("Pushing " P.<> P.show (P.length works) P.<> " works...")
     pushFronts mine works
     P.pure $ UnsafeAlias QueuePool {..}
 
@@ -118,35 +119,41 @@ popWork :: Mut α (QueuePool a) %1 -> BO α (Maybe (a, Mut α (QueuePool a)))
 popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
   unsafeSystemIOToBO do
     tryPopFront mine P.>>= \case
-      Nothing -> P.pure Nothing
-      Just (Just x) -> P.pure $ Just (x, qs)
+      Nothing -> do
+        traceEventIO "WORK[P]: Queue closed!"
+        P.pure Nothing
+      Just (Just x) -> do
+        traceEventIO "WORK[P]: hit!"
+        P.pure $ Just (x, qs)
       Just Nothing -> fix \self -> do
-        !ranks <- V.unsafeThaw P.=<< V.mapM estimateSize P.=<< V.unsafeFreeze others
-        let ranked = HMV.unsafeZip ranks others
-        !() <- AI.sortBy (P.comparing P.$ Down P.. P.fst) ranked
-        others' <- V.unsafeFreeze others
-        -- ranks <- V.unsafeFreeze ranks
-        -- traceEventIO $ "WORK[S]: Ranks: " <> show (V.toList ranks)
-
-        progress <-
-          V.foldr
-            ( \q rest ->
-                tryPopBack q P.>>= \case
-                  Just (Just x) -> P.pure $ Just (Just x)
-                  Just Nothing -> rest
-                  Nothing -> P.pure Nothing
-            )
-            (P.pure $ Just Nothing)
-            others'
-        case progress of
-          Nothing -> P.pure Nothing
-          Just Nothing -> do
-            closed <- isClosed mine
-            if closed
-              then P.pure Nothing
-              else
-                -- traceEventIO "WORK[S]: All queues are empty. Yielding and retrying..."
+        traceEventIO "WORK[P]: no hit. stealing from others..."
+        cls <- isClosed mine
+        if cls
+          then do
+            traceEventIO "WORK[P]: Seems we are done"
+            P.pure Nothing
+          else do
+            !others0 <- V.unsafeFreeze others
+            !ranks <- V.mapM estimateSize others0
+            traceEventIO $ "WORK[P]: ranks = " <> show ranks
+            let (rank, targ) = GV.maximumOn fst $ HV.unsafeZip ranks others0
+            -- ranks <- V.unsafeFreeze ranks
+            if rank <= 0
+              then do
+                traceEventIO "WORK[P]: non avail. retry..."
                 yield P.*> self
-          Just (Just x) -> do
-            -- traceEventIO "WORK[S]: Work found. Stolen!"
-            P.pure $ Just (x, qs)
+              else do
+                progress <- tryPopBack targ
+                case progress of
+                  Nothing -> do
+                    traceEventIO "WORK[P]: Seems we are done"
+                    P.pure Nothing
+                  Just Race -> do
+                    traceEventIO "WORK[P]: failed to steal (race). retrying..."
+                    yield P.*> self
+                  Just Empty -> do
+                    traceEventIO "WORK[P]: failed to steal (empty). retrying..."
+                    yield P.*> self
+                  Just (Found x) -> do
+                    traceEventIO "WORK[P]: steal success!"
+                    P.pure $ Just (x, qs)

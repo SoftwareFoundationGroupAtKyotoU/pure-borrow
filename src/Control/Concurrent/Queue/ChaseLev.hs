@@ -15,17 +15,17 @@ module Control.Concurrent.Queue.ChaseLev (
   estimateSize,
   close,
   isClosed,
+  StealResult (..),
 ) where
 
-import Control.Concurrent (yield)
 import Control.Monad (forM_, unless, (<$!>))
 import Data.Atomics (loadLoadBarrier, storeLoadBarrier, writeBarrier)
 import Data.Atomics.Counter (AtomicCounter, casCounter, newCounter, readCounter, readCounterForCAS, writeCounter)
 import Data.Bits ((.&.))
-import Data.Function (fix)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Primitive.Array (MutableArray)
 import Data.Primitive.Array qualified as Array
+import Debug.Trace (traceEventIO)
 import GHC.Exts (RealWorld)
 import Math.NumberTheory.Logarithms (intLog2')
 
@@ -121,7 +121,7 @@ pushFronts q !a = do
 
     let !curCapa = Array.sizeofMutableArray arr
     forM_ (zip [0 ..] a) $ \(i, x) ->
-      Array.writeArray arr ((stat.bottom + n - i) .&. (curCapa - 1)) (Just x)
+      Array.writeArray arr ((stat.bottom + n - i - 1) .&. (curCapa - 1)) (Just x)
     writeBarrier
     writeCounter q.bottom $! stat.bottom + n
 
@@ -157,13 +157,16 @@ tryPopFront q = do
             else pure $ Just Nothing
     else pure $ Just task
 
+data StealResult a = Found a | Empty | Race
+  deriving (Show, Eq, Ord)
+
 {- |
   * @Nothing@         — closed (end-of-stream)
   * @Just Nothing@    — open and empty (would block)
   * @Just (Just a)@   — got an element
 -}
-tryPopBack :: ChaseLevDeq a -> IO (Maybe (Maybe a))
-tryPopBack q = fix \self -> do
+tryPopBack :: ChaseLevDeq a -> IO (Maybe (StealResult a))
+tryPopBack q = do
   !t <- readCounterForCAS q.top
   loadLoadBarrier
   b <- readCounter q.bottom
@@ -172,7 +175,7 @@ tryPopBack q = fix \self -> do
       closed <- readIORef q.closed
       if closed
         then pure Nothing
-        else pure $ Just Nothing
+        else pure $ Just Empty
     else do
       arr <- readIORef q.activeArray
       let !capa = Array.sizeofMutableArray arr
@@ -181,8 +184,8 @@ tryPopBack q = fix \self -> do
       let !t' = t + 1
       (!success, _) <- casCounter q.top t t'
       if success
-        then pure $! Just task
-        else yield *> self -- TODO: perhaps we can return 'Abort' to continue to other queue?
+        then pure $! Just $ maybe Empty Found task
+        else pure $ Just Race
 
 estimateSize :: ChaseLevDeq a -> IO Int
 {-# INLINE estimateSize #-}

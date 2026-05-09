@@ -35,7 +35,7 @@ import Control.Monad.Borrow.Pure.Affine (Affine, GenericallyAffine (..))
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe
 import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Utils (coerceLin)
+import Data.Bifunctor.Linear qualified as BiL
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
 import Data.Proxy (Proxy (..))
@@ -43,6 +43,7 @@ import Data.V.Linear (V)
 import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
 import Data.Vector.Mutable.Linear.Borrow qualified as LV
+import Debug.Trace (traceEventIO)
 import GHC.Exts qualified as GHC
 import GHC.Generics qualified as GHC
 import GHC.TypeNats (SomeNat (..), someNatVal)
@@ -70,41 +71,59 @@ instance Consumable Thread where
   consume = GHC.noinline $ Unsafe.toLinear \(Thread tid) -> unsafePerformIO $ do
     killThread tid
 
-newtype DList a = DList (forall r. (a %1 -> r %1 -> r) -> r %1 -> r)
+newtype DList a = DList ([a] %1 -> [a])
 
 instance Semigroup (DList a) where
-  DList lFold <> DList rFold = DList \k -> lFold k . rFold k
+  DList l <> DList r = DList (l . r)
   {-# INLINE (<>) #-}
 
 instance Monoid (DList a) where
-  mempty = DList \_ ini -> ini
+  mempty = DList id
   {-# INLINE mempty #-}
 
 singletonD :: a %1 -> DList a
-singletonD = DList . (\a k -> k a)
+singletonD = DList . (:)
 {-# INLINE singletonD #-}
 
-foldrd :: (a %1 -> b %1 -> b) -> b %1 -> DList a %1 -> b
-foldrd k ini (DList f) = f k ini
-{-# INLINE foldrd #-}
+toListD :: DList a %1 -> [a]
+toListD (DList f) = f []
+{-# INLINE toListD #-}
 
-newtype QState α a t = Idle (Mut α (QueuePool (Work α a t)))
+data QState α a t
+  = Next !(Work α a t) !(Mut α (QueuePool (Work α a t)))
+  | Idle !(Mut α (QueuePool (Work α a t)))
 
 popQState ::
   QState α a t %1 ->
   BO α (Maybe (Work α a t, QState α a t))
 popQState = \case
-  Idle q -> coerceLin Control.<$> popWork q
+  Idle q -> Control.do
+    unsafeSystemIOToBO $ traceEventIO "WORK[S]: popping work from queue..."
+    Data.fmap (BiL.second Idle) Control.<$> popWork q
+  Next work q -> Control.do
+    unsafeSystemIOToBO $ traceEventIO "WORK[S]: using the next direct work."
+    Control.pure $ Just (work, Idle q)
 
 enqueue :: QState α a t %1 -> Work α a t %1 -> BO α (QState α a t)
 enqueue q work = case q of
-  Idle q -> Idle Control.<$> pushWork q work
+  Idle q -> Control.pure $ Next work q
+  Next next0 q -> Next work Control.<$> pushWork q next0
 
-enqueues :: QState α a t %1 -> [Work α a t] %1 -> BO α (QState α a t)
-enqueues q work = case q of
-  Idle q -> Idle Control.<$> pushWorks q work
+doAndEnqueue ::
+  QState α a t %1 ->
+  Work α a t %1 ->
+  Work α a t %1 ->
+  BO α (QState α a t)
+doAndEnqueue q next cont = case q of
+  Idle q -> Control.do
+    unsafeSystemIOToBO $ traceEventIO "WORK[D]: Idle. Adding direct next task."
+    Next next Control.<$> pushWork q cont
+  Next next0 q -> Control.do
+    unsafeSystemIOToBO $ traceEventIO "WORK[D]: Already full. pushing forward"
+    Next next Control.<$> pushWorks q [cont, next0]
 
-data T a where T :: !Bool -> !(DList a) %1 -> !(DList a) %1 -> T a
+data P a where
+  P :: {-# UNPACK #-} !Int -> !a %1 -> P a
 
 divideAndConquer ::
   forall α β t a.
@@ -135,35 +154,30 @@ divideAndConquer n DivideConquer {..} ini
     worker q =
       whileJust_ (Idle q) popQState \q -> \case
         Final -> Control.do
-          -- unsafeSystemIOToBO $ traceEventIO "WORK[F]: Final work reached."
+          unsafeSystemIOToBO $ traceEventIO "WORK[WF]: Final work reached."
           Control.pure q
         Process ini sink next -> Control.do
           q <- enqueue q next
           resl <- divide ini
           case resl of
             Done -> Control.do
-              -- unsafeSystemIOToBO $ traceEventIO "WORK[P]: No more division needed. Return"
+              unsafeSystemIOToBO $ traceEventIO "WORK[WP]: No more division needed. Return"
               Once.put sink ()
               Control.pure q
             Continue ts -> Control.do
-              -- unsafeSystemIOToBO $ traceEventIO "WORK[P]: Division occurred."
-              (sources, T _ ls rs) <-
-                flip Control.runStateT (T True mempty mempty) $ Data.for ts \work -> Control.StateT \(T toLeft ls rs) -> Control.do
+              unsafeSystemIOToBO $ traceEventIO "WORK[WP]: Division occurred."
+              (sources, P num ks) <-
+                flip Control.runStateT (P 0 mempty) $ Data.for ts \work -> Control.StateT \(P num ks) -> Control.do
                   (sink, source) <- asksLinearly Once.new
-                  let %1 !(ls', rs') =
-                        if toLeft
-                          then
-                            (ls <> singletonD (work, sink), rs)
-                          else
-                            (ls, rs <> singletonD (work, sink))
-                  Control.pure (source, T (not toLeft) ls' rs')
-              enqueues
+                  let %1 !ks' = ks <> singletonD (work, sink)
+                  Control.pure (source, P (num + 1) ks')
+              let %1 !(ls, rs) = splitAt (num `quot` 2) $ toListD ks
+              doAndEnqueue
                 q
-                [ foldrd (uncurry Process) Final ls
-                , foldrd (uncurry Process) (Unite sources sink) rs
-                ]
+                (foldr (uncurry Process) Final ls)
+                (foldr (uncurry Process) (Unite sources sink) rs)
         Unite children sink -> Control.do
-          -- unsafeSystemIOToBO $ traceEventIO "WORK[U]: Unite work reached."
+          unsafeSystemIOToBO $ traceEventIO "WORK[WU]: Unite work reached."
           Control.void $ Data.traverse Once.take children
           Once.put sink ()
           Control.pure q

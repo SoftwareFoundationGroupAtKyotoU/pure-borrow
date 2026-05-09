@@ -1,6 +1,8 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NoFieldSelectors #-}
@@ -11,23 +13,25 @@ module Control.Concurrent.Queue.ChaseLev (
   pushFront,
   pushFronts,
   tryPopBack,
+  StealResult (..),
   tryPopFront,
   estimateSize,
   close,
   isClosed,
-  StealResult (..),
 ) where
 
-import Control.Monad (forM_, unless, (<$!>))
+import Control.Monad (unless, (<$!>))
 import Data.Atomics (loadLoadBarrier, storeLoadBarrier, writeBarrier)
 import Data.Atomics.Counter (AtomicCounter, casCounter, newCounter, readCounter, readCounterForCAS, writeCounter)
 import Data.Bits ((.&.))
+import Data.Coerce (coerce)
+import Data.Foldable (traverse_)
+import Data.Function ((&))
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.Maybe (fromJust)
 import Data.Primitive.Array (MutableArray)
 import Data.Primitive.Array qualified as Array
-import Debug.Trace (traceEventIO)
 import GHC.Exts (RealWorld)
-import Math.NumberTheory.Logarithms (intLog2')
 
 data ChaseLevDeq a = CL
   { top :: {-# UNPACK #-} !AtomicCounter
@@ -90,8 +94,21 @@ pushFront q !a = do
     writeBarrier
     writeCounter q.bottom $! stat.bottom + 1
 
+newtype Backwards f a = Backwards (f a)
+  deriving newtype (Functor)
+
+instance (Applicative f) => Applicative (Backwards f) where
+  pure = Backwards . pure
+  Backwards f <*> Backwards x = Backwards $ liftA2 (&) x f
+
+runBackwards :: Backwards f a -> f a
+{-# INLINE runBackwards #-}
+runBackwards = coerce
+
 pushFronts :: ChaseLevDeq a -> [a] -> IO ()
-pushFronts _ [] = pure ()
+pushFronts q = runBackwards . traverse_ (Backwards . pushFront q)
+
+{- pushFronts _ [] = pure ()
 pushFronts q !a = do
   let !n = length a
   closed <- readIORef q.closed
@@ -120,10 +137,10 @@ pushFronts q !a = do
         else readIORef q.activeArray
 
     let !curCapa = Array.sizeofMutableArray arr
-    forM_ (zip [0 ..] a) $ \(i, x) ->
-      Array.writeArray arr ((stat.bottom + n - i - 1) .&. (curCapa - 1)) (Just x)
+    forM_ (zip [n - 1, n - 2 ..] a) $ \(i, x) ->
+      Array.writeArray arr ((stat.bottom + i) .&. (curCapa - 1)) (Just x)
     writeBarrier
-    writeCounter q.bottom $! stat.bottom + n
+    writeCounter q.bottom $! stat.bottom + n -}
 
 {- |
   * @Nothing@         — closed (end-of-stream)
@@ -142,20 +159,23 @@ tryPopFront q = do
 
   -- NOTE: Do not force, otherwise undefined will hit
   task <- Array.readArray arr (b .&. (capa - 1))
-  if b == t
-    then do
-      -- last one element - might be stolen!
-      let !t' = t + 1
-      (!success, _) <- casCounter q.top t t'
-      writeCounter q.bottom t'
-      if success
-        then pure $ Just $ task
-        else do
-          closed <- readIORef q.closed
-          if closed
-            then pure Nothing
-            else pure $ Just Nothing
-    else pure $ Just task
+  if
+    | b > t -> pure $ Just $ Just $ fromJust task
+    | b == t -> do
+        -- last one element - might be stolen!
+        let !t' = t + 1
+        (!success, _) <- casCounter q.top t t'
+        writeCounter q.bottom t'
+        if success
+          then pure $ Just $ Just $ fromJust task
+          else do
+            closed <- readIORef q.closed
+            if closed
+              then pure Nothing
+              else pure $ Just Nothing
+    | otherwise -> do
+        writeCounter q.bottom t
+        pure $ Just Nothing
 
 data StealResult a = Found a | Empty | Race
   deriving (Show, Eq, Ord)
@@ -169,8 +189,8 @@ tryPopBack :: ChaseLevDeq a -> IO (Maybe (StealResult a))
 tryPopBack q = do
   !t <- readCounterForCAS q.top
   loadLoadBarrier
-  b <- readCounter q.bottom
-  if t == b
+  !b <- readCounter q.bottom
+  if t >= b
     then do
       closed <- readIORef q.closed
       if closed
@@ -184,8 +204,11 @@ tryPopBack q = do
       let !t' = t + 1
       (!success, _) <- casCounter q.top t t'
       if success
-        then pure $! Just $ maybe Empty Found task
+        then pure $! Just $ Found $ fromJust task
         else pure $ Just Race
+
+-- yield *> self
+-- TODO: perhaps we can return 'Abort' to continue to other queue?
 
 estimateSize :: ChaseLevDeq a -> IO Int
 {-# INLINE estimateSize #-}

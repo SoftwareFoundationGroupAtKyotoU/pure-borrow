@@ -77,8 +77,6 @@ library
   exposed-modules:
     Control.Concurrent.DivideConquer.Linear
     Control.Concurrent.Queue.ChaseLev
-    Control.Concurrent.STM.TMDeque
-    Control.Concurrent.STM.TMDequeRingBuffer
     Control.Monad.Borrow.Pure
     Control.Monad.Borrow.Pure.Affine
     Control.Monad.Borrow.Pure.Affine.Internal

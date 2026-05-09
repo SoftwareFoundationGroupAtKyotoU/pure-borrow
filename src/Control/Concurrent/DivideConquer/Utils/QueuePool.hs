@@ -107,7 +107,7 @@ pushWork = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) work ->
     pushFront mine work
     P.pure $ UnsafeAlias QueuePool {..}
 
--- | Pushes works, the first element is on top.
+-- | Pushes works, the last element is on the front.
 pushWorks :: Mut α (QueuePool a) %1 -> [a] %1 -> BO α (Mut α (QueuePool a))
 pushWorks = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) works ->
   unsafeSystemIOToBO do

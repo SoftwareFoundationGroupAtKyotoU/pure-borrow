@@ -66,6 +66,7 @@ occupancy = (-) <$> (.bottom) <*> (.top)
 pushFront :: ChaseLevDeq a -> a -> IO ()
 pushFront q = pushFronts q . (: [])
 
+-- | Puts the last element on the front.
 pushFronts :: ChaseLevDeq a -> [a] -> IO ()
 pushFronts _ [] = pure ()
 pushFronts q !a = do
@@ -96,7 +97,7 @@ pushFronts q !a = do
         else readIORef q.activeArray
 
     let !curCapa = Array.sizeofMutableArray arr
-    forM_ (zip [n - 1, n - 2 ..] a) $ \(!i, !x) ->
+    forM_ (zip [0 ..] a) $ \(!i, !x) ->
       Array.writeArray arr ((stat.bottom + i) .&. (curCapa - 1)) x
     writeBarrier
     writeCounter q.bottom $! stat.bottom + n
@@ -166,11 +167,7 @@ tryPopBack q = do
         then pure $! Just $ Found task
         else pure $ Just Race
 
-{- |
-  * @Nothing@         — closed (end-of-stream)
-  * @Just Nothing@    — open and empty (would block)
-  * @Just (Just a)@   — got an element
--}
+-- | back-element first
 stealHalf :: ChaseLevDeq a -> IO (Maybe (StealResult (NonEmpty a)))
 stealHalf q = do
   !t <- readCounterForCAS q.top
@@ -190,7 +187,7 @@ stealHalf q = do
       let !capa = Array.sizeofMutableArray arr
       -- NOTE: we must not force, otherwise undefined will hit
       tasks <- V.generateM count \i ->
-        Array.readArray arr $ (t + count - i - 1) .&. (capa - 1)
+        Array.readArray arr $ (t + i) .&. (capa - 1)
       (!success, _) <- casCounter q.top t t'
       if success
         then pure $! Just $ Found $ NE.fromList $ V.toList tasks

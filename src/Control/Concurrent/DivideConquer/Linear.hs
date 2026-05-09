@@ -133,16 +133,6 @@ enqueues :: QState α a t %1 -> [Work α a t] %1 -> BO α (QState α a t)
 enqueues q work = case q of
   Idle q -> Idle Control.<$> pushWorks q work
 
-doAndEnqueue ::
-  QState α a t %1 ->
-  Work α a t %1 ->
-  Work α a t %1 ->
-  BO α (QState α a t)
-doAndEnqueue q next cont = case q of
-  Idle q -> Control.do
-    -- unsafeSystemIOToBO $ traceEventIO "WORK[D]: Idle. Adding direct next task."
-    Idle Control.<$> pushWorks q [next, cont]
-
 data P a where
   P :: {-# UNPACK #-} !Int -> !a %1 -> P a
 

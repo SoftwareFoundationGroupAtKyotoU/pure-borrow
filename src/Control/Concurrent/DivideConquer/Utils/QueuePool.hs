@@ -45,7 +45,6 @@ import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
 import Data.Vector.Generic qualified as GV
 import Data.Vector.Hybrid qualified as HV
-import Data.Vector.Mutable (RealWorld)
 -- import Debug.Trace (traceEventIO)
 import GHC.Exts qualified as GHC
 import GHC.IO qualified as GHC
@@ -56,7 +55,7 @@ import Prelude qualified as P
 
 data QueuePool a = QueuePool
   { mine :: !(ChaseLevDeq a)
-  , others :: !(V.MVector RealWorld (ChaseLevDeq a))
+  , others :: !(V.Vector (ChaseLevDeq a))
   , num :: !Int
   }
 
@@ -82,7 +81,7 @@ newQueuePool = unsafeSystemIOToBO do
   pools <-
     P.mapM
       ( \(num, ini, mine, tl) -> do
-          others <- V.unsafeThaw $ V.fromList $ tl <> ini
+          let others = V.fromList $ tl <> ini
           P.pure P.$ QueuePool {others, ..}
       )
       P.$ L.zip4
@@ -134,10 +133,9 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
             -- traceEventIO "WORK[P]: Seems we are done"
             P.pure Nothing
           else do
-            !others0 <- V.unsafeFreeze others
-            !ranks <- V.mapM estimateSize others0
+            !ranks <- V.mapM estimateSize others
             -- traceEventIO $ "WORK[P]: ranks = " <> show ranks
-            let (rank, targ) = GV.maximumOn fst $ HV.unsafeZip ranks others0
+            let (rank, targ) = GV.maximumOn fst $ HV.unsafeZip ranks others
             -- ranks <- V.unsafeFreeze ranks
             if rank <= 0
               then do

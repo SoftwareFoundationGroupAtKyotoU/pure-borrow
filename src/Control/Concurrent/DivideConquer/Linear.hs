@@ -26,7 +26,9 @@ module Control.Concurrent.DivideConquer.Linear (
 ) where
 
 import Control.Applicative qualified as NonLinear
-import Control.Concurrent (ThreadId, forkIO, killThread)
+import Control.Concurrent (ThreadId, forkIO)
+import Control.Concurrent.DivideConquer.Utils.AtomicCounter (Counter)
+import Control.Concurrent.DivideConquer.Utils.AtomicCounter qualified as Counter
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (Sink, Source)
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear qualified as Once
 import Control.Concurrent.DivideConquer.Utils.QueuePool (QueuePool, newQueuePool, popWork, pushWork, pushWorkMaster, pushWorks)
@@ -44,13 +46,11 @@ import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
 import Data.Vector.Mutable.Linear.Borrow qualified as LV
 -- import Debug.Trace (traceEventIO)
-import GHC.Exts qualified as GHC
 import GHC.Generics qualified as GHC
 import GHC.TypeNats (SomeNat (..), someNatVal)
 import Generics.Linear.TH (deriveGenericAnd1)
 import Prelude.Linear hiding (foldMap)
 import Prelude.Linear.Generically (Generically, Generically1)
-import System.IO.Unsafe (unsafePerformIO)
 import Unsafe.Linear qualified as Unsafe
 
 data DivideConquer α t a = DivideConquer
@@ -59,17 +59,45 @@ data DivideConquer α t a = DivideConquer
 
 data Result β t a = Done | Continue (t (Mut β a))
 
+data Switch
+  = Switch
+      {-# UNPACK #-} !Counter
+      {-# UNPACK #-} !(Maybe (Sink ()))
+      {-# UNPACK #-} !(Maybe Switch)
+
+release :: Switch %1 -> BO α ()
+release (Switch counter dest parent) = Control.do
+  -- unsafeSystemIOToBO $ traceEventIO "WORK[SR]: Releasing switch..."
+  isLast <- Counter.release counter
+  if isLast
+    then Control.do
+      -- unsafeSystemIOToBO $ traceEventIO "WORK[SR]: Last!"
+      maybe (Control.pure ()) (`Once.put` ()) dest
+      case parent of
+        Nothing -> Control.pure ()
+        Just p -> release p
+    else Unsafe.toLinear2 (\_ _ -> Control.pure ()) dest parent
+
+newSwitch :: Int -> Switch %1 -> BO α Switch
+newSwitch n parent = Control.do
+  counter <- Counter.newCounter n
+  Control.pure (Switch counter Nothing (Just parent))
+
+newRootSwitch :: Int -> BO α (Switch, Source ())
+newRootSwitch n = Control.do
+  counter <- Counter.newCounter n
+  (sink, source) <- asksLinearly Once.new
+  Control.pure (Switch counter (Just sink) Nothing, source)
+
 data Work α a (t :: Type -> Type) where
-  Process :: Mut α a %1 -> Sink () %1 -> Work α a t %1 -> Work α a t
-  Unite :: t (Source ()) %1 -> Sink () %1 -> Work α a t
+  Process ::
+    Mut α a %1 ->
+    {-# UNPACK #-} !Switch %1 ->
+    Work α a t %1 ->
+    Work α a t
   NoOp :: Work α a t
 
 newtype Thread = Thread ThreadId
-
-instance Consumable Thread where
-  {-# NOINLINE consume #-}
-  consume = GHC.noinline $ Unsafe.toLinear \(Thread tid) -> unsafePerformIO $ do
-    killThread tid
 
 newtype DList a = DList ([a] %1 -> [a])
 
@@ -135,9 +163,9 @@ divideAndConquer n DivideConquer {..} ini
           someNatVal (fromIntegral n) & \(SomeNat (_ :: Proxy n)) -> Control.do
             (workers, master) <- newQueuePool @n
             (masterQ, masterLend) <- asksLinearly $ borrow master
-            (rootSink, rootSource) <- asksLinearly Once.new
+            (switch, rootSource) <- newRootSwitch 1
 
-            Control.void $ pushWorkMaster masterQ $ Process ini rootSink NoOp
+            Control.void $ pushWorkMaster masterQ $ Process ini switch NoOp
 
             concurrentMap_ worker workers
             Once.take rootSource
@@ -151,31 +179,39 @@ divideAndConquer n DivideConquer {..} ini
         NoOp -> Control.do
           -- unsafeSystemIOToBO $ traceEventIO "WORK[WF]: NoOp."
           Control.pure q
-        Process ini sink next -> Control.do
+        Process ini switch next -> Control.do
           q <- enqueue q next
           resl <- divide ini
           case resl of
             Done -> Control.do
               -- unsafeSystemIOToBO $ traceEventIO "WORK[WP]: No more division needed. Return"
-              Once.put sink ()
+              release switch
               Control.pure q
             Continue ts -> Control.do
               -- unsafeSystemIOToBO $ traceEventIO "WORK[WP]: Division occurred."
-              (sources, P num ks) <-
-                flip Control.runStateT (P 0 mempty) $ Data.for ts \work -> Control.StateT \(P num ks) -> Control.do
-                  (sink, source) <- asksLinearly Once.new
-                  let %1 !ks' = ks <> singletonD (work, sink)
-                  Control.pure (source, P (num + 1) ks')
-              let %1 !(ls, rs) = splitAt (num `quot` 2) $ toListD ks
-              doAndEnqueue
-                q
-                (foldr (uncurry Process) NoOp ls)
-                (foldr (uncurry Process) (Unite sources sink) rs)
-        Unite children sink -> Control.do
-          -- unsafeSystemIOToBO $ traceEventIO "WORK[WU]: Unite work reached."
-          Control.void $ Data.traverse Once.take children
-          Once.put sink ()
-          Control.pure q
+              P num ks <- Control.do
+                flip Control.execStateT (P 0 mempty) $
+                  consume Control.<$> Data.for ts \work ->
+                    Control.modify \(P num ks) -> P (num + 1) $ ks <> singletonD work
+              if num == 0
+                then Control.do
+                  release switch
+                  toListD ks `lseq` Control.pure q
+                else Control.do
+                  Ur switch' <- Unsafe.toLinear Ur Control.<$> newSwitch num switch
+                  let %1 !(ls, rs) = splitAt (num `quot` 2) $ toListD ks
+                  doAndEnqueue
+                    q
+                    (foldr (`Process` switch') NoOp ls)
+                    (foldr (`Process` switch') NoOp rs)
+
+{- Unite children sink -> Control.do
+  unsafeSystemIOToBO $ traceEventIO "WORK[WU]: Unite work reached."
+  Control.void $ Data.traverse Once.take children
+  unsafeSystemIOToBO $ traceEventIO "WORK[WU]: All children waited."
+  Once.put sink ()
+  unsafeSystemIOToBO $ traceEventIO "WORK[WU]: United."
+  Control.pure q -}
 
 -- unsafeSystemIOToBO $ traceEventIO "WORK[W-]: All job done!"
 
@@ -263,8 +299,11 @@ qsortDC' thresh =
           (Ur n, v)
             | n <= 1 ->
                 v `lseq` Control.pure Done
-            | n <= thresh ->
-                Done Control.<$ LV.qsort 0 v
+            | n <= thresh -> Control.do
+                -- unsafeSystemIOToBO $ traceEventIO "WORK[QS]: Sequential sorting..."
+                !() <- LV.qsort 0 v
+                -- unsafeSystemIOToBO (traceEventIO "WORK[QS]: Sequential sorting done.")
+                Control.pure Done
             | otherwise -> Control.do
                 let i = n `quot` 2
                 (Ur pivot, v) <- LV.copyAtMut i v

@@ -144,18 +144,24 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
                 -- traceEventIO "WORK[P]: non avail. retry..."
                 yield P.*> self
               else do
-                progress <- tryPopBack targ
+                progress <- stealHalf targ
                 case progress of
                   Nothing -> do
                     -- traceEventIO "WORK[P]: Seems we are done"
                     P.pure Nothing
                   Just (Found (x :| xs)) -> do
+                    -- traceEventIO $ "WORK[P]: steal success (" <> P.show (P.length xs + 1) <> " items)!"
                     pushFronts mine xs
                     P.pure $ Just (x, qs)
-                  Just _ -> do
-                    --  traceEventIO "WORK[P]: failed to steal (race). retrying..."
+                  Just {} -> do
+                    -- traceEventIO $ "WORK[P]: failed to steal (" <> kind p <> "). retrying..."
                     yield P.*> self
 
+kind :: StealResult a -> String
+kind Empty = "Empty"
+kind Found {} = "Found"
+kind Race = "Race"
+
 {- Just Empty -> do
-  -- traceEventIO "WORK[P]: failed to steal (empty). retrying..."
+  traceEventIO "WORK[P]: failed to steal (empty). retrying..."
   yield P.*> self -}

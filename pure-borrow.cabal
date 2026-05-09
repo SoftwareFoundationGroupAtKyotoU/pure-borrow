@@ -111,6 +111,7 @@ library
 
   -- cabal-gild: discover src --include src/**/Utils.hs --include src/**/Utils/**/*.hs
   other-modules:
+    Control.Concurrent.DivideConquer.Utils.AtomicCounter
     Control.Concurrent.DivideConquer.Utils.OnceChan.Linear
     Control.Concurrent.DivideConquer.Utils.OnceChan.Linear.Unlifted
     Control.Concurrent.DivideConquer.Utils.QueuePool

@@ -450,12 +450,9 @@ reverseBit v =
               else Control.do
                 let !k = bit $ pk - 1
                     !l = bit pl
-                table <- iterReborrowing_
-                  l
-                  table
-                  \j table -> Control.do
-                    (Ur t, table) <- LV.copyAtMut j table
-                    consume Control.<$> LV.set (l + j) (t + k) table
+                table <- iterReborrowing_ l table \j table -> Control.do
+                  (Ur t, table) <- LV.copyAtMut j table
+                  consume Control.<$> LV.set (l + j) (t + k) table
                 loop (pk - 1) (pl + 1) table
         )
         n

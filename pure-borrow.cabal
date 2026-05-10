@@ -110,10 +110,10 @@ library
 
   -- cabal-gild: discover src --include src/**/Utils.hs --include src/**/Utils/**/*.hs
   other-modules:
-    Control.Concurrent.DivideConquer.Utils.AtomicCounter
     Control.Concurrent.DivideConquer.Utils.OnceChan.Linear
     Control.Concurrent.DivideConquer.Utils.OnceChan.Linear.Unlifted
     Control.Concurrent.DivideConquer.Utils.QueuePool
+    Control.Concurrent.DivideConquer.Utils.Semaphore
     Control.Monad.Borrow.Pure.Utils
 
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0

@@ -43,6 +43,7 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
   GenericFoldable,
   genericFoldMap,
   ifoldMapDefault,
+  iterReborrowing_,
 ) where
 
 import Control.Functor.Linear qualified as Control
@@ -314,3 +315,25 @@ instance Foldable (LHM.HashMap k) where
 
 instance FoldableWithIndex k (LHM.HashMap k) where
   ifoldMap f = foldMap (uncurry f) . unur . LHM.toList
+
+iterReborrowing_ ::
+  forall bor α xs.
+  (Reborrowable bor) =>
+  Int ->
+  bor α xs %1 ->
+  ( forall β.
+    Int ->
+    bor (β /\ α) xs %1 ->
+    BO (β /\ α) ()
+  ) ->
+  BO α (bor α xs)
+{-# INLINE iterReborrowing_ #-}
+iterReborrowing_ n bor k = go bor 0
+  where
+    {-# INLINE go #-}
+    go :: bor α xs %1 -> Int -> BO α (bor α xs)
+    go !bor !i
+      | i < n = Control.do
+          bor <- locally_ bor \bor -> k i bor
+          go bor (i + 1)
+      | otherwise = Control.pure bor

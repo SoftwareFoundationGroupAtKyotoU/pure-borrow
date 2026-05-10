@@ -44,7 +44,7 @@ import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe
 import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Experimental.Borrows
-import Control.Monad.Borrow.Pure.Experimental.Loop (forReborrowing_)
+import Control.Monad.Borrow.Pure.Experimental.Loop (forReborrowing_, iterReborrowing_)
 import Data.Bifunctor.Linear qualified as BiL
 import Data.Bits (bit, popCount, shiftR)
 import Data.Complex (Complex (..))
@@ -422,24 +422,21 @@ reverseBit v =
     consume Control.<$> reborrowing' v \v -> Control.do
       (table, lend) <- borrowLinearlyM $ LV.constant m 0
       table <- buildTable n <%= table
-      Control.void $ forReborrowing_
-        (table :- v :- BNil)
-        (map move [0 .. m - 2])
-        \(table :- v :- BNil) (Ur ((+ 1) -> !i)) -> Control.do
-          (Ur iOff, table) <- LV.copyAtMut i table
-          Control.void $ forReborrowing_
-            (table :- v :- BNil)
-            (map move [0 .. i - 1])
-            \(table :- v :- BNil) (Ur j) -> Control.do
-              (Ur jOff, table) <- LV.copyAtMut j table
-              let !ji = j + iOff
-                  !ij = i + jOff
-              v <- LV.swap v ji ij
-              if even n
-                then Control.pure $ v `lseq` consume table
-                else consume . (,table) Control.<$> LV.swap v (ji + m) (ij + m)
+      Control.void $
+        iterReborrowing_ (m - 1) (table :- v :- BNil) $
+          \((+ 1) -> !i) (table :- v :- BNil) -> Control.do
+            (Ur iOff, table) <- LV.copyAtMut i table
+            Control.void $
+              iterReborrowing_ i (table :- v :- BNil) \j (table :- v :- BNil) -> Control.do
+                (Ur jOff, table) <- LV.copyAtMut j table
+                let !ji = j + iOff
+                    !ij = i + jOff
+                v <- LV.swap v ji ij
+                if even n
+                  then Control.pure $ v `lseq` consume table
+                  else consume . (,table) Control.<$> LV.swap v (ji + m) (ij + m)
 
-      Control.pure $ upcast @(After _ ()) @(After _ ()) $ consume . LV.toList Control.<$> reclaim' lend
+      Control.pure $ upcast @_ @(After _ ()) $ consume . LV.toList Control.<$> reclaim' lend
   where
     buildTable ::
       Int ->
@@ -453,10 +450,10 @@ reverseBit v =
               else Control.do
                 let !k = bit $ pk - 1
                     !l = bit pl
-                table <- forReborrowing_
+                table <- iterReborrowing_
+                  l
                   table
-                  (map move [0 .. l - 1])
-                  \table (Ur j) -> Control.do
+                  \j table -> Control.do
                     (Ur t, table) <- LV.copyAtMut j table
                     consume Control.<$> LV.set (l + j) (t + k) table
                 loop (pk - 1) (pl + 1) table

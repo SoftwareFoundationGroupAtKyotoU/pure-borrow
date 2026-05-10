@@ -390,12 +390,15 @@ fftDC' thresh =
       FftCoe ->
       Mut α (LV.Vector (Complex Double)) %1 ->
       BO α ()
-    sequential coe vs = Control.do
-      vs <- reborrowing_ vs \vs -> Control.do
-        (Ur coe', lo, hi) <- step coe vs
-        sequential coe' lo
-        sequential coe' hi
-      combine coe vs
+    sequential coe vs = case LV.size vs of
+      (Ur i, vs)
+        | i <= 1 -> Control.pure $ consume vs
+        | otherwise -> Control.do
+            vs <- reborrowing_ vs \vs -> Control.do
+              (Ur coe', lo, hi) <- step coe vs
+              sequential coe' lo
+              sequential coe' hi
+            combine coe vs
 
     combine :: FftCoe -> Mut β (LV.Vector (Complex Double)) %1 -> BO β ()
     combine FftCoe {..} vs = Control.do

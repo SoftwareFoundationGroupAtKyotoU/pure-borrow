@@ -349,8 +349,10 @@ modifyBoxedMVector ::
   ST s ()
 {-# INLINE modifyBoxedMVector #-}
 modifyBoxedMVector f v = do
-  let vec = Vector (Unsafe.coerce v)
-  unsafeBOToST $ f (UnsafeAlias vec)
+  unsafeBOToST $ f (UnsafeAlias (Vector (unsafeCoerceVector v)))
+
+unsafeCoerceVector :: MV.MVector s a -> MV.MVector RealWorld a
+unsafeCoerceVector = unsafeCoerce
 
 modifyBoxedVector ::
   (forall α. Mut α (Vector a) %1 -> BO α ()) ->

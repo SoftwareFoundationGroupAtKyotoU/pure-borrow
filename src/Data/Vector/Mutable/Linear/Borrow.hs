@@ -76,7 +76,6 @@ import GHC.IO (unsafePerformIO)
 import GHC.Stack (HasCallStack)
 import GHC.TypeError
 import Prelude.Linear hiding (head, last, splitAt)
-import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
@@ -346,21 +345,21 @@ unsafeInplace = Unsafe.toLinear2 \f (UnsafeAlias v) -> Control.do
 
 modifyBoxedMVector ::
   (forall α. Mut α (Vector a) %1 -> BO α ()) %1 ->
-  V.MVector s a ->
+  V.MVector s a %1 ->
   ST s ()
 {-# INLINE modifyBoxedMVector #-}
 modifyBoxedMVector f v = do
-  unsafeBOToST $ f (UnsafeAlias (Vector (unsafeCoerceVector v)))
+  unsafeBOToST (f (UnsafeAlias (Vector (unsafeCoerceVector v))))
 
-unsafeCoerceVector :: MV.MVector s a -> MV.MVector RealWorld a
-unsafeCoerceVector = unsafeCoerce
+unsafeCoerceVector :: MV.MVector s a %1 -> MV.MVector RealWorld a
+unsafeCoerceVector = Unsafe.coerce
 
 modifyBoxedVector ::
   (forall α. Mut α (Vector a) %1 -> BO α ()) ->
   V.Vector a ->
   V.Vector a
 {-# INLINE modifyBoxedVector #-}
-modifyBoxedVector f = V.modify (modifyBoxedMVector f)
+modifyBoxedVector f = V.modify (\x -> modifyBoxedMVector f x)
 
 {- | A simple parallel implementation of quicksort.
 It uses a sequential divide-and-conquer when size <8,

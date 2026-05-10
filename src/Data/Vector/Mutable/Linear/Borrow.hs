@@ -41,6 +41,8 @@ module Data.Vector.Mutable.Linear.Borrow (
   copyAt,
   copyAtMut,
   unsafeInplace,
+  modifyBoxedMVector,
+  modifyBoxedVector,
 
   -- * An example algorithm implementations
   qsort,
@@ -340,6 +342,22 @@ unsafeInplace ::
 unsafeInplace = Unsafe.toLinear2 \f (UnsafeAlias v) -> Control.do
   !() <- unsafeSTToBO $ f $ content $ coerceLin v
   Control.pure (UnsafeAlias v)
+
+modifyBoxedMVector ::
+  (forall α. Mut α (Vector a) %1 -> BO α ()) %1 ->
+  V.MVector s a ->
+  ST s ()
+{-# INLINE modifyBoxedMVector #-}
+modifyBoxedMVector f v = do
+  let vec = Vector (Unsafe.coerce v)
+  unsafeBOToST $ f (UnsafeAlias vec)
+
+modifyBoxedVector ::
+  (forall α. Mut α (Vector a) %1 -> BO α ()) ->
+  V.Vector a ->
+  V.Vector a
+{-# INLINE modifyBoxedVector #-}
+modifyBoxedVector f = V.modify (modifyBoxedMVector f)
 
 {- | A simple parallel implementation of quicksort.
 It uses a sequential divide-and-conquer when size <8,

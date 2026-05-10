@@ -61,10 +61,14 @@ library
   import: defaults
   build-depends:
     array,
+    atomic-primops,
     containers,
     deepseq,
     hybrid-vectors,
+    integer-logarithms,
     linear-generics,
+    primitive,
+    random,
     stm,
     vector,
     vector-algorithms,
@@ -73,8 +77,7 @@ library
   -- cabal-gild: discover src --exclude src/**/Utils.hs --exclude src/**/Utils/**/*.hs
   exposed-modules:
     Control.Concurrent.DivideConquer.Linear
-    Control.Concurrent.STM.TMDeque
-    Control.Concurrent.STM.TMDequeRingBuffer
+    Control.Concurrent.Queue.ChaseLev
     Control.Monad.Borrow.Pure
     Control.Monad.Borrow.Pure.Affine
     Control.Monad.Borrow.Pure.Affine.Internal
@@ -107,6 +110,7 @@ library
 
   -- cabal-gild: discover src --include src/**/Utils.hs --include src/**/Utils/**/*.hs
   other-modules:
+    Control.Concurrent.DivideConquer.Utils.AtomicCounter
     Control.Concurrent.DivideConquer.Utils.OnceChan.Linear
     Control.Concurrent.DivideConquer.Utils.OnceChan.Linear.Unlifted
     Control.Concurrent.DivideConquer.Utils.QueuePool
@@ -140,6 +144,7 @@ test-suite pure-borrow-test
     deepseq,
     falsify,
     pure-borrow,
+    random,
     tasty,
     tasty-expected-failure,
     tasty-hunit,

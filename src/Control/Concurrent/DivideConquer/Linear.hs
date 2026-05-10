@@ -26,32 +26,31 @@ module Control.Concurrent.DivideConquer.Linear (
 ) where
 
 import Control.Applicative qualified as NonLinear
-import Control.Concurrent (ThreadId, forkIO, killThread)
+import Control.Concurrent (ThreadId, forkIO)
+import Control.Concurrent.DivideConquer.Utils.AtomicCounter (Counter)
+import Control.Concurrent.DivideConquer.Utils.AtomicCounter qualified as Counter
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (Sink, Source)
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear qualified as Once
-import Control.Concurrent.DivideConquer.Utils.QueuePool (QueuePool, newQueuePool, popWork, pushWork, pushWorkMaster)
+import Control.Concurrent.DivideConquer.Utils.QueuePool (QueuePool, newQueuePool, popWork, pushWorkMaster, pushWorks)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Affine (Affine, GenericallyAffine (..))
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe
 import Control.Monad.Borrow.Pure.Copyable
+import Data.Bifunctor.Linear qualified as BiL
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
-import Data.List.Linear qualified as LL
-import Data.List.NonEmpty.Linear (NonEmpty (..))
-import Data.List.NonEmpty.Linear qualified as NEL
 import Data.Proxy (Proxy (..))
 import Data.V.Linear (V)
 import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
 import Data.Vector.Mutable.Linear.Borrow qualified as LV
-import GHC.Exts qualified as GHC
 import GHC.Generics qualified as GHC
 import GHC.TypeNats (SomeNat (..), someNatVal)
 import Generics.Linear.TH (deriveGenericAnd1)
-import Prelude.Linear
+import Prelude.Linear hiding (foldMap)
 import Prelude.Linear.Generically (Generically, Generically1)
-import System.IO.Unsafe (unsafePerformIO)
+import System.Random (RandomGen)
 import Unsafe.Linear qualified as Unsafe
 
 data DivideConquer α t a = DivideConquer
@@ -60,22 +59,46 @@ data DivideConquer α t a = DivideConquer
 
 data Result β t a = Done | Continue (t (Mut β a))
 
+data Switch
+  = Switch
+      {-# UNPACK #-} !Counter
+      {-# UNPACK #-} !(Maybe (Sink ()))
+      {-# UNPACK #-} !(Maybe Switch)
+
+release :: Switch %1 -> BO α ()
+release (Switch counter dest parent) = Control.do
+  isLast <- Counter.release counter
+  if isLast
+    then Control.do
+      maybe (Control.pure ()) (`Once.put` ()) dest
+      case parent of
+        Nothing -> Control.pure ()
+        Just p -> release p
+    else Unsafe.toLinear2 (\_ _ -> Control.pure ()) dest parent
+
+newSwitch :: Int -> Switch %1 -> BO α Switch
+newSwitch n parent = Control.do
+  counter <- Counter.newCounter n
+  Control.pure (Switch counter Nothing (Just parent))
+
+newRootSwitch :: Int -> BO α (Switch, Source ())
+newRootSwitch n = Control.do
+  counter <- Counter.newCounter n
+  (sink, source) <- asksLinearly Once.new
+  Control.pure (Switch counter (Just sink) Nothing, source)
+
 data Work α a (t :: Type -> Type) where
-  Process :: Mut α a %1 -> Sink () %1 -> Work α a t %1 -> Work α a t
-  Unite :: t (Source ()) %1 -> Sink () %1 -> Work α a t
-  Final :: Work α a t
+  Process ::
+    Mut α a %1 ->
+    {-# UNPACK #-} !Switch %1 ->
+    Work α a t
 
 newtype Thread = Thread ThreadId
-
-instance Consumable Thread where
-  {-# NOINLINE consume #-}
-  consume = GHC.noinline $ Unsafe.toLinear \(Thread tid) -> unsafePerformIO $ do
-    killThread tid
 
 newtype DList a = DList ([a] %1 -> [a])
 
 instance Semigroup (DList a) where
-  DList f <> DList g = DList (f . g)
+  DList l <> DList r = DList (l . r)
   {-# INLINE (<>) #-}
 
 instance Monoid (DList a) where
@@ -90,52 +113,42 @@ toListD :: DList a %1 -> [a]
 toListD (DList f) = f []
 {-# INLINE toListD #-}
 
--- TODO: perhaps we can use atomic counter here again?
-
-data QState α a t
-  = Idle !(Mut α (QueuePool (Work α a t)))
-  | DoThen !(Work α a t) !(Mut α (QueuePool (Work α a t)))
+newtype QState α a t = Idle (Mut α (QueuePool (Work α a t)))
 
 popQState ::
   QState α a t %1 ->
   BO α (Maybe (Work α a t, QState α a t))
 popQState = \case
   Idle q -> Control.do
-    m <- popWork q
-    case m of
-      Nothing -> Control.pure Nothing
-      Just (work, q) -> Control.pure (Just (work, Idle q))
-  DoThen work q -> Control.pure $ Just (work, Idle q)
+    Data.fmap (BiL.second Idle) Control.<$> popWork q
 
-enqueue :: QState α a t %1 -> Work α a t %1 -> BO α (QState α a t)
-enqueue q work = case q of
-  Idle q -> Idle Control.<$> pushWork q work
-  DoThen work' q -> error "Could not happen!" work q work'
+enqueues :: QState α a t %1 -> [Work α a t] %1 -> BO α (QState α a t)
+enqueues q work = case q of
+  Idle q -> Idle Control.<$> pushWorks q work
 
-doAndEnqueue :: QState α a t %1 -> Work α a t %1 -> Work α a t %1 -> BO α (QState α a t)
-doAndEnqueue q work cont = case q of
-  Idle q -> DoThen work Control.<$> pushWork q cont
-  DoThen work' q -> error "Could not happen!" work cont work' q
+data P a where
+  P :: {-# UNPACK #-} !Int -> !a %1 -> P a
 
 divideAndConquer ::
-  forall α β t a.
-  (Data.Traversable t, Consumable (t ()), α >= β) =>
+  forall α β t a g.
+  (Data.Traversable t, Consumable (t ()), α >= β, RandomGen g) =>
+  g ->
   -- | The # of workers.
   Int ->
   DivideConquer α t a ->
   Mut α a %1 ->
   BO β (Mut α a)
-divideAndConquer n DivideConquer {..} ini
+divideAndConquer g n DivideConquer {..} ini
   | n == 0 = error ("divideAndConquer: # of workers must be positive, but got: " <> show n) ini
   | otherwise =
       upcast $
         uncurry (lseq @()) Control.<$> reborrowing' ini \(ini :: Mut γ a) ->
           someNatVal (fromIntegral n) & \(SomeNat (_ :: Proxy n)) -> Control.do
-            (workers, master) <- newQueuePool @n
+            (workers, master) <- newQueuePool @n g
             (masterQ, masterLend) <- asksLinearly $ borrow master
-            (rootSink, rootSource) <- asksLinearly Once.new
+            (switch, rootSource) <- newRootSwitch 1
 
-            Control.void $ pushWorkMaster masterQ $ Process ini rootSink Final
+            Control.void $ pushWorkMaster masterQ $ Process ini switch
 
             concurrentMap_ worker workers
             Once.take rootSource
@@ -143,34 +156,26 @@ divideAndConquer n DivideConquer {..} ini
             Control.pure (upcast $ consume Control.<$> reclaim' masterLend)
   where
     worker :: (α >= α') => Mut α' (QueuePool (Work α' a t)) %1 -> BO α' ()
-    worker q =
+    worker q = Control.do
       whileJust_ (Idle q) popQState \q -> \case
-        Final -> Control.pure q
-        Process ini sink next -> Control.do
-          q <- enqueue q next
+        Process ini switch -> Control.do
           resl <- divide ini
           case resl of
             Done -> Control.do
-              Once.put sink ()
+              release switch
               Control.pure q
             Continue ts -> Control.do
-              (sources, ks) <-
-                flip Control.runStateT mempty $ Data.for ts \work -> Control.do
-                  (sink, source) <- Control.lift $ asksLinearly Once.new
-                  Control.modify (<> singletonD (work, sink))
-                  Control.pure source
-              let %1 !cont = Unite sources sink
-              case NEL.nonEmpty $ toListD ks of
-                Nothing -> enqueue q cont
-                Just ((ini, sink) :| ks) ->
-                  doAndEnqueue
-                    q
-                    (Process ini sink Final)
-                    $ LL.foldr (uncurry Process) cont ks
-        Unite children sink -> Control.do
-          Control.void $ Data.traverse Once.take children
-          Once.put sink ()
-          Control.pure q
+              P num ks <- Control.do
+                flip Control.execStateT (P 0 mempty) $
+                  consume Control.<$> Data.for ts \work ->
+                    Control.modify \(P num ks) -> P (num + 1) $ ks <> singletonD work
+              if num == 0
+                then Control.do
+                  release switch
+                  toListD ks `lseq` Control.pure q
+                else Control.do
+                  Ur switch' <- Unsafe.toLinear Ur Control.<$> newSwitch num switch
+                  enqueues q $ map (`Process` switch') $ toListD ks
 
 concurrentMap_ ::
   forall n a α.
@@ -235,14 +240,15 @@ instance Data.Traversable Pair where
   {-# INLINE traverse #-}
 
 qsortDC ::
-  (Ord a, Copyable a, α >= β) =>
+  (Ord a, Copyable a, α >= β, RandomGen g) =>
+  g ->
   -- | The # of workers.
   Int ->
   -- | Threshold for the length of vector to switch to sequential sort.
   Int ->
   Mut α (LV.Vector a) %1 ->
   BO β (Mut α (LV.Vector a))
-qsortDC nwork thresh = divideAndConquer nwork (qsortDC' thresh)
+qsortDC g nwork thresh = divideAndConquer g nwork (qsortDC' thresh)
 
 qsortDC' ::
   (Ord a, Copyable a) =>
@@ -256,8 +262,9 @@ qsortDC' thresh =
           (Ur n, v)
             | n <= 1 ->
                 v `lseq` Control.pure Done
-            | n <= thresh ->
-                Done Control.<$ LV.qsort 0 v
+            | n <= thresh -> Control.do
+                !() <- LV.qsort 0 v
+                Control.pure Done
             | otherwise -> Control.do
                 let i = n `quot` 2
                 (Ur pivot, v) <- LV.copyAtMut i v

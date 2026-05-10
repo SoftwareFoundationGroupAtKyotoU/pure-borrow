@@ -40,7 +40,9 @@ module Data.Vector.Mutable.Linear.Borrow (
   unsafeSwap,
   copyAt,
   copyAtMut,
-  inplace,
+  unsafeInplace,
+  modifyBoxedMVector,
+  modifyBoxedVector,
 
   -- * An example algorithm implementations
   qsort,
@@ -331,15 +333,33 @@ copyAtMut :: forall a α β. (Copyable a, α >= β) => Int -> Mut α (Vector a) 
 copyAtMut i v = upcast $ sharing @_ @α v $ copyAt i
 
 -- | Applies an in-place mutation on 'V.MVector' from @vector@ package.
-inplace ::
+unsafeInplace ::
   (α >= β) =>
   (forall s. V.MVector s a -> ST s ()) %1 ->
   Mut α (Vector a) %1 ->
   BO β (Mut α (Vector a))
-{-# INLINE inplace #-}
-inplace = Unsafe.toLinear2 \f (UnsafeAlias v) -> Control.do
+{-# INLINE unsafeInplace #-}
+unsafeInplace = Unsafe.toLinear2 \f (UnsafeAlias v) -> Control.do
   !() <- unsafeSTToBO $ f $ content $ coerceLin v
   Control.pure (UnsafeAlias v)
+
+modifyBoxedMVector ::
+  (forall α. Mut α (Vector a) %1 -> BO α ()) %1 ->
+  V.MVector s a %1 ->
+  ST s ()
+{-# INLINE modifyBoxedMVector #-}
+modifyBoxedMVector f v = do
+  unsafeBOToST (f (UnsafeAlias (Vector (unsafeCoerceVector v))))
+
+unsafeCoerceVector :: MV.MVector s a %1 -> MV.MVector RealWorld a
+unsafeCoerceVector = Unsafe.coerce
+
+modifyBoxedVector ::
+  (forall α. Mut α (Vector a) %1 -> BO α ()) ->
+  V.Vector a ->
+  V.Vector a
+{-# INLINE modifyBoxedVector #-}
+modifyBoxedVector f = V.modify (\x -> modifyBoxedMVector f x)
 
 {- | A simple parallel implementation of quicksort.
 It uses a sequential divide-and-conquer when size <8,

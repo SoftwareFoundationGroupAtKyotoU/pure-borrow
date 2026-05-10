@@ -31,7 +31,7 @@ import Control.Concurrent.DivideConquer.Utils.AtomicCounter (Counter)
 import Control.Concurrent.DivideConquer.Utils.AtomicCounter qualified as Counter
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (Sink, Source)
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear qualified as Once
-import Control.Concurrent.DivideConquer.Utils.QueuePool (QueuePool, newQueuePool, popWork, pushWork, pushWorkMaster, pushWorks)
+import Control.Concurrent.DivideConquer.Utils.QueuePool (QueuePool, newQueuePool, popWork, pushWorkMaster, pushWorks)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Affine (Affine, GenericallyAffine (..))
 import Control.Monad.Borrow.Pure.BO

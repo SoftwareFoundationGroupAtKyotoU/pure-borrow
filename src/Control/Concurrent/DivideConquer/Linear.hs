@@ -409,7 +409,7 @@ fftDC' thresh =
         (Ur ok, vs) <- LV.copyAtMut (half + k) vs
         (lr :+ li, vs) <- LV.set k (ek P.+ kW ^ k P.* ok) vs
         (rr :+ ri, vs) <- LV.set (half + k) (ek P.+ kW ^ (half + k) P.* ok) vs
-        Control.pure $ lr `lseq` li `lseq` rr `lseq` ri `lseq` consume vs
+        Control.pure $ consume (lr, li, rr, ri, vs)
 
 reverseBit ::
   forall α a.

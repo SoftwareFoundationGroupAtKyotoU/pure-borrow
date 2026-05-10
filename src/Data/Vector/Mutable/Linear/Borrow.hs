@@ -76,6 +76,7 @@ import GHC.IO (unsafePerformIO)
 import GHC.Stack (HasCallStack)
 import GHC.TypeError
 import Prelude.Linear hiding (head, last, splitAt)
+import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 

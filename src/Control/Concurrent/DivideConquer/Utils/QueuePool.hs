@@ -45,7 +45,6 @@ import Data.Maybe (fromJust)
 import Data.V.Linear (V, theLength)
 import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
--- import Debug.Trace (traceEventIO)
 import GHC.Exts qualified as GHC
 import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownNat)
@@ -108,7 +107,6 @@ pushWorkMaster = Unsafe.toLinear2 \(UnsafeAlias (MasterQueuePool pools)) work ->
 pushWork :: Mut α (QueuePool a) %1 -> a %1 -> BO α (Mut α (QueuePool a))
 pushWork = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) work ->
   unsafeSystemIOToBO do
-    -- traceEventIO $ "Pushing work..."
     pushFront mine work
     P.pure $ UnsafeAlias QueuePool {..}
 
@@ -116,7 +114,6 @@ pushWork = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) work ->
 pushWorks :: Mut α (QueuePool a) %1 -> [a] %1 -> BO α (Mut α (QueuePool a))
 pushWorks = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) works ->
   unsafeSystemIOToBO do
-    -- traceEventIO ("Pushing " P.<> P.show (P.length works) P.<> " works...")
     pushFronts mine works
     P.pure $ UnsafeAlias QueuePool {..}
 
@@ -132,46 +129,27 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
   unsafeSystemIOToBO do
     tryPopFront mine P.>>= \case
       Nothing -> do
-        -- traceEventIO "WORK[P]: Queue closed!"
         P.pure Nothing
       Just (Just x) -> do
-        -- traceEventIO "WORK[P]: hit!"
         P.pure $ Just (x, qs)
       Just Nothing -> fix \self -> do
-        -- traceEventIO "WORK[P]: no hit. stealing from others..."
         cls <- isClosed mine
         if cls
           then do
-            -- traceEventIO "WORK[P]: Seems we are done"
             P.pure Nothing
           else do
             !candidates <- V.filter ((P.> 0) P.. fst) P.<$> V.mapM (\a -> (,a) P.<$> estimateSize a) others
-            -- traceEventIO $ "WORK[P]: ranks = " <> show ranks
-            -- ranks <- V.unsafeFreeze ranks
             if V.null candidates
               then do
-                -- traceEventIO "WORK[P]: non avail. retry..."
                 yield P.*> self
               else do
                 targ <- atomicModifyIORef' gen $ weighted candidates
                 progress <- stealHalf targ
                 case progress of
                   Nothing -> do
-                    -- traceEventIO "WORK[P]: Seems we are done"
                     P.pure Nothing
                   Just (Found (x :| xs)) -> do
-                    -- traceEventIO $ "WORK[P]: steal success (" <> P.show (P.length xs + 1) <> " items)!"
                     pushFronts mine xs
                     P.pure $ Just (x, qs)
                   Just {} -> do
-                    -- traceEventIO $ "WORK[P]: failed to steal (" <> kind p <> "). retrying..."
                     yield P.*> self
-
-kind :: StealResult a -> String
-kind Empty = "Empty"
-kind Found {} = "Found"
-kind Race = "Race"
-
-{- Just Empty -> do
-  traceEventIO "WORK[P]: failed to steal (empty). retrying..."
-  yield P.*> self -}

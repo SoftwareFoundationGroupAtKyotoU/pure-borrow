@@ -45,7 +45,6 @@ import Data.V.Linear (V)
 import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
 import Data.Vector.Mutable.Linear.Borrow qualified as LV
--- import Debug.Trace (traceEventIO)
 import GHC.Generics qualified as GHC
 import GHC.TypeNats (SomeNat (..), someNatVal)
 import Generics.Linear.TH (deriveGenericAnd1)
@@ -68,11 +67,9 @@ data Switch
 
 release :: Switch %1 -> BO α ()
 release (Switch counter dest parent) = Control.do
-  -- unsafeSystemIOToBO $ traceEventIO "WORK[SR]: Releasing switch..."
   isLast <- Counter.release counter
   if isLast
     then Control.do
-      -- unsafeSystemIOToBO $ traceEventIO "WORK[SR]: Last!"
       maybe (Control.pure ()) (`Once.put` ()) dest
       case parent of
         Nothing -> Control.pure ()
@@ -123,7 +120,6 @@ popQState ::
   BO α (Maybe (Work α a t, QState α a t))
 popQState = \case
   Idle q -> Control.do
-    -- unsafeSystemIOToBO $ traceEventIO "WORK[S]: popping work from queue..."
     Data.fmap (BiL.second Idle) Control.<$> popWork q
 
 enqueues :: QState α a t %1 -> [Work α a t] %1 -> BO α (QState α a t)
@@ -156,7 +152,6 @@ divideAndConquer g n DivideConquer {..} ini
 
             concurrentMap_ worker workers
             Once.take rootSource
-            -- unsafeSystemIOToBO $ traceEventIO "WORK[DC]: All work done."
 
             Control.pure (upcast $ consume Control.<$> reclaim' masterLend)
   where
@@ -167,11 +162,9 @@ divideAndConquer g n DivideConquer {..} ini
           resl <- divide ini
           case resl of
             Done -> Control.do
-              -- unsafeSystemIOToBO $ traceEventIO "WORK[WP]: No more division needed. Return"
               release switch
               Control.pure q
             Continue ts -> Control.do
-              -- unsafeSystemIOToBO $ traceEventIO "WORK[WP]: Division occurred."
               P num ks <- Control.do
                 flip Control.execStateT (P 0 mempty) $
                   consume Control.<$> Data.for ts \work ->
@@ -183,16 +176,6 @@ divideAndConquer g n DivideConquer {..} ini
                 else Control.do
                   Ur switch' <- Unsafe.toLinear Ur Control.<$> newSwitch num switch
                   enqueues q $ map (`Process` switch') $ toListD ks
-
-{- Unite children sink -> Control.do
-  unsafeSystemIOToBO $ traceEventIO "WORK[WU]: Unite work reached."
-  Control.void $ Data.traverse Once.take children
-  unsafeSystemIOToBO $ traceEventIO "WORK[WU]: All children waited."
-  Once.put sink ()
-  unsafeSystemIOToBO $ traceEventIO "WORK[WU]: United."
-  Control.pure q -}
-
--- unsafeSystemIOToBO $ traceEventIO "WORK[W-]: All job done!"
 
 concurrentMap_ ::
   forall n a α.
@@ -280,9 +263,7 @@ qsortDC' thresh =
             | n <= 1 ->
                 v `lseq` Control.pure Done
             | n <= thresh -> Control.do
-                -- unsafeSystemIOToBO $ traceEventIO "WORK[QS]: Sequential sorting..."
                 !() <- LV.qsort 0 v
-                -- unsafeSystemIOToBO (traceEventIO "WORK[QS]: Sequential sorting done.")
                 Control.pure Done
             | otherwise -> Control.do
                 let i = n `quot` 2

@@ -51,6 +51,7 @@ import GHC.TypeNats (SomeNat (..), someNatVal)
 import Generics.Linear.TH (deriveGenericAnd1)
 import Prelude.Linear hiding (foldMap)
 import Prelude.Linear.Generically (Generically, Generically1)
+import System.Random (RandomGen)
 import Unsafe.Linear qualified as Unsafe
 
 data DivideConquer α t a = DivideConquer
@@ -125,10 +126,6 @@ popQState = \case
     -- unsafeSystemIOToBO $ traceEventIO "WORK[S]: popping work from queue..."
     Data.fmap (BiL.second Idle) Control.<$> popWork q
 
-enqueue :: QState α a t %1 -> Work α a t %1 -> BO α (QState α a t)
-enqueue q work = case q of
-  Idle q -> Idle Control.<$> pushWork q work
-
 enqueues :: QState α a t %1 -> [Work α a t] %1 -> BO α (QState α a t)
 enqueues q work = case q of
   Idle q -> Idle Control.<$> pushWorks q work
@@ -137,20 +134,21 @@ data P a where
   P :: {-# UNPACK #-} !Int -> !a %1 -> P a
 
 divideAndConquer ::
-  forall α β t a.
-  (Data.Traversable t, Consumable (t ()), α >= β) =>
+  forall α β t a g.
+  (Data.Traversable t, Consumable (t ()), α >= β, RandomGen g) =>
+  g ->
   -- | The # of workers.
   Int ->
   DivideConquer α t a ->
   Mut α a %1 ->
   BO β (Mut α a)
-divideAndConquer n DivideConquer {..} ini
+divideAndConquer g n DivideConquer {..} ini
   | n == 0 = error ("divideAndConquer: # of workers must be positive, but got: " <> show n) ini
   | otherwise =
       upcast $
         uncurry (lseq @()) Control.<$> reborrowing' ini \(ini :: Mut γ a) ->
           someNatVal (fromIntegral n) & \(SomeNat (_ :: Proxy n)) -> Control.do
-            (workers, master) <- newQueuePool @n
+            (workers, master) <- newQueuePool @n g
             (masterQ, masterLend) <- asksLinearly $ borrow master
             (switch, rootSource) <- newRootSwitch 1
 
@@ -259,14 +257,15 @@ instance Data.Traversable Pair where
   {-# INLINE traverse #-}
 
 qsortDC ::
-  (Ord a, Copyable a, α >= β) =>
+  (Ord a, Copyable a, α >= β, RandomGen g) =>
+  g ->
   -- | The # of workers.
   Int ->
   -- | Threshold for the length of vector to switch to sequential sort.
   Int ->
   Mut α (LV.Vector a) %1 ->
   BO β (Mut α (LV.Vector a))
-qsortDC nwork thresh = divideAndConquer nwork (qsortDC' thresh)
+qsortDC g nwork thresh = divideAndConquer g nwork (qsortDC' thresh)
 
 qsortDC' ::
   (Ord a, Copyable a) =>

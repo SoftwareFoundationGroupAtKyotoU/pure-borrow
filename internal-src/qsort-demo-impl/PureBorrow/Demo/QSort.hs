@@ -82,13 +82,13 @@ qsortWith Sequential _ v =
         (v, lend) <- borrowM (VL.fromVector v l2)
         VL.qsort 0 v
         pureAfter (VL.toVector PL.$ reclaim lend)
-qsortWith (Worksteal workers thresh) _ v =
+qsortWith (Worksteal workers thresh) g v =
   unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2) <- dup lin
       runBO lin Control.do
         (v, lend) <- borrowM (VL.fromVector v l2)
-        Control.void PL.$ qsortDC workers thresh v
+        Control.void PL.$ qsortDC g workers thresh v
         pureAfter (VL.toVector PL.$ reclaim lend)
 
 defaultMainWith :: CLIOpts -> IO ()

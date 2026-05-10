@@ -38,25 +38,27 @@ import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (..), unsafeSystemIOToBO)
 import Data.Coerce (coerce)
 import Data.Function (fix)
+import Data.IORef (IORef, atomicModifyIORef', newIORef)
 import Data.List qualified as L
 import Data.List.NonEmpty (NonEmpty ((:|)))
+import Data.Maybe (fromJust)
 import Data.V.Linear (V, theLength)
 import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
-import Data.Vector.Generic qualified as GV
-import Data.Vector.Hybrid qualified as HV
 -- import Debug.Trace (traceEventIO)
 import GHC.Exts qualified as GHC
 import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownNat)
 import Prelude.Linear
+import System.Random.Stateful (Random (randoms), RandomGen, StdGen, mkStdGen, randomR)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as P
 
 data QueuePool a = QueuePool
   { mine :: !(ChaseLevDeq a)
   , others :: !(V.Vector (ChaseLevDeq a))
-  , num :: !Int
+  , num :: {-# UNPACK #-} !Int
+  , gen :: {-# UNPACK #-} !(IORef StdGen)
   }
 
 newtype MasterQueuePool a = MasterQueuePool [ChaseLevDeq a]
@@ -71,24 +73,27 @@ consumeTMDQ = GHC.noinline $ Unsafe.toLinear \q -> GHC.unsafePerformIO do
   P.pure ()
 
 newQueuePool ::
-  forall n a α.
-  (KnownNat n) =>
+  forall n a α g.
+  (KnownNat n, RandomGen g) =>
+  g ->
   BO α (V n (Mut α (QueuePool a)), MasterQueuePool a)
-newQueuePool = unsafeSystemIOToBO do
+newQueuePool g = unsafeSystemIOToBO do
   let n = theLength @n
 
   qs <- NonLinear.replicateM n newDeq
   pools <-
     P.mapM
-      ( \(num, ini, mine, tl) -> do
+      ( \(num, ini, mine, tl, seed) -> do
           let others = V.fromList $ tl <> ini
+          gen <- newIORef $ mkStdGen seed
           P.pure P.$ QueuePool {others, ..}
       )
-      P.$ L.zip4
+      P.$ L.zip5
         [0 ..]
         (L.inits qs)
         qs
         (P.drop 1 $ L.tails qs)
+        (randoms g)
   let master = MasterQueuePool $ P.map (mine P.. coerce) pools
   P.pure (V $ V.fromList $ map UnsafeAlias pools, master)
 
@@ -115,6 +120,13 @@ pushWorks = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) works ->
     pushFronts mine works
     P.pure $ UnsafeAlias QueuePool {..}
 
+weighted :: V.Vector (Int, a) -> StdGen -> (StdGen, a)
+weighted xs gen =
+  let !accs = V.scanl1' (\(!i, _) (!j, !x) -> (i + j, x)) xs
+      !ub = fst $ V.last accs
+      !(!r, !gen') = randomR (0, ub - 1) gen
+   in (gen', snd $ fromJust $ V.find ((P.> r) P.. fst) accs)
+
 popWork :: Mut α (QueuePool a) %1 -> BO α (Maybe (a, Mut α (QueuePool a)))
 popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
   unsafeSystemIOToBO do
@@ -133,15 +145,15 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
             -- traceEventIO "WORK[P]: Seems we are done"
             P.pure Nothing
           else do
-            !ranks <- V.mapM estimateSize others
+            !candidates <- V.filter ((P.> 0) P.. fst) P.<$> V.mapM (\a -> (,a) P.<$> estimateSize a) others
             -- traceEventIO $ "WORK[P]: ranks = " <> show ranks
-            let (rank, targ) = GV.maximumOn fst $ HV.unsafeZip ranks others
             -- ranks <- V.unsafeFreeze ranks
-            if rank <= 0
+            if V.null candidates
               then do
                 -- traceEventIO "WORK[P]: non avail. retry..."
                 yield P.*> self
               else do
+                targ <- atomicModifyIORef' gen $ weighted candidates
                 progress <- stealHalf targ
                 case progress of
                   Nothing -> do

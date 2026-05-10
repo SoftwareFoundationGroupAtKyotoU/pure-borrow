@@ -44,7 +44,7 @@ import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe
 import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Experimental.Borrows
-import Control.Monad.Borrow.Pure.Experimental.Loop (forReborrowing_, iterReborrowing_)
+import Control.Monad.Borrow.Pure.Experimental.Loop (iterReborrowing_)
 import Data.Bifunctor.Linear qualified as BiL
 import Data.Bits (bit, popCount, shiftR)
 import Data.Complex (Complex (..))
@@ -404,7 +404,7 @@ fftDC' thresh =
     combine FftCoe {..} vs = Control.do
       let !half = size `quot` 2
           !kW = cosθ :+ sinθ
-      Control.void $ forReborrowing_ vs (map move [0 .. half - 1]) \vs (Ur !k) -> Control.do
+      Control.void $ iterReborrowing_ half vs \k vs -> Control.do
         (Ur ek, vs) <- LV.copyAtMut k vs
         (Ur ok, vs) <- LV.copyAtMut (half + k) vs
         (lr :+ li, vs) <- LV.set k (ek P.+ kW ^ k P.* ok) vs

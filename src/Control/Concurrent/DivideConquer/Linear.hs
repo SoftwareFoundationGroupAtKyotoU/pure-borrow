@@ -28,7 +28,9 @@ module Control.Concurrent.DivideConquer.Linear (
 
   -- * Examples
   qsortDC,
+  qsortDC',
   fftDC,
+  fftDC',
 ) where
 
 import Control.Applicative qualified as NonLinear

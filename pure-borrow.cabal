@@ -62,6 +62,22 @@ common defaults
     base >=4.17 && <5,
     linear-base >=0.7,
 
+common examples
+  import: defaults
+
+  if flag(examples)
+    buildable: True
+  else
+    buildable: False
+
+  ghc-options:
+    -threaded
+    -rtsopts
+    -O2
+    "-with-rtsopts=-N -s"
+
+  default-language: GHC2021
+
 library
   import: defaults
   build-depends:
@@ -212,14 +228,26 @@ benchmark qsort-bench
 
   default-language: GHC2021
 
-library qsort-demo-impl
+library demo-impl
   import: defaults
-  hs-source-dirs: internal-src/qsort-demo-impl
-  -- cabal-gild: discover internal-src/qsort-demo-impl
-  exposed-modules: PureBorrow.Demo.QSort
+
+  if flag(examples)
+    buildable: True
+  else
+    buildable: False
+
+  hs-source-dirs: internal-src/demo-impl
+  -- cabal-gild: discover internal-src/demo-impl
+  exposed-modules:
+    PureBorrow.Demo.Fft
+    PureBorrow.Demo.QSort
+
   build-depends:
     base >=4.7 && <5,
     deepseq,
+    directory,
+    filepath,
+    fmlist,
     optparse-applicative,
     pure-borrow,
     random,
@@ -229,25 +257,20 @@ library qsort-demo-impl
   default-language: GHC2021
 
 executable qsort
-  import: defaults
+  import: examples
   main-is: qsort.hs
   hs-source-dirs: app
-
-  if flag(examples)
-    buildable: True
-  else
-    buildable: False
-
-  ghc-options:
-    -threaded
-    -rtsopts
-    -with-rtsopts=-N
-
   build-depends:
     base >=4.7 && <5,
-    pure-borrow:qsort-demo-impl,
+    pure-borrow:demo-impl,
 
-  default-language: GHC2021
+executable fft
+  import: examples
+  main-is: fft.hs
+  hs-source-dirs: app
+  build-depends:
+    base >=4.7 && <5,
+    pure-borrow:demo-impl,
 
 executable convert-qsort-bench-csv
   import: defaults
@@ -306,8 +329,8 @@ executable artifact-runner
     optparse-applicative,
     process,
     pure-borrow,
+    pure-borrow:demo-impl,
     pure-borrow:qsort-bench-suites,
-    pure-borrow:qsort-demo-impl,
     tasty,
     template-haskell,
     temporary,

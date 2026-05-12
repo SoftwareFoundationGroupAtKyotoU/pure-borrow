@@ -31,6 +31,11 @@ source-repository head
   type: git
   location: https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow
 
+flag examples
+  description: Build the example executable, which runs some examples of the library.
+  default: False
+  manual: True
+
 flag artifact
   description: Build the artifact runner executable, which runs all the benchmarks and produces CSV files.
   default: False
@@ -227,6 +232,12 @@ executable qsort
   import: defaults
   main-is: qsort.hs
   hs-source-dirs: app
+
+  if flag(examples)
+    buildable: True
+  else
+    buildable: False
+
   ghc-options:
     -threaded
     -rtsopts
@@ -246,6 +257,11 @@ executable convert-qsort-bench-csv
     -threaded
     -rtsopts
     -with-rtsopts=-N
+
+  if flag(examples)
+    buildable: True
+  else
+    buildable: False
 
   build-depends:
     base >=4.7 && <5,

@@ -1,2 +1,5 @@
 packages: *.cabal
 write-ghc-environment-files: always
+
+package pure-borrow
+  flags: +examples

@@ -146,4 +146,4 @@ postprocess kN hs =
    in V.generate kM \k ->
         let !m = (kM - k) `rem` kM
          in 0.5 * ((hs V.! k) + conjugate (hs V.! m))
-              - (0 :+ 0.5) * (hs V.! k - conjugate (hs V.! m)) * exp (0 :+ (-2 * pi * fromIntegral k / fromIntegral kN))
+              - (0 :+ 0.5) * (hs V.! k - conjugate (hs V.! m)) * exp (0 :+ (2 * pi * fromIntegral k / fromIntegral kN))

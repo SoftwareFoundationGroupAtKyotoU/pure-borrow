@@ -23,8 +23,15 @@
 
 module Control.Concurrent.DivideConquer.Linear (
   divideAndConquer,
+  divideAndConquer',
   DivideConquer (..),
   Conquer (..),
+
+  -- * Alternative naive and sequential implementations
+  sequentialDivideAndConquer,
+  sequentialDivideAndConquer',
+  naiveDivideAndConquer,
+  naiveDivideAndConquer',
 
   -- * Examples
   qsortDC,
@@ -47,6 +54,7 @@ import Control.Monad.Borrow.Pure.BO.Unsafe
 import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Experimental.Borrows
 import Control.Monad.Borrow.Pure.Experimental.Loop (iterReborrowing_)
+import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Bifunctor.Linear qualified as BiL
 import Data.Bits (bit, popCount, shiftR)
 import Data.Complex (Complex (..))
@@ -67,6 +75,7 @@ import Prelude.Linear hiding (foldMap)
 import Prelude.Linear.Generically (Generically, Generically1)
 import System.Random (RandomGen)
 import Unsafe.Linear qualified as Unsafe
+import Prelude qualified as NonLinear
 import Prelude qualified as P
 
 data DivideConquer c α t a r = DivideConquer
@@ -220,6 +229,95 @@ divideAndConquer' g n DivideConquer {..} ini
                     unsafeLeak tasks `lseq` k
                     Control.pure q
 
+sequentialDivideAndConquer ::
+  forall c α t a.
+  (Data.Traversable t, Consumable (t ())) =>
+  DivideConquer c α t a () ->
+  Mut α a %1 ->
+  BO α (Mut α a)
+sequentialDivideAndConquer conq =
+  Control.fmap (uncurry lseq) . sequentialDivideAndConquer' conq
+
+sequentialDivideAndConquer' ::
+  forall c α t a r.
+  (Data.Traversable t, Consumable (t ())) =>
+  DivideConquer c α t a r ->
+  Mut α a %1 ->
+  BO α (r, Mut α a)
+sequentialDivideAndConquer' DivideConquer {..} ini = reborrowing ini \ini -> Control.do
+  (Ur c, ini) <- initialise <%~ ini
+  loop c ini
+  where
+    loop :: c -> Mut (γ /\ α) a %1 -> BO (γ /\ α) r
+    loop c x = Control.do
+      (resl, x) <- reborrowing x \x -> Control.do
+        resl <- divide c (x)
+        case resl of
+          Done r -> Control.pure $ Left r
+          Continue ts -> Control.do
+            rs <- Data.traverse (\(Ur c, t) -> assocRBO $ loop c (assocBorrowL t)) ts
+            Control.pure $ Right rs
+      case resl of
+        Left r -> x `lseq` Control.pure r
+        Right rs -> case conquer of
+          NoConquer -> Control.pure $ consume (x, rs)
+          Conquer conq -> conq c x rs
+
+newtype Par α a = Par (BO α a)
+  deriving newtype (Data.Functor, Control.Functor)
+
+runPar :: Par α a %1 -> BO α a
+runPar = coerceLin
+{-# INLINE runPar #-}
+
+instance Data.Applicative (Par α) where
+  pure = Par NonLinear.. Data.pure
+  {-# INLINE pure #-}
+  Par f <*> Par x = Par Control.do
+    (f, x) <- parBO f x
+    Control.pure $ f x
+
+instance Control.Applicative (Par α) where
+  pure = Par . Control.pure
+  {-# INLINE pure #-}
+  Par f <*> Par x = Par Control.do
+    (f, x) <- parBO f x
+    Control.pure $ f x
+
+naiveDivideAndConquer ::
+  forall c α t a.
+  (Data.Traversable t, Consumable (t ())) =>
+  DivideConquer c α t a () ->
+  Mut α a %1 ->
+  BO α (Mut α a)
+naiveDivideAndConquer conq =
+  Control.fmap (uncurry lseq) . naiveDivideAndConquer' conq
+
+naiveDivideAndConquer' ::
+  forall c α t a r.
+  (Data.Traversable t, Consumable (t ())) =>
+  DivideConquer c α t a r ->
+  Mut α a %1 ->
+  BO α (r, Mut α a)
+naiveDivideAndConquer' DivideConquer {..} ini = reborrowing ini \ini -> Control.do
+  (Ur c, ini) <- initialise <%~ ini
+  loop c ini
+  where
+    loop :: c -> Mut (γ /\ α) a %1 -> BO (γ /\ α) r
+    loop c x = Control.do
+      (resl, x) <- reborrowing x \x -> Control.do
+        resl <- divide c (x)
+        case resl of
+          Done r -> Control.pure $ Left r
+          Continue ts -> Control.do
+            rs <- runPar $ Data.traverse (\(Ur c, t) -> Par $ assocRBO $ loop c (assocBorrowL t)) ts
+            Control.pure $ Right rs
+      case resl of
+        Left r -> x `lseq` Control.pure r
+        Right rs -> case conquer of
+          NoConquer -> Control.pure $ consume (x, rs)
+          Conquer conq -> conq c x rs
+
 unsafeLeak :: a %1 -> ()
 {-# NOINLINE unsafeLeak #-}
 unsafeLeak = Unsafe.toLinear \ !_ -> ()
@@ -340,7 +438,7 @@ fftDC ::
 fftDC g nwork thresh vec =
   case LV.size vec of
     (Ur n, vec)
-      | popCount n /= 1 -> vec `lseq` error "fftDC: the length of vector must be a power of 2"
+      | popCount n /= 1 -> vec `lseq` error ("fftDC: the length " <> show n <> " of vector must be a power of 2")
       | otherwise -> divideAndConquer g nwork (fftDC' thresh) vec
 
 fftDC' ::

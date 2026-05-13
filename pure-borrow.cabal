@@ -193,11 +193,14 @@ test-suite pure-borrow-doctests
     doctest-parallel >=0.4.1,
     pure-borrow,
 
-library qsort-bench-suites
+library bench-suites
   import: defaults
-  hs-source-dirs: internal-src/qsort-bench-suites
-  -- cabal-gild: discover internal-src/qsort-bench-suites
-  exposed-modules: PureBorrow.Internal.Bench.QSort
+  hs-source-dirs: internal-src/bench-suites
+  -- cabal-gild: discover internal-src/bench-suites
+  exposed-modules:
+    PureBorrow.Internal.Bench.Fft
+    PureBorrow.Internal.Bench.QSort
+
   build-depends:
     base >=4.7 && <5,
     deepseq,
@@ -224,7 +227,24 @@ benchmark qsort-bench
 
   build-depends:
     base >=4.7 && <5,
-    pure-borrow:qsort-bench-suites,
+    pure-borrow:bench-suites,
+
+  default-language: GHC2021
+
+benchmark fft-bench
+  import: defaults
+  type: exitcode-stdio-1.0
+  main-is: fft.hs
+  hs-source-dirs: bench
+  ghc-options:
+    -threaded
+    -rtsopts
+    -O2
+    "-with-rtsopts=-N -s"
+
+  build-depends:
+    base >=4.7 && <5,
+    pure-borrow:bench-suites,
 
   default-language: GHC2021
 
@@ -329,8 +349,8 @@ executable artifact-runner
     optparse-applicative,
     process,
     pure-borrow,
+    pure-borrow:bench-suites,
     pure-borrow:demo-impl,
-    pure-borrow:qsort-bench-suites,
     tasty,
     template-haskell,
     temporary,

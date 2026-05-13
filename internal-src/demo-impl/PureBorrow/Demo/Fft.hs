@@ -53,10 +53,10 @@ optionsP = Opts.info (p <**> Opts.helper) $ Opts.progDesc "Parallel FFT"
       threshold <-
         Opts.option Opts.auto $
           Opts.short 'w'
-            <> Opts.long "threshold"
+            <> Opts.long "workstreal"
             <> Opts.value 1024
             <> Opts.showDefault
-            <> Opts.help "Threshold to calculate sequentially below this length."
+            <> Opts.help "Worksteal threshold to calculate sequentially below this length."
       size <-
         Opts.option power2 $
           Opts.short 'n'
@@ -102,7 +102,7 @@ kN :: Int
 kN = 2 ^ (20 :: Int)
 
 fun :: Double -> Double
-fun x = sin (2 * pi * x) + 2 * sin (pi * x) + 3 * sin (0.5 * pi * x)
+fun x = sin (2 * pi * x) + 2 * cos (pi * x) + 3 * sin (0.5 * pi * x) + 5
 
 defaultMain :: IO ()
 defaultMain = do

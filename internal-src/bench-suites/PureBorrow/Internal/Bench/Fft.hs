@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
-module PureBorrow.Internal.Bench.QSort (
+module PureBorrow.Internal.Bench.Fft (
   defaultMain,
   defaultMainWith,
   optionsP,
@@ -16,13 +16,14 @@ module PureBorrow.Internal.Bench.QSort (
 
 import Control.Applicative
 import Control.Concurrent (getNumCapabilities)
-import Control.Concurrent.DivideConquer.Linear (qsortDC)
+import Control.Concurrent.DivideConquer.Linear (fftDC, fftDC', naiveDivideAndConquer, sequentialDivideAndConquer)
+import Control.Exception (evaluate)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
 import Control.Syntax.DataFlow qualified as DataFlow
+import Data.Complex (Complex (..))
 import Data.Proxy (Proxy (..))
 import Data.Vector qualified as V
-import Data.Vector.Algorithms.Intro qualified as AI
 import Data.Vector.Mutable.Linear.Borrow qualified as VL
 import Options.Applicative qualified as Opts
 import Prelude.Linear (dup, unur)
@@ -36,7 +37,7 @@ import Test.Tasty.Options
 import Text.Read (readMaybe)
 import Prelude as P
 
-data Mode = Parallel Word | Worksteal Int | Sequential | IntroSort
+data Mode = NaiveDC | Worksteal Int | Sequential
   deriving (Show, Eq, Ord)
 
 data BenchOpts = BenchOpts {numThreads :: !Int, sampleSize :: !Int}
@@ -46,7 +47,7 @@ optionsP :: Opts.ParserInfo BenchOpts
 optionsP =
   Opts.info (p <**> Opts.helper) $
     Opts.fullDesc
-      <> Opts.progDesc "Options for qsort benchmark"
+      <> Opts.progDesc "Options for fft benchmark"
   where
     p :: Opts.Parser BenchOpts
     p =
@@ -65,6 +66,12 @@ optionsP =
               <> Opts.metavar "SAMPLE_SIZE"
               <> Opts.help "Number of samples to take (must divide 32768)"
           )
+
+fun :: Double -> Double
+fun x = sin (2 * pi * x) + 2 * cos (pi * x) + 3 * sin (0.5 * pi * x) + 5
+
+sample :: Int -> (Double -> Double) -> V.Vector (Complex Double)
+sample n f = V.generate n \i -> f (-4 + 8 * fromIntegral i / fromIntegral n) :+ 0
 
 rawOptsP :: Opts.Parser BenchOpts
 rawOptsP =
@@ -86,31 +93,30 @@ rawOptsP =
           <> Opts.help "Number of samples to take (must divide 32768)"
       )
 
-qsortWith :: Mode -> V.Vector Int -> V.Vector Int
-qsortWith IntroSort v = V.modify AI.sort v
-qsortWith (Parallel budget) v =
+fftWith :: Mode -> V.Vector (Complex Double) -> V.Vector (Complex Double)
+fftWith Sequential v =
   unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2) <- dup lin
       runBO lin Control.do
         (v, lend) <- borrowM (VL.fromVector v l2)
-        VL.qsort budget v
-        Control.pure PL.$ VL.toVector Control.<$> reclaim' lend
-qsortWith Sequential v =
-  unur PL.$ linearly \lin ->
-    DataFlow.do
-      (lin, l2) <- dup lin
-      runBO lin Control.do
-        (v, lend) <- borrowM (VL.fromVector v l2)
-        VL.qsort 0 v
+        Control.void PL.$ sequentialDivideAndConquer (fftDC' 128) v
         pureAfter (VL.toVector PL.$ reclaim lend)
-qsortWith (Worksteal p) v =
+fftWith NaiveDC v =
   unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2) <- dup lin
       runBO lin Control.do
         (v, lend) <- borrowM (VL.fromVector v l2)
-        Control.void PL.$ qsortDC (mkStdGen 42) p 128 v
+        Control.void PL.$ naiveDivideAndConquer (fftDC' 128) v
+        pureAfter (VL.toVector PL.$ reclaim lend)
+fftWith (Worksteal p) v =
+  unur PL.$ linearly \lin ->
+    DataFlow.do
+      (lin, l2) <- dup lin
+      runBO lin Control.do
+        (v, lend) <- borrowM (VL.fromVector v l2)
+        Control.void PL.$ fftDC (mkStdGen 42) p 128 v
         pureAfter (VL.toVector PL.$ reclaim lend)
 
 data SampleSize = SampleSize Int
@@ -140,30 +146,25 @@ defaultMainWith opts = do
 benches :: BenchOpts -> [Benchmark]
 benches BenchOpts {..} =
   [ bgroup
-      "qsort"
+      "fft"
       [ env
-          ( pure $ runStateGen_ (mkStdGen 42) \g -> do
-              V.replicateM size (uniformM g)
-          )
+          (evaluate $ sample size fun)
           \vec ->
             bgroup
               (show size)
-              ( [ bench "intro" $ nf (qsortWith IntroSort) vec
-                , bench "sequential" $ nf (qsortWith Sequential) vec
-                ]
-                  ++ [ bench ("parallel (budget = " <> show n <> ")") $
-                         nf (qsortWith $ Parallel n) vec
-                     | n <- [4, 8, 16, 32]
-                     ]
-                  ++ [ bench ("worksteal (workers = " <> show n <> ")") $
-                         nf (qsortWith $ Worksteal n) vec
-                     | n <- [2, 4 .. numThreads]
-                     ]
+              ( bench "sequential" (nf (fftWith Sequential) vec)
+                  : bench
+                    ("parallel-dc (thresh = 128)")
+                    (nf (fftWith NaiveDC) vec)
+                  : [ bench ("worksteal (workers = " <> show n <> ")") $
+                        nf (fftWith $ Worksteal n) vec
+                    | n <- [2, 4 .. numThreads]
+                    ]
               )
       | i <- [0 .. sampleSize]
-      , let size = i * kMAX_SIZE `quot` sampleSize
+      , let size = 2 ^ (10 + i * kMAX_SIZE `quot` sampleSize)
       ]
   ]
 
 kMAX_SIZE :: Int
-kMAX_SIZE = 32 * 1024
+kMAX_SIZE = 10

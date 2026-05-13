@@ -19,7 +19,7 @@ module PureBorrow.Demo.QSort (
 
 import Control.Applicative ((<**>), (<|>))
 import Control.Concurrent (getNumCapabilities)
-import Control.Concurrent.DivideConquer.Linear (qsortDC)
+import Control.Concurrent.DivideConquer.Linear (naiveDivideAndConquer, qsortDC, qsortDC')
 import Control.DeepSeq (force)
 import Control.Exception (evaluate)
 import Control.Functor.Linear qualified as Control
@@ -37,7 +37,7 @@ import System.Mem (performGC)
 import System.Random
 import System.Random.Stateful (runStateGen_, uniformM)
 
-data Mode = Parallel Word | Worksteal Int Int | Sequential | IntroSort
+data Mode = Parallel Word | Naive Int | Worksteal Int Int | Sequential | IntroSort
   deriving (Show, Eq, Ord, Generic)
 
 data CLIOpts = CLIOpts {mode :: Mode, size :: Int, seed :: Maybe Int}
@@ -51,6 +51,7 @@ optionsP numCap = Opts.info (p <**> Opts.helper) $ Opts.progDesc "Parallel quick
         Parallel <$> Opts.option Opts.auto (Opts.long "parallel" <> Opts.short 'p' <> Opts.help "Use parallel quicksort with specified capacity (default: 8)")
           <|> Opts.flag' Sequential (Opts.long "sequential" <> Opts.short 'S' <> Opts.help "Use sequential quicksort")
           <|> Opts.flag' (Worksteal numCap 512) (Opts.long "worksteal" <> Opts.short 'w' <> Opts.help "Use work-stealing quicksort")
+          <|> Opts.flag' (Naive 512) (Opts.long "naive" <> Opts.short 'Z' <> Opts.help "Use naive divide-and-conquer quicksort")
           <|> Opts.flag (Parallel 8) IntroSort (Opts.long "intro" <> Opts.short 'i' <> Opts.help "Use intro sort")
       size <-
         Opts.option
@@ -89,6 +90,14 @@ qsortWith (Worksteal workers thresh) g v =
       runBO lin Control.do
         (v, lend) <- borrowM (VL.fromVector v l2)
         Control.void PL.$ qsortDC g workers thresh v
+        pureAfter (VL.toVector PL.$ reclaim lend)
+qsortWith (Naive thresh) _ v =
+  unur PL.$ linearly \lin ->
+    DataFlow.do
+      (lin, l2) <- dup lin
+      runBO lin Control.do
+        (v, lend) <- borrowM (VL.fromVector v l2)
+        Control.void PL.$ naiveDivideAndConquer (qsortDC' thresh) v
         pureAfter (VL.toVector PL.$ reclaim lend)
 
 defaultMainWith :: CLIOpts -> IO ()

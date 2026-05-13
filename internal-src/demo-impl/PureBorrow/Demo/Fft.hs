@@ -86,9 +86,16 @@ power2 = Opts.eitherReader \s ->
       | otherwise -> Left $ "Must be a positive power of 2, but got: " <> s
     Left err -> Left err
 
-sample :: Int -> (Double -> Double) -> V.Vector (Complex Double)
-sample n f =
-  V.generate n (\i -> f (-4 + 8 * fromIntegral i / fromIntegral n) :+ 0.0)
+sample :: Int -> (Double -> Double) -> V.Vector Double
+sample n f = V.generate n \i -> f (-4 + 8 * fromIntegral i / fromIntegral n)
+
+-- | Convert to the vector of complex numbers, with real part even element and imaginary part odd.
+compress :: V.Vector Double -> V.Vector (Complex Double)
+compress v =
+  V.generate (V.length v `quot` 2) \i ->
+    let re = v V.! (2 * i)
+        im = v V.! (2 * i + 1)
+     in re :+ im
 
 kN :: Int
 kN = 2 ^ (20 :: Int)
@@ -104,18 +111,39 @@ defaultMain = do
 defaultMainWith :: CLIOpts -> IO ()
 defaultMainWith CLIOpts {..} = do
   numCap <- getNumCapabilities
-  !v <- evaluate $ force $ sample size fun
+  !v <- evaluate $ force $ compress $ sample size fun
   g <- maybe newStdGen (pure . mkStdGen) seed
-  let retrv = case output of
+  let !kM = size `quot` 2
+      toFreq i = fromIntegral ((i + kM) `rem` size - kM) / 8
+      decodeComp !i (!c :: Complex Double)
+        | i == (0 :: Int) = (realPart c / fromIntegral size, 0)
+        | otherwise =
+            let re :+ im = 2 * c / fromIntegral size
+             in (re, im)
+      retrv = case output of
         Nothing -> evaluate . rnf
         Just fp -> \vs -> do
           createDirectoryIfMissing True $ takeDirectory fp
           writeFile fp
             $ unlines
             $ FML.toList
+            $ FML.cons "Frequency\tcos\tsin"
             $ U.foldMap
-              (\(i, c) -> FML.singleton $ show i <> "\t" <> show (magnitude c))
+              ( \(i, c) ->
+                  let (co, si) = decodeComp i c
+                   in FML.singleton $ show (toFreq i :: Double) <> "\t" <> show co <> "\t" <> show si
+              )
             $ U.indexed
             $ V.convert vs
           putStrLn $ "Written to: " <> fp
-  retrv $ LV.modifyBoxedVector (Control.void PL.. fftDC g numCap threshold) v
+  retrv $
+    postprocess size $
+      LV.modifyBoxedVector (Control.void PL.. fftDC g numCap threshold) v
+
+postprocess :: Int -> V.Vector (Complex Double) -> V.Vector (Complex Double)
+postprocess kN hs =
+  let !kM = kN `quot` 2
+   in V.generate kM \k ->
+        let !m = (kM - k) `rem` kM
+         in 0.5 * ((hs V.! k) + conjugate (hs V.! m))
+              - (0 :+ 0.5) * (hs V.! k - conjugate (hs V.! m)) * exp (0 :+ (-2 * pi * fromIntegral k / fromIntegral kN))

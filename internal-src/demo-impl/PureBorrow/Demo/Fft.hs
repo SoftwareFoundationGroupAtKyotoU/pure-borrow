@@ -8,6 +8,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module PureBorrow.Demo.Fft (
@@ -143,7 +144,7 @@ defaultMainWith CLIOpts {..} = do
 postprocess :: Int -> V.Vector (Complex Double) -> V.Vector (Complex Double)
 postprocess kN hs =
   let !kM = kN `quot` 2
-   in V.generate kM \k ->
+   in V.generate (kM + 1) \((`rem` kM) -> k) ->
         let !m = (kM - k) `rem` kM
          in 0.5 * ((hs V.! k) + conjugate (hs V.! m))
               - (0 :+ 0.5) * (hs V.! k - conjugate (hs V.! m)) * exp (0 :+ (2 * pi * fromIntegral k / fromIntegral kN))

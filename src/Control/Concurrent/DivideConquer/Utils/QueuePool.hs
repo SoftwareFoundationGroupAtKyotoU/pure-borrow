@@ -128,7 +128,7 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
         (1 :: Double) & fix \self !wait -> do
           let waitRandom = do
                 g <- readIORef gen
-                let (q, g') = randomR (0, floor wait) g
+                let (q, g') = randomR (1, floor wait) g
                 writeIORef gen g'
                 threadDelay q
               !wait' = min 500 $ wait * 1.5

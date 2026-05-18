@@ -29,7 +29,7 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Primitive.Array (MutableArray)
 import Data.Primitive.Array qualified as Array
-import Data.Primitive.PrimVar (PrimVar, casInt, newPinnedPrimVar, newPrimVar, readPrimVar, writePrimVar)
+import Data.Primitive.PrimVar (PrimVar, casInt, newPrimVar, readPrimVar, writePrimVar)
 import Data.Vector qualified as V
 import GHC.Exts (RealWorld)
 import Math.NumberTheory.Logarithms (intLog2')

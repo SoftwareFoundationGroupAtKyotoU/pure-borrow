@@ -30,7 +30,7 @@ module Control.Concurrent.DivideConquer.Utils.QueuePool (
 ) where
 
 import Control.Applicative qualified as P
-import Control.Concurrent (yield)
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.Queue.ChaseLev (ChaseLevDeq, StealResult (..), close, estimateSize, isClosed, newDeq, pushFront, pushFronts, stealHalf, tryPopFront)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
@@ -38,7 +38,7 @@ import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (..), unsafeSystemIOToBO)
 import Data.Coerce (coerce)
 import Data.Function (fix)
-import Data.IORef (IORef, atomicModifyIORef', newIORef)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.List qualified as L
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Maybe (fromJust)
@@ -117,13 +117,6 @@ pushWorks = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) works ->
     pushFronts mine works
     P.pure $ UnsafeAlias QueuePool {..}
 
-weighted :: V.Vector (Int, a) -> StdGen -> (StdGen, a)
-weighted xs gen =
-  let !accs = V.scanl1' (\(!i, _) (!j, !x) -> (i + j, x)) xs
-      !ub = fst $ V.last accs
-      !(!r, !gen') = randomR (0, ub - 1) gen
-   in (gen', snd $ fromJust $ V.find ((P.> r) P.. fst) accs)
-
 popWork :: Mut α (QueuePool a) %1 -> BO α (Maybe (a, Mut α (QueuePool a)))
 popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
   unsafeSystemIOToBO do
@@ -132,24 +125,48 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
         P.pure Nothing
       Just (Just x) -> do
         P.pure $ Just (x, qs)
-      Just Nothing -> fix \self -> do
-        cls <- isClosed mine
-        if cls
-          then do
-            P.pure Nothing
-          else do
-            !candidates <- V.filter ((P.> 0) P.. fst) P.<$> V.mapM (\a -> (,a) P.<$> estimateSize a) others
-            if V.null candidates
-              then do
-                yield P.*> self
-              else do
-                targ <- atomicModifyIORef' gen $ weighted candidates
-                progress <- stealHalf targ
-                case progress of
-                  Nothing -> do
-                    P.pure Nothing
-                  Just (Found (x :| xs)) -> do
-                    pushFronts mine xs
-                    P.pure $ Just (x, qs)
-                  Just {} -> do
-                    yield P.*> self
+      Just Nothing ->
+        (1 :: Double) & fix \self !wait -> do
+          let waitRandom = do
+                g <- readIORef gen
+                let (q, g') = randomR (0, floor wait) g
+                writeIORef gen g'
+                threadDelay q
+              !wait' = min 500 $ wait * 1.5
+          cls <- isClosed mine
+          if cls
+            then do
+              P.pure Nothing
+            else do
+              let !nOthers = V.length others
+              if
+                | V.null others -> P.pure Nothing
+                | V.length others == 1 -> do
+                    let !q = V.unsafeHead others
+                    progress <- stealHalf q
+                    case progress of
+                      Nothing -> do
+                        P.pure Nothing
+                      Just (Found (x :| xs)) -> do
+                        pushFronts mine xs
+                        P.pure $ Just (x, qs)
+                      Just {} -> do
+                        waitRandom P.*> self wait'
+                | otherwise -> do
+                    g0 <- readIORef gen
+                    let (!i, !g1) = randomR (0, nOthers - 1) g0
+                        (!j0, !g2) = randomR (0, nOthers - 2) g1
+                        !j = if j0 P.== i then nOthers - 1 else j0
+                    writeIORef gen g2
+                    let !q1 = V.unsafeIndex others i
+                        !q2 = V.unsafeIndex others j
+                    !s1 <- {-# SCC "estimate" #-} estimateSize q1
+                    !s2 <- {-# SCC "estimate" #-} estimateSize q2
+                    let !targ = if s1 P.>= s2 then q1 else q2
+                    progress <- stealHalf targ
+                    case progress of
+                      Nothing -> P.pure Nothing
+                      Just (Found (x :| xs)) -> do
+                        pushFronts mine xs
+                        P.pure $ Just (x, qs)
+                      Just {} -> waitRandom P.*> self wait'

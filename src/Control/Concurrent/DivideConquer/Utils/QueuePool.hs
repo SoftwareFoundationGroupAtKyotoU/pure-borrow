@@ -41,7 +41,6 @@ import Data.Function (fix)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.List qualified as L
 import Data.List.NonEmpty (NonEmpty ((:|)))
-import Data.Maybe (fromJust)
 import Data.V.Linear (V, theLength)
 import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V

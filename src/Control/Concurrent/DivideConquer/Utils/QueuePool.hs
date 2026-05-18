@@ -159,8 +159,8 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
                     writeIORef gen g2
                     let !q1 = V.unsafeIndex others i
                         !q2 = V.unsafeIndex others j
-                    !s1 <- {-# SCC "estimate" #-} estimateSize q1
-                    !s2 <- {-# SCC "estimate" #-} estimateSize q2
+                    !s1 <- estimateSize q1
+                    !s2 <- estimateSize q2
                     let !targ = if s1 P.>= s2 then q1 else q2
                     progress <- stealHalf targ
                     case progress of

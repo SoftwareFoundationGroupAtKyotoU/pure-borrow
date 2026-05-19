@@ -17,6 +17,7 @@ module Control.Concurrent.Queue.ChaseLev (
   StealResult (..),
   tryPopFront,
   estimateSize,
+  capacity,
   close,
   isClosed,
 ) where
@@ -47,7 +48,7 @@ data Stat = Stat {top, bottom :: !Int}
 newDeq :: IO (ChaseLevDeq a)
 newDeq = do
   !top <- newPrimVar 0
-  !activeArray <- newIORef =<< Array.newArray 128 undefined
+  !activeArray <- newIORef =<< Array.newArray 32 undefined
   !closed <- newIORef False
   !bottom <- newPrimVar 0
   !estimatedSize <- newPrimVar 0

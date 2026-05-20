@@ -91,6 +91,7 @@ library
     primitive,
     random,
     stm,
+    stm-chans,
     vector,
     vector-algorithms,
 

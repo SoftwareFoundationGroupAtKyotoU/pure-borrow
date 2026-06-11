@@ -41,6 +41,7 @@ module Control.Monad.Borrow.Pure.Copyable (
 import Control.Monad.Borrow.Pure.BO.Internal
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Array.Mutable.Linear (Array)
+import Data.Complex
 import Data.Int
 import Data.Kind (Constraint, Type)
 import Data.Semigroup qualified as Sem
@@ -108,6 +109,10 @@ deriving via UnsafeAssumeNoVar Double instance Copyable Double
 deriving via UnsafeAssumeNoVar Char instance Copyable Char
 
 deriving via UnsafeAssumeNoVar Bool instance Copyable Bool
+
+deriving via Generically (Complex a) instance (Copyable a) => Copyable (Complex a)
+
+deriving via Generically1 Complex instance Copyable1 Complex
 
 type GenericCopyable a = (Generic a, GCopyable (Rep a))
 

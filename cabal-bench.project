@@ -1,0 +1,23 @@
+import: ./cabal.project
+import: ./cabal.project.freeze
+profiling: True
+executable-profiling: True
+library-profiling: True
+
+package *
+  ghc-options: -fno-prof-auto
+  profiling-detail: none
+
+package pure-borrow
+  ghc-options:
+    -fprof-late
+    -fprof-auto
+
+package linear-base
+  ghc-options: -fprof-late
+
+package lens
+  ghc-options: -fprof-late
+
+package indexed-traversable
+  ghc-options: -fprof-late

@@ -17,43 +17,46 @@ module Control.Concurrent.Queue.ChaseLev (
   StealResult (..),
   tryPopFront,
   estimateSize,
+  capacity,
   close,
   isClosed,
 ) where
 
 import Control.Monad (forM_, unless, (<$!>))
 import Data.Atomics (loadLoadBarrier, storeLoadBarrier, writeBarrier)
-import Data.Atomics.Counter (AtomicCounter, casCounter, newCounter, readCounter, readCounterForCAS, writeCounter)
 import Data.Bits ((.&.))
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Primitive.Array (MutableArray)
 import Data.Primitive.Array qualified as Array
+import Data.Primitive.PrimVar (PrimVar, casInt, newPrimVar, readPrimVar, writePrimVar)
 import Data.Vector qualified as V
 import GHC.Exts (RealWorld)
 import Math.NumberTheory.Logarithms (intLog2')
 
 data ChaseLevDeq a = CL
-  { top :: {-# UNPACK #-} !AtomicCounter
+  { top :: {-# UNPACK #-} !(PrimVar RealWorld Int)
   , activeArray :: !(IORef (MutableArray RealWorld a))
+  , bottom :: {-# UNPACK #-} !(PrimVar RealWorld Int)
   , closed :: {-# UNPACK #-} !(IORef Bool)
-  , bottom :: {-# UNPACK #-} !AtomicCounter
+  , estimatedSize :: {-# UNPACK #-} !(PrimVar RealWorld Int)
   }
 
 data Stat = Stat {top, bottom :: !Int}
 
 newDeq :: IO (ChaseLevDeq a)
 newDeq = do
-  !top <- newCounter 0
-  !activeArray <- newIORef =<< Array.newArray 128 undefined
+  !top <- newPrimVar 0
+  !activeArray <- newIORef =<< Array.newArray 32 undefined
   !closed <- newIORef False
-  !bottom <- newCounter 0
+  !bottom <- newPrimVar 0
+  !estimatedSize <- newPrimVar 0
   pure CL {..}
 
 getStat :: ChaseLevDeq a -> IO Stat
 {-# INLINE getStat #-}
-getStat = liftA2 Stat <$> readCounter . (.top) <*> readCounter . (.bottom)
+getStat dq = Stat <$> readPrimVar dq.top <*> readPrimVar dq.bottom
 
 {-# INLINE capacity #-}
 capacity :: ChaseLevDeq a -> IO Int
@@ -100,7 +103,8 @@ pushFronts q !a = do
     forM_ (zip [0 ..] a) $ \(!i, !x) ->
       Array.writeArray arr ((stat.bottom + i) .&. (curCapa - 1)) x
     writeBarrier
-    writeCounter q.bottom $! stat.bottom + n
+    writePrimVar q.bottom $! stat.bottom + n
+    writePrimVar q.estimatedSize $! size + n
 
 {- |
   * @Nothing@         — closed (end-of-stream)
@@ -109,10 +113,10 @@ pushFronts q !a = do
 -}
 tryPopFront :: ChaseLevDeq a -> IO (Maybe (Maybe a))
 tryPopFront q = do
-  !b <- subtract 1 <$> readCounter q.bottom
-  writeCounter q.bottom b
+  !b <- subtract 1 <$> readPrimVar q.bottom
+  writePrimVar q.bottom b
   storeLoadBarrier
-  !t <- readCounterForCAS q.top
+  !t <- readPrimVar q.top
 
   !arr <- readIORef q.activeArray
   let !capa = Array.sizeofMutableArray arr
@@ -123,8 +127,9 @@ tryPopFront q = do
     | b == t -> do
         -- last one element - might be stolen!
         let !t' = t + 1
-        (!success, _) <- casCounter q.top t t'
-        writeCounter q.bottom t'
+        !old <- casInt q.top t t'
+        let !success = old == t
+        writePrimVar q.bottom t'
         if success
           then pure $ Just $ Just task
           else do
@@ -132,9 +137,11 @@ tryPopFront q = do
             if closed
               then pure Nothing
               else pure $ Just Nothing
-    | b > t -> pure $ Just $ Just task
+    | b > t -> do
+        writePrimVar q.estimatedSize $! b - t - 1
+        pure $ Just $ Just task
     | otherwise -> do
-        writeCounter q.bottom t
+        writePrimVar q.bottom t
         pure $ Just Nothing
 
 data StealResult a = Found a | Empty | Race
@@ -147,9 +154,9 @@ data StealResult a = Found a | Empty | Race
 -}
 tryPopBack :: ChaseLevDeq a -> IO (Maybe (StealResult a))
 tryPopBack q = do
-  !t <- readCounterForCAS q.top
+  !t <- readPrimVar q.top
   loadLoadBarrier
-  !b <- readCounter q.bottom
+  !b <- readPrimVar q.bottom
   if t >= b
     then do
       closed <- readIORef q.closed
@@ -162,17 +169,20 @@ tryPopBack q = do
       -- NOTE: we must not force, otherwise undefined will hit
       task <- Array.readArray arr (t .&. (capa - 1))
       let !t' = t + 1
-      (!success, _) <- casCounter q.top t t'
+      !old <- casInt q.top t t'
+      let !success = old == t
       if success
-        then pure $! Just $ Found task
+        then do
+          writePrimVar q.estimatedSize $! b - t - 1
+          pure $! Just $ Found task
         else pure $ Just Race
 
 -- | back-element first
 stealHalf :: ChaseLevDeq a -> IO (Maybe (StealResult (NonEmpty a)))
 stealHalf q = do
-  !t <- readCounterForCAS q.top
+  !t <- readPrimVar q.top
   loadLoadBarrier
-  !b <- readCounter q.bottom
+  !b <- readPrimVar q.bottom
   if t >= b
     then do
       closed <- readIORef q.closed
@@ -188,14 +198,17 @@ stealHalf q = do
       -- NOTE: we must not force, otherwise undefined will hit
       tasks <- V.generateM count \i ->
         Array.readArray arr $ (t + i) .&. (capa - 1)
-      (!success, _) <- casCounter q.top t t'
+      !old <- casInt q.top t t'
+      let !success = old == t
       if success
-        then pure $! Just $ Found $ NE.fromList $ V.toList tasks
+        then do
+          writePrimVar q.estimatedSize $! avail - count
+          pure $! Just $ Found $ NE.fromList $ V.toList tasks
         else pure $ Just Race
 
 estimateSize :: ChaseLevDeq a -> IO Int
 {-# INLINE estimateSize #-}
-estimateSize = fmap (max 0 . occupancy) . getStat
+estimateSize q = readPrimVar q.estimatedSize
 
 close :: ChaseLevDeq a -> IO ()
 {-# INLINE close #-}

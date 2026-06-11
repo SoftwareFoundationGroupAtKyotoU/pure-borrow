@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE LinearTypes #-}
@@ -16,35 +17,44 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 
+{- | Implements a hybrid scheduler of work-stealing and work-sharing.
+Each thread has its own local queue and steals from others when it's idle, but sleeps and waits for works to be pushed after several tries.
+When pushing works, if the queue is too long, it pushes some works to waiters (if any) to avoid starvation.
+-}
 module Control.Concurrent.DivideConquer.Utils.QueuePool (
   QueuePool,
   newQueuePool,
-  pushWork,
   pushWorks,
   popWork,
   pushWorkMaster,
 ) where
 
 import Control.Applicative qualified as P
-import Control.Concurrent (yield)
-import Control.Concurrent.Queue.ChaseLev (ChaseLevDeq, StealResult (..), close, estimateSize, isClosed, newDeq, pushFront, pushFronts, stealHalf, tryPopFront)
+import Control.Concurrent (MVar, newEmptyMVar, putMVar, takeMVar, threadDelay, tryPutMVar, yield)
+import Control.Concurrent.Queue.ChaseLev (ChaseLevDeq, StealResult (..), capacity, close, estimateSize, isClosed, newDeq, pushFront, pushFronts, stealHalf, tryPopFront)
+import Control.Concurrent.STM (atomically)
+import Control.Concurrent.STM.TMQueue (TMQueue, closeTMQueue, isClosedTMQueue, newTMQueueIO, readTMQueue, tryReadTMQueue, unGetTMQueue, writeTMQueue)
+import Control.Monad (forM_, when)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (..), unsafeSystemIOToBO)
-import Data.Coerce (coerce)
+import Control.Monad.Primitive (RealWorld)
 import Data.Function (fix)
-import Data.IORef (IORef, atomicModifyIORef', newIORef)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.List qualified as L
 import Data.List.NonEmpty (NonEmpty ((:|)))
-import Data.Maybe (fromJust)
+import Data.Maybe (isNothing)
+import Data.Primitive.PrimVar (PrimVar, modifyPrimVar, newPinnedPrimVar, readPrimVar, writePrimVar)
 import Data.V.Linear (V, theLength)
 import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
+-- import Debug.Trace (traceEventIO)
 import GHC.Exts qualified as GHC
 import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownNat)
@@ -56,20 +66,29 @@ import Prelude qualified as P
 data QueuePool a = QueuePool
   { mine :: !(ChaseLevDeq a)
   , others :: !(V.Vector (ChaseLevDeq a))
+  , mySwitch :: {-# UNPACK #-} !(MVar ())
+  , waiting :: {-# UNPACK #-} !(TMQueue (MVar ()))
+  , injection :: !(TMQueue (NonEmpty a))
   , num :: {-# UNPACK #-} !Int
   , gen :: {-# UNPACK #-} !(IORef StdGen)
+  , worksPushed :: {-# UNPACK #-} !(PrimVar RealWorld Int)
   }
 
-newtype MasterQueuePool a = MasterQueuePool [ChaseLevDeq a]
+data MasterQueuePool a = MasterQueuePool
+  { pools :: ![ChaseLevDeq a]
+  , switches :: ![MVar ()]
+  , waiting :: !(TMQueue (MVar ()))
+  , injection :: !(TMQueue (NonEmpty a))
+  }
 
 instance Consumable (MasterQueuePool a) where
-  consume = consume . map consumeTMDQ . Unsafe.coerce @_ @[ChaseLevDeq a]
-
-consumeTMDQ :: ChaseLevDeq a %1 -> ()
-{-# NOINLINE consumeTMDQ #-}
-consumeTMDQ = GHC.noinline $ Unsafe.toLinear \q -> GHC.unsafePerformIO do
-  !() <- close q
-  P.pure ()
+  {-# NOINLINE consume #-}
+  consume = GHC.noinline $ Unsafe.toLinear \MasterQueuePool {..} -> GHC.unsafePerformIO do
+    P.mapM_ close pools
+    P.mapM_ (flip tryPutMVar ()) switches
+    atomically do
+      closeTMQueue waiting
+      closeTMQueue injection
 
 newQueuePool ::
   forall n a α g.
@@ -80,11 +99,15 @@ newQueuePool g = unsafeSystemIOToBO do
   let n = theLength @n
 
   qs <- NonLinear.replicateM n newDeq
-  pools <-
+  waiting <- newTMQueueIO
+  injection <- newTMQueueIO
+  qs <-
     P.mapM
       ( \(num, ini, mine, tl, seed) -> do
           let others = V.fromList $ tl <> ini
           gen <- newIORef $ mkStdGen seed
+          mySwitch <- newEmptyMVar
+          worksPushed <- newPinnedPrimVar 0
           P.pure P.$ QueuePool {others, ..}
       )
       P.$ L.zip5
@@ -93,63 +116,147 @@ newQueuePool g = unsafeSystemIOToBO do
         qs
         (P.drop 1 $ L.tails qs)
         (randoms g)
-  let master = MasterQueuePool $ P.map (mine P.. coerce) pools
-  P.pure (V $ V.fromList $ map UnsafeAlias pools, master)
+  let pools = P.map (.mine) qs
+      switches = P.map (.mySwitch) qs
+      master = MasterQueuePool {..}
+  P.pure (V $ V.fromList $ map UnsafeAlias qs, master)
 
 pushWorkMaster :: Mut α (MasterQueuePool a) %1 -> a %1 -> BO α (Mut α (MasterQueuePool a))
-pushWorkMaster = Unsafe.toLinear2 \(UnsafeAlias (MasterQueuePool pools)) work ->
+pushWorkMaster = Unsafe.toLinear2 \pool@(UnsafeAlias (MasterQueuePool {pools})) work ->
   case pools of
-    (q : qs) -> unsafeSystemIOToBO do
+    (q : _) -> unsafeSystemIOToBO do
       pushFront q work
-      P.pure $ UnsafeAlias $ MasterQueuePool (q : qs)
+      P.pure pool
     [] -> error "impossible: the length of pools is determined by the type-level nat n and cannot be zero"
-
-pushWork :: Mut α (QueuePool a) %1 -> a %1 -> BO α (Mut α (QueuePool a))
-pushWork = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) work ->
-  unsafeSystemIOToBO do
-    pushFront mine work
-    P.pure $ UnsafeAlias QueuePool {..}
 
 -- | Pushes works, the last element is on the front.
 pushWorks :: Mut α (QueuePool a) %1 -> [a] %1 -> BO α (Mut α (QueuePool a))
 pushWorks = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) works ->
   unsafeSystemIOToBO do
     pushFronts mine works
-    P.pure $ UnsafeAlias QueuePool {..}
+    capa <- capacity mine
+    sz <- estimateSize mine
+    modifyPrimVar worksPushed (P.+ P.length works)
+    pushed <- readPrimVar worksPushed
+    -- traceEventIO $ "EVT: After Push (estimated, capa) " <> P.show (sz, capa)
+    when (2 * sz >= capa || pushed >= 32) do
+      -- traceEventIO $ "EVT: Too many works or periodic push threshold met. (size: " <> show sz <> ", capacity: " <> show capa <> ", pushed: " <> show pushed <> ")"
+      when (pushed >= 32) do
+        writePrimVar worksPushed 0
+      -- steal half and push to waiters
+      token <- atomically do
+        P.join P.<$> tryReadTMQueue waiting
+      -- when (isNothing token) $ traceEventIO "EVT: No waiters. Not pushing to waiters."
+      forM_ token \token -> fix \self -> do
+        half <- stealHalf mine
+        case half of
+          Nothing -> do
+            -- traceEventIO "EVT: No more works to steal. Closing..."
+            putMVar token ()
+          Just (Found ts) -> do
+            let nums = P.length ts
+            putMVar token ()
+            -- traceEventIO $ "EVT: pushing " <> P.show nums <> " works to waiters!"
+            modifyPrimVar worksPushed (P.max 0 P.. (P.- nums))
+            atomically $ writeTMQueue injection ts
+          Just Race -> do
+            -- traceEventIO $ "EVT: Failed to steal due to race. retrying."
+            yield
+            self
+          Just Empty -> do
+            -- traceEventIO $ "EVT: Heh, no works to steal."
 
-weighted :: V.Vector (Int, a) -> StdGen -> (StdGen, a)
-weighted xs gen =
-  let !accs = V.scanl1' (\(!i, _) (!j, !x) -> (i + j, x)) xs
-      !ub = fst $ V.last accs
-      !(!r, !gen') = randomR (0, ub - 1) gen
-   in (gen', snd $ fromJust $ V.find ((P.> r) P.. fst) accs)
+            atomically $ unGetTMQueue waiting token
+
+    P.pure $ UnsafeAlias QueuePool {..}
 
 popWork :: Mut α (QueuePool a) %1 -> BO α (Maybe (a, Mut α (QueuePool a)))
 popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
   unsafeSystemIOToBO do
+    -- num <- estimateSize mine
+    -- traceEventIO $ "EVT: Estimated size: " <> show num
     tryPopFront mine P.>>= \case
       Nothing -> do
+        -- traceEventIO "EVT: Finished!"
         P.pure Nothing
       Just (Just x) -> do
+        -- traceEventIO "EVT: Got work from own queue!"
         P.pure $ Just (x, qs)
-      Just Nothing -> fix \self -> do
-        cls <- isClosed mine
-        if cls
-          then do
-            P.pure Nothing
-          else do
-            !candidates <- V.filter ((P.> 0) P.. fst) P.<$> V.mapM (\a -> (,a) P.<$> estimateSize a) others
-            if V.null candidates
-              then do
-                yield P.*> self
-              else do
-                targ <- atomicModifyIORef' gen $ weighted candidates
-                progress <- stealHalf targ
-                case progress of
-                  Nothing -> do
-                    P.pure Nothing
-                  Just (Found (x :| xs)) -> do
-                    pushFronts mine xs
-                    P.pure $ Just (x, qs)
-                  Just {} -> do
-                    yield P.*> self
+      Just Nothing ->
+        (0 :: Int) & fix \self !retry ->
+          if retry >= V.length others + 32
+            then do
+              -- traceEventIO "EVT: Too many retries. Sleep until pushed..."
+              closed <- atomically $ do
+                writeTMQueue waiting mySwitch
+                isClosedTMQueue waiting
+              if closed
+                then P.pure Nothing
+                else do
+                  takeMVar mySwitch
+                  -- traceEventIO $ "EVT: Woken up! Retrying to pop..."
+                  mtasks <- atomically $ readTMQueue injection
+                  -- traceEventIO $ "EVT: Got " <> show (P.fmap P.length mtasks) <> " injected tasks!"
+                  case mtasks of
+                    Nothing -> P.pure Nothing
+                    Just (x :| xs) -> do
+                      pushFronts mine xs
+                      P.pure $ Just (x, qs)
+            else do
+              let sleep = P.unless (retry < V.length others) do
+                    g <- readIORef gen
+                    let !wait = min 100 (1.5 ^ retry :: Double)
+                        (!q, g') = randomR (1, floor wait) g
+                    writeIORef gen g'
+                    -- traceEventIO $ "EVT: Failed to steal. Waiting for " <> show q <> " us..."
+                    if q > 10 then threadDelay q else yield
+              cls <- isClosed mine
+              if cls
+                then do
+                  P.pure Nothing
+                else do
+                  let !nOthers = V.length others
+                  if
+                    | V.null others -> P.pure Nothing
+                    | nOthers == 1 -> do
+                        let !q = V.unsafeHead others
+                        progress <- stealHalf q
+                        case progress of
+                          Nothing -> do
+                            -- traceEventIO "EVT: Closing..."
+                            P.pure Nothing
+                          Just (Found (x :| xs)) -> do
+                            -- traceEventIO $ "EVT: Stolen! " <> P.show (P.length xs P.+ 1)
+                            pushFronts mine xs
+                            P.pure $ Just (x, qs)
+                          Just {} -> do
+                            sleep P.*> self (retry + 1)
+                    | otherwise -> do
+                        g0 <- readIORef gen
+                        let (!i, !g1) = randomR (0, nOthers - 1) g0
+                            (!j0, !g2) = randomR (0, nOthers - 2) g1
+                            !j = if j0 P.== i then nOthers - 1 else j0
+                        writeIORef gen g2
+                        let !q1 = V.unsafeIndex others i
+                            !q2 = V.unsafeIndex others j
+                        !s1 <- estimateSize q1
+                        !s2 <- estimateSize q2
+                        -- traceEventIO $ "EVT: Steal candidates' sizes: " <> show (s1, s2)
+                        let !targ = if s1 P.>= s2 then q1 else q2
+                        progress <- stealHalf targ
+                        case progress of
+                          Nothing -> do
+                            -- traceEventIO "EVT: Closing..."
+                            P.pure Nothing
+                          Just (Found (x :| xs)) -> do
+                            -- traceEventIO $ "EVT: Stolen! " <> P.show (P.length xs P.+ 1)
+                            pushFronts mine xs
+                            P.pure $ Just (x, qs)
+                          Just {} -> do
+                            -- traceEventIO $ "EVT: Failed to steal (reason: " <> reason st <> ")"
+                            sleep P.*> self (retry + 1)
+
+reason :: StealResult x -> String
+reason Found {} = "Found"
+reason Empty = "Empty"
+reason Race = "Race"

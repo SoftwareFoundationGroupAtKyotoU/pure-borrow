@@ -31,6 +31,11 @@ source-repository head
   type: git
   location: https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow
 
+flag examples
+  description: Build the example executable, which runs some examples of the library.
+  default: False
+  manual: True
+
 flag artifact
   description: Build the artifact runner executable, which runs all the benchmarks and produces CSV files.
   default: False
@@ -57,6 +62,22 @@ common defaults
     base >=4.17 && <5,
     linear-base >=0.7,
 
+common examples
+  import: defaults
+
+  if flag(examples)
+    buildable: True
+  else
+    buildable: False
+
+  ghc-options:
+    -threaded
+    -rtsopts
+    -O2
+    "-with-rtsopts=-N -s"
+
+  default-language: GHC2021
+
 library
   import: defaults
   build-depends:
@@ -70,6 +91,7 @@ library
     primitive,
     random,
     stm,
+    stm-chans,
     vector,
     vector-algorithms,
 
@@ -110,10 +132,10 @@ library
 
   -- cabal-gild: discover src --include src/**/Utils.hs --include src/**/Utils/**/*.hs
   other-modules:
-    Control.Concurrent.DivideConquer.Utils.AtomicCounter
     Control.Concurrent.DivideConquer.Utils.OnceChan.Linear
     Control.Concurrent.DivideConquer.Utils.OnceChan.Linear.Unlifted
     Control.Concurrent.DivideConquer.Utils.QueuePool
+    Control.Concurrent.DivideConquer.Utils.Semaphore
     Control.Monad.Borrow.Pure.Utils
 
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0
@@ -172,11 +194,14 @@ test-suite pure-borrow-doctests
     doctest-parallel >=0.4.1,
     pure-borrow,
 
-library qsort-bench-suites
+library bench-suites
   import: defaults
-  hs-source-dirs: internal-src/qsort-bench-suites
-  -- cabal-gild: discover internal-src/qsort-bench-suites
-  exposed-modules: PureBorrow.Internal.Bench.QSort
+  hs-source-dirs: internal-src/bench-suites
+  -- cabal-gild: discover internal-src/bench-suites
+  exposed-modules:
+    PureBorrow.Internal.Bench.Fft
+    PureBorrow.Internal.Bench.QSort
+
   build-depends:
     base >=4.7 && <5,
     deepseq,
@@ -203,18 +228,47 @@ benchmark qsort-bench
 
   build-depends:
     base >=4.7 && <5,
-    pure-borrow:qsort-bench-suites,
+    pure-borrow:bench-suites,
 
   default-language: GHC2021
 
-library qsort-demo-impl
+benchmark fft-bench
   import: defaults
-  hs-source-dirs: internal-src/qsort-demo-impl
-  -- cabal-gild: discover internal-src/qsort-demo-impl
-  exposed-modules: PureBorrow.Demo.QSort
+  type: exitcode-stdio-1.0
+  main-is: fft.hs
+  hs-source-dirs: bench
+  ghc-options:
+    -threaded
+    -rtsopts
+    -O2
+    "-with-rtsopts=-N -s"
+
+  build-depends:
+    base >=4.7 && <5,
+    pure-borrow:bench-suites,
+
+  default-language: GHC2021
+
+library demo-impl
+  import: defaults
+
+  if flag(examples)
+    buildable: True
+  else
+    buildable: False
+
+  hs-source-dirs: internal-src/demo-impl
+  -- cabal-gild: discover internal-src/demo-impl
+  exposed-modules:
+    PureBorrow.Demo.Fft
+    PureBorrow.Demo.QSort
+
   build-depends:
     base >=4.7 && <5,
     deepseq,
+    directory,
+    filepath,
+    fmlist,
     optparse-applicative,
     pure-borrow,
     random,
@@ -224,19 +278,20 @@ library qsort-demo-impl
   default-language: GHC2021
 
 executable qsort
-  import: defaults
+  import: examples
   main-is: qsort.hs
   hs-source-dirs: app
-  ghc-options:
-    -threaded
-    -rtsopts
-    -with-rtsopts=-N
-
   build-depends:
     base >=4.7 && <5,
-    pure-borrow:qsort-demo-impl,
+    pure-borrow:demo-impl,
 
-  default-language: GHC2021
+executable fft
+  import: examples
+  main-is: fft.hs
+  hs-source-dirs: app
+  build-depends:
+    base >=4.7 && <5,
+    pure-borrow:demo-impl,
 
 executable convert-qsort-bench-csv
   import: defaults
@@ -246,6 +301,11 @@ executable convert-qsort-bench-csv
     -threaded
     -rtsopts
     -with-rtsopts=-N
+
+  if flag(examples)
+    buildable: True
+  else
+    buildable: False
 
   build-depends:
     base >=4.7 && <5,
@@ -290,8 +350,8 @@ executable artifact-runner
     optparse-applicative,
     process,
     pure-borrow,
-    pure-borrow:qsort-bench-suites,
-    pure-borrow:qsort-demo-impl,
+    pure-borrow:bench-suites,
+    pure-borrow:demo-impl,
     tasty,
     template-haskell,
     temporary,

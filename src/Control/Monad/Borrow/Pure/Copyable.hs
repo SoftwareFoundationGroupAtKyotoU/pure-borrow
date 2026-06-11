@@ -110,7 +110,9 @@ deriving via UnsafeAssumeNoVar Char instance Copyable Char
 
 deriving via UnsafeAssumeNoVar Bool instance Copyable Bool
 
-deriving via Generically (Complex a) instance (Copyable a) => Copyable (Complex a)
+instance (Copyable a) => Copyable (Complex a) where
+  copy = \(UnsafeAlias !a) -> a
+  {-# INLINE copy #-}
 
 deriving via Generically1 Complex instance Copyable1 Complex
 

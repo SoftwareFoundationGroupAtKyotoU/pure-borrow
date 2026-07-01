@@ -30,6 +30,8 @@ module Control.Monad.Borrow.Pure.BO.Internal (
   module Control.Monad.Borrow.Pure.BO.Internal,
 ) where
 
+import Control.Applicative qualified as NonLinear
+import Control.Concurrent (forkIO, newEmptyMVar, putMVar, takeMVar)
 import Control.Exception qualified as SystemIO
 import Control.Functor.Linear qualified as Control
 import Control.Monad qualified as NonLinear
@@ -224,16 +226,14 @@ unsafePerformEvaluateUndupableBO (BO f) = runBO# \s ->
 
 -- | Run two computations in parallel, returning their results as a tuple.
 parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
-parBO = Unsafe.toLinear2 \a b ->
-  BO $
-    Unsafe.toLinear \s ->
-      case Unsafe.toLinear2 GHC.spark# (case unsafeUnBO a (GHC.noDuplicate# s) of (# _, a #) -> GHC.lazy a) s of
-        (# _, a #) ->
-          case Unsafe.toLinear2 GHC.spark# (case unsafeUnBO b (GHC.noDuplicate# s) of (# _, b #) -> GHC.lazy b) s of
-            (# _, b #) ->
-              case Unsafe.toLinear2 GHC.seq# a s of
-                (# s, !a #) -> case Unsafe.toLinear2 GHC.seq# b s of
-                  (# s, !b #) -> (# s, (a, b) #)
+parBO = Unsafe.toLinear2 \a b -> unsafeSystemIOToBO do
+  aVar <- newEmptyMVar
+  bVar <- newEmptyMVar
+  NonLinear.void $ forkIO $ putMVar aVar NonLinear.=<< unsafeBOToSystemIO a
+  NonLinear.void $ forkIO $ putMVar bVar NonLinear.=<< unsafeBOToSystemIO b
+  !a' <- takeMVar aVar
+  !b' <- takeMVar bVar
+  NonLinear.pure (a', b')
 
 evaluateBO :: a %1 -> BO α a
 {-# INLINE evaluateBO #-}

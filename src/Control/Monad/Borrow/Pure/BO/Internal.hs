@@ -32,6 +32,7 @@ module Control.Monad.Borrow.Pure.BO.Internal (
 
 import Control.Applicative qualified as NonLinear
 import Control.Concurrent (forkIO, newEmptyMVar, putMVar, takeMVar)
+import Control.Exception (evaluate)
 import Control.Exception qualified as SystemIO
 import Control.Functor.Linear qualified as Control
 import Control.Monad qualified as NonLinear
@@ -229,8 +230,12 @@ parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
 parBO = Unsafe.toLinear2 \a b -> unsafeSystemIOToBO do
   aVar <- newEmptyMVar
   bVar <- newEmptyMVar
-  NonLinear.void $ forkIO $ putMVar aVar NonLinear.=<< unsafeBOToSystemIO a
-  NonLinear.void $ forkIO $ putMVar bVar NonLinear.=<< unsafeBOToSystemIO b
+  NonLinear.void $
+    forkIO $
+      putMVar aVar NonLinear.=<< evaluate NonLinear.=<< unsafeBOToSystemIO a
+  NonLinear.void $
+    forkIO $
+      putMVar bVar NonLinear.=<< evaluate NonLinear.=<< unsafeBOToSystemIO b
   !a' <- takeMVar aVar
   !b' <- takeMVar bVar
   NonLinear.pure (a', b')

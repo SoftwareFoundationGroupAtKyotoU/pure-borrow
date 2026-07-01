@@ -191,8 +191,8 @@ set i a v = DataFlow.do
 
 -- | 'set' without bound check.
 unsafeSet :: (α >= β) => Int -> a %1 -> Mut α (Vector a) %1 -> BO β (a, Mut α (Vector a))
-unsafeSet = Unsafe.toLinear3 \i a mut@(UnsafeAlias (Vector v)) -> unsafeSystemIOToBO do
-  old <- MV.unsafeRead v i
+unsafeSet = Unsafe.toLinear3 \i !a mut@(UnsafeAlias (Vector v)) -> unsafeSystemIOToBO do
+  !old <- MV.unsafeRead v i
   MV.unsafeWrite v i a
   NonLinear.pure (old, mut)
 
@@ -245,7 +245,7 @@ get i v = DataFlow.do
 unsafeUpdate :: (α >= β) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))
 unsafeUpdate i = Unsafe.toLinear2 \k (UnsafeAlias v) -> Control.do
   a <- unsafeSystemIOToBO $ MV.unsafeRead (content v) i
-  (b, a') <- k a
+  (!b, !a') <- k a
   () <- unsafeSystemIOToBO $ Unsafe.toLinear3 MV.unsafeWrite (content v) i a'
   Control.pure $ (b, UnsafeAlias v)
 
@@ -327,7 +327,7 @@ swap v i j = DataFlow.do
         else unsafeSwap v i j
 
 copyAt :: (Copyable a, α >= β) => Int -> Share α (Vector a) -> BO β (Ur a)
-copyAt i v = Control.do Ur s <- move Control.<$> get i v; Control.pure $ Ur $ copy s
+copyAt i v = Control.do Ur !s <- move Control.<$> get i v; Control.pure $! Ur $! copy s
 
 copyAtMut :: forall a α β. (Copyable a, α >= β) => Int -> Mut α (Vector a) %1 -> BO β (Ur a, Mut α (Vector a))
 copyAtMut i v = upcast $ sharing @_ @α v $ copyAt i

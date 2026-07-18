@@ -130,6 +130,7 @@ tryPopFront q = do
         !old <- casInt q.top t t'
         let !success = old == t
         writePrimVar q.bottom t'
+        writePrimVar q.estimatedSize 0
         if success
           then pure $ Just $ Just task
           else do
@@ -138,10 +139,11 @@ tryPopFront q = do
               then pure Nothing
               else pure $ Just Nothing
     | b > t -> do
-        writePrimVar q.estimatedSize $! b - t - 1
+        writePrimVar q.estimatedSize $! b - t
         pure $ Just $ Just task
     | otherwise -> do
         writePrimVar q.bottom t
+        writePrimVar q.estimatedSize 0
         pure $ Just Nothing
 
 data StealResult a = Found a | Empty | Race

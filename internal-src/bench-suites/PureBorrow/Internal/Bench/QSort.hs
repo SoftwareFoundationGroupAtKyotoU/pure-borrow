@@ -177,4 +177,4 @@ benches BenchOpts {..} =
   ]
 
 kMAX_SIZE :: Int
-kMAX_SIZE = 32 * 1024
+kMAX_SIZE = 1024 * 1024

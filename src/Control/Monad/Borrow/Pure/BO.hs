@@ -149,6 +149,7 @@ scope_ = flip sexecBO
 
 -- | A variant of 'borrow' that obtains 'Linearly' viar 'LinearOnly'.
 borrowLinearOnly :: forall α a. (LinearOnly a) => a %1 -> (Mut α a, Lend α a)
+{-# INLINE borrowLinearOnly #-}
 borrowLinearOnly !a = case withLinearly a of
   (!lin, !a) -> borrow a lin
 
@@ -222,6 +223,7 @@ reborrowing' ::
   Mut α a %1 ->
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') (After β r)) %1 ->
   BO α' (r, Mut α a)
+{-# INLINE reborrowing' #-}
 reborrowing' v k = srunBO DataFlow.do
   (v, lend) <- reborrow v
   Control.do
@@ -237,6 +239,7 @@ reborrowing ::
   Mut α a %1 ->
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
   BO α' (r, Mut α a)
+{-# INLINE reborrowing #-}
 reborrowing mutα k = reborrowing' mutα (\mut -> Control.pure Control.<$> k mut)
 
 -- | Flipped infix version of 'reborrowing', smoewhat analgous to '(Control.<$>)' and @(<%~)@ in @lens@ package.
@@ -260,6 +263,7 @@ reborrowing_ ::
   Mut α a %1 ->
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
   BO α' (Mut α a)
+{-# INLINE reborrowing_ #-}
 reborrowing_ mutα k = reborrowing mutα (Control.fmap consume . k) Control.<&> \((), a) -> a
 
 -- | Flipped infix version of 'reborrowing_', smoewhat analgous to '(Control.<$>)' and @(<%=)@ in @lens@ package.
@@ -278,6 +282,7 @@ modifyBO ::
   Linearly %1 ->
   (forall α. Mut α a %1 -> BO α r) %1 ->
   (r, a)
+{-# INLINE modifyBO #-}
 modifyBO v lin k = DataFlow.do
   (lin, lin') <- dup lin
   runBO lin Control.do
@@ -291,6 +296,7 @@ modifyBO_ ::
   Linearly %1 ->
   (forall α. Mut α a %1 -> BO α ()) %1 ->
   a
+{-# INLINE modifyBO_ #-}
 modifyBO_ v lin k = DataFlow.do
   (lin, lin') <- dup lin
   runBO lin Control.do
@@ -304,6 +310,7 @@ modifyLinearOnlyBO ::
   a %1 ->
   (forall α. Mut α a %1 -> BO α r) %1 ->
   (r, a)
+{-# INLINE modifyLinearOnlyBO #-}
 modifyLinearOnlyBO v k = DataFlow.do
   (lin, v) <- withLinearly v
   runBO lin Control.do
@@ -317,6 +324,7 @@ modifyLinearOnlyBO_ ::
   a %1 ->
   (forall α. Mut α a %1 -> BO α ()) %1 ->
   a
+{-# INLINE modifyLinearOnlyBO_ #-}
 modifyLinearOnlyBO_ v k = DataFlow.do
   (lin, v) <- withLinearly v
   runBO lin Control.do

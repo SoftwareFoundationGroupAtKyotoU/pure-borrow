@@ -115,6 +115,9 @@ data Work c α a (t :: Type -> Type) r where
     !(Mut α a) %1 ->
     !(Switch r (BO α ())) %1 ->
     Work c α a t r
+  Resume ::
+    !(BO α ()) %1 ->
+    Work c α a t r
 
 newtype Thread = Thread ThreadId
 
@@ -190,6 +193,9 @@ divideAndConquer' g n DivideConquer {..} ini
     worker :: (α >= α') => Mut α' (QueuePool (Work c α' a t r)) %1 -> BO α' ()
     worker q = Control.do
       whileJust_ (Idle q) popQState \q -> \case
+        Resume k -> Control.do
+          k
+          Control.pure q
         -- NOTE: this leakage should be safe, because the finalization on ini'
         -- will only occur after all the subdivisions are processed.
         Process c ini switch ->
@@ -198,8 +204,9 @@ divideAndConquer' g n DivideConquer {..} ini
             case resl of
               Done r -> Control.do
                 cont <- release r switch
-                maybe (Control.pure ()) id cont
-                Control.pure $ ini' `lseq` q
+                ini' `lseq` case cont of
+                  Nothing -> Control.pure q
+                  Just k -> enqueues q [Resume k]
               Continue ts -> Control.do
                 (sources, ks) <- Control.do
                   flip Control.runStateT mempty $
@@ -226,8 +233,7 @@ divideAndConquer' g n DivideConquer {..} ini
                 case cont of
                   Nothing -> enqueues q tasks
                   Just k -> Control.do
-                    unsafeLeak tasks `lseq` k
-                    Control.pure q
+                    unsafeLeak tasks `lseq` enqueues q [Resume k]
 
 sequentialDivideAndConquer ::
   forall c α t a.

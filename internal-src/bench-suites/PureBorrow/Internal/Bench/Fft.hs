@@ -123,7 +123,7 @@ data SampleSize = SampleSize Int
   deriving (Show, Eq, Ord)
 
 instance IsOption SampleSize where
-  defaultValue = SampleSize 32
+  defaultValue = SampleSize 10
   parseValue s =
     case readMaybe s of
       Just n | kMAX_SIZE `rem` n == 0 -> Just (SampleSize n)

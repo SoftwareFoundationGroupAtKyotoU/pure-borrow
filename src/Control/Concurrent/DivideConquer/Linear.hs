@@ -510,12 +510,17 @@ fftDC' thresh =
     combine FftCoe {..} vs = Control.do
       let !half = size `quot` 2
           !kW = cosθ :+ sinθ
-      Control.void $ iterReborrowing_ half vs \k vs -> Control.do
-        (Ur ek, vs) <- LV.copyAtMut k vs
-        (Ur ok, vs) <- LV.copyAtMut (half + k) vs
-        (lr :+ li, vs) <- LV.set k (ek P.+ kW ^ k P.* ok) vs
-        (rr :+ ri, vs) <- LV.set (half + k) (ek P.+ kW ^ (half + k) P.* ok) vs
-        Control.pure $ consume (lr, li, rr, ri, vs)
+      go half kW 0 1 vs
+      where
+        go !half !kW !k !w vs
+          | k >= half = Control.pure $ consume vs
+          | otherwise = Control.do
+              (Ur ek, vs) <- LV.copyAtMut k vs
+              (Ur ok, vs) <- LV.copyAtMut (half + k) vs
+              let !t = w P.* ok
+              (lr :+ li, vs) <- LV.set k (ek P.+ t) vs
+              (rr :+ ri, vs) <- LV.set (half + k) (ek P.- t) vs
+              consume (lr, li, rr, ri) `lseq` go half kW (k + 1) (w P.* kW) vs
 
 reverseBit ::
   forall α a.

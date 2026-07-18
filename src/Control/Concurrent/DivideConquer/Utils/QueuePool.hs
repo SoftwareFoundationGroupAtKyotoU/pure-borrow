@@ -24,7 +24,7 @@
 
 {- | Implements a hybrid scheduler of work-stealing and work-sharing.
 Each thread has its own local queue and steals from others when it's idle, but sleeps and waits for works to be pushed after several tries.
-When pushing works, if the queue is too long, it pushes some works to waiters (if any) to avoid starvation.
+When pushing works, it shares a batch with a waiter (if any) to avoid starvation.
 -}
 module Control.Concurrent.DivideConquer.Utils.QueuePool (
   QueuePool,
@@ -36,21 +36,18 @@ module Control.Concurrent.DivideConquer.Utils.QueuePool (
 
 import Control.Applicative qualified as P
 import Control.Concurrent (MVar, newEmptyMVar, putMVar, takeMVar, threadDelay, tryPutMVar, yield)
-import Control.Concurrent.Queue.ChaseLev (ChaseLevDeq, StealResult (..), capacity, close, estimateSize, isClosed, newDeq, pushFront, pushFronts, stealHalf, tryPopFront)
+import Control.Concurrent.Queue.ChaseLev (ChaseLevDeq, StealResult (..), close, estimateSize, isClosed, newDeq, pushFront, pushFronts, stealHalf, tryPopFront)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TMQueue (TMQueue, closeTMQueue, isClosedTMQueue, newTMQueueIO, readTMQueue, tryReadTMQueue, unGetTMQueue, writeTMQueue)
-import Control.Monad (forM_, when)
+import Control.Monad (forM_)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (..), unsafeSystemIOToBO)
-import Control.Monad.Primitive (RealWorld)
 import Data.Function (fix)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.List qualified as L
 import Data.List.NonEmpty (NonEmpty ((:|)))
-import Data.Maybe (isNothing)
-import Data.Primitive.PrimVar (PrimVar, modifyPrimVar, newPinnedPrimVar, readPrimVar, writePrimVar)
 import Data.V.Linear (V, theLength)
 import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
@@ -71,7 +68,6 @@ data QueuePool a = QueuePool
   , injection :: !(TMQueue (NonEmpty a))
   , num :: {-# UNPACK #-} !Int
   , gen :: {-# UNPACK #-} !(IORef StdGen)
-  , worksPushed :: {-# UNPACK #-} !(PrimVar RealWorld Int)
   }
 
 data MasterQueuePool a = MasterQueuePool
@@ -107,7 +103,6 @@ newQueuePool g = unsafeSystemIOToBO do
           let others = V.fromList $ tl <> ini
           gen <- newIORef $ mkStdGen seed
           mySwitch <- newEmptyMVar
-          worksPushed <- newPinnedPrimVar 0
           P.pure P.$ QueuePool {others, ..}
       )
       P.$ L.zip5
@@ -134,39 +129,24 @@ pushWorks :: Mut α (QueuePool a) %1 -> [a] %1 -> BO α (Mut α (QueuePool a))
 pushWorks = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) works ->
   unsafeSystemIOToBO do
     pushFronts mine works
-    capa <- capacity mine
-    sz <- estimateSize mine
-    modifyPrimVar worksPushed (P.+ P.length works)
-    pushed <- readPrimVar worksPushed
-    -- traceEventIO $ "EVT: After Push (estimated, capa) " <> P.show (sz, capa)
-    when (2 * sz >= capa || pushed >= 32) do
-      -- traceEventIO $ "EVT: Too many works or periodic push threshold met. (size: " <> show sz <> ", capacity: " <> show capa <> ", pushed: " <> show pushed <> ")"
-      when (pushed >= 32) do
-        writePrimVar worksPushed 0
-      -- steal half and push to waiters
-      token <- atomically do
-        P.join P.<$> tryReadTMQueue waiting
-      -- when (isNothing token) $ traceEventIO "EVT: No waiters. Not pushing to waiters."
-      forM_ token \token -> fix \self -> do
-        half <- stealHalf mine
-        case half of
-          Nothing -> do
-            -- traceEventIO "EVT: No more works to steal. Closing..."
-            putMVar token ()
-          Just (Found ts) -> do
-            let nums = P.length ts
-            putMVar token ()
-            -- traceEventIO $ "EVT: pushing " <> P.show nums <> " works to waiters!"
-            modifyPrimVar worksPushed (P.max 0 P.. (P.- nums))
-            atomically $ writeTMQueue injection ts
-          Just Race -> do
-            -- traceEventIO $ "EVT: Failed to steal due to race. retrying."
-            yield
-            self
-          Just Empty -> do
-            -- traceEventIO $ "EVT: Heh, no works to steal."
-
-            atomically $ unGetTMQueue waiting token
+    -- If a worker is asleep, give it a batch on every publication.  The batch
+    -- must be visible before the wakeup, so the signalled worker can never wake
+    -- and wait for a not-yet-published injection.
+    token <- atomically do
+      P.join P.<$> tryReadTMQueue waiting
+    forM_ token \token -> fix \self -> do
+      half <- stealHalf mine
+      case half of
+        Nothing -> do
+          putMVar token ()
+        Just (Found ts) -> do
+          atomically $ writeTMQueue injection ts
+          putMVar token ()
+        Just Race -> do
+          yield
+          self
+        Just Empty -> do
+          atomically $ unGetTMQueue waiting token
 
     P.pure $ UnsafeAlias QueuePool {..}
 
@@ -229,8 +209,8 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
                             -- traceEventIO $ "EVT: Stolen! " <> P.show (P.length xs P.+ 1)
                             pushFronts mine xs
                             P.pure $ Just (x, qs)
-                          Just {} -> do
-                            sleep P.*> self (retry + 1)
+                          Just Empty -> self (retry + 1)
+                          Just Race -> sleep P.*> self (retry + 1)
                     | otherwise -> do
                         g0 <- readIORef gen
                         let (!i, !g1) = randomR (0, nOthers - 1) g0
@@ -252,11 +232,5 @@ popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
                             -- traceEventIO $ "EVT: Stolen! " <> P.show (P.length xs P.+ 1)
                             pushFronts mine xs
                             P.pure $ Just (x, qs)
-                          Just {} -> do
-                            -- traceEventIO $ "EVT: Failed to steal (reason: " <> reason st <> ")"
-                            sleep P.*> self (retry + 1)
-
-reason :: StealResult x -> String
-reason Found {} = "Found"
-reason Empty = "Empty"
-reason Race = "Race"
+                          Just Empty -> self (retry + 1)
+                          Just Race -> sleep P.*> self (retry + 1)

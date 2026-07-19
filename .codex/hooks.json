@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "^apply_patch$|^Edit$|^Write$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.agents/hooks/haskell-format-post-tool-use.sh\"",
+            "timeout": 60,
+            "statusMessage": "Formatting Haskell source"
+          },
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.agents/hooks/cabal-gild-post-tool-use.sh\"",
+            "timeout": 60,
+            "statusMessage": "Formatting cabal files"
+          }
+        ]
+      }
+    ]
+  }
+}

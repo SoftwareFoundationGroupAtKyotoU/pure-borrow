@@ -39,7 +39,6 @@ module Data.Vector.Mutable.Linear.Borrow (
   swap,
   unsafeSwap,
   copyAt,
-  copyAtWith,
   copyAtMut,
   unsafeInplace,
   modifyBoxedMVector,
@@ -329,13 +328,6 @@ swap v i j = DataFlow.do
 
 copyAt :: (Copyable a, α >= β) => Int -> Share α (Vector a) -> BO β (Ur a)
 copyAt i v = Control.do Ur !s <- move Control.<$> get i v; Control.pure $! Ur $! copy s
-
--- | CPS variant of 'copyAt' that never materialises its 'Ur' result.
-copyAtWith :: (Copyable a, α >= β) => Int -> Share α (Vector a) -> (a %1 -> BO β b) %1 -> BO β b
-{-# INLINE copyAtWith #-}
-copyAtWith i v k = Control.do
-  s <- get i v
-  k $! copy s
 
 copyAtMut :: forall a α β. (Copyable a, α >= β) => Int -> Mut α (Vector a) %1 -> BO β (Ur a, Mut α (Vector a))
 copyAtMut i v = upcast $ sharing @_ @α v $ copyAt i

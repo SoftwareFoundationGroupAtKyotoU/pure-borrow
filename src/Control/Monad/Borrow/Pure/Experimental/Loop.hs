@@ -27,23 +27,14 @@ trying to avoid sublifetimes. If a loop only reads a stable resource, share it
 once outside the loop, capture the resulting 'Share', and use 'subShare' inside
 the iteration. Keep the loop worker @INLINE@ or @INLINABLE@ so 'Ur'-boxed reads
 can be eliminated by the optimiser.
-
-The @*WithShares*@ combinators package that fast idiom directly: their
-'Shares' argument is captured once and shortened into each iteration's
-sublifetime, while the other borrow bundle remains linearly threaded.
 -}
 module Control.Monad.Borrow.Pure.Experimental.Loop (
   Borrows (..),
-  Shares,
   forReborrowing,
   forReborrowingOf_,
   forReborrowing_,
-  forReborrowingWithSharesOf_,
-  forReborrowingWithShares_,
   iforReborrowingOf_,
   iforReborrowing_,
-  iforReborrowingWithSharesOf_,
-  iforReborrowingWithShares_,
   Fold,
   Foldable (..),
   IndexedFold,
@@ -59,7 +50,6 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
   genericFoldMap,
   ifoldMapDefault,
   iterReborrowing_,
-  iterReborrowingWithShares_,
 ) where
 
 import Control.Functor.Linear qualified as Control
@@ -190,45 +180,6 @@ forReborrowing_ ::
 {-# INLINE forReborrowing_ #-}
 forReborrowing_ = forReborrowingOf_ foldMap
 
-{- | Iterate while threading mutable borrows and capturing shared context once.
-
-The shared bundle is shortened with 'subShare' semantics for each iteration,
-without opening and reclaiming it as part of the threaded state.
--}
-forReborrowingWithSharesOf_ ::
-  (Reborrowable bor) =>
-  Fold s a %1 ->
-  Shares α shared ->
-  bor α xs %1 ->
-  s %1 ->
-  ( forall β.
-    Shares (β /\ α) shared ->
-    bor (β /\ α) xs %1 ->
-    a %1 ->
-    BO (β /\ α) ()
-  ) ->
-  BO α (bor α xs)
-{-# INLINE forReborrowingWithSharesOf_ #-}
-forReborrowingWithSharesOf_ fld shared =
-  \bors s k ->
-    forReborrowingOf_ fld bors s \bors a ->
-      k (upcast shared) bors a
-
-forReborrowingWithShares_ ::
-  (Foldable t, Reborrowable bor) =>
-  Shares α shared ->
-  bor α xs %1 ->
-  t a %1 ->
-  ( forall β.
-    Shares (β /\ α) shared ->
-    bor (β /\ α) xs %1 ->
-    a %1 ->
-    BO (β /\ α) ()
-  ) ->
-  BO α (bor α xs)
-{-# INLINE forReborrowingWithShares_ #-}
-forReborrowingWithShares_ = forReborrowingWithSharesOf_ foldMap
-
 iforReborrowingOf_ ::
   (Reborrowable bor) =>
   IndexedFold i s a %1 ->
@@ -261,41 +212,6 @@ iforReborrowing_ ::
   BO α (bor α xs)
 {-# INLINE iforReborrowing_ #-}
 iforReborrowing_ = iforReborrowingOf_ ifoldMap
-
-iforReborrowingWithSharesOf_ ::
-  (Reborrowable bor) =>
-  IndexedFold i s a %1 ->
-  Shares α shared ->
-  bor α xs %1 ->
-  s %1 ->
-  ( forall β.
-    Shares (β /\ α) shared ->
-    bor (β /\ α) xs %1 ->
-    i %1 ->
-    a %1 ->
-    BO (β /\ α) ()
-  ) ->
-  BO α (bor α xs)
-{-# INLINE iforReborrowingWithSharesOf_ #-}
-iforReborrowingWithSharesOf_ fld shared bors s k =
-  iforReborrowingOf_ fld bors s \bors i a ->
-    k (upcast shared) bors i a
-
-iforReborrowingWithShares_ ::
-  (FoldableWithIndex i t, Reborrowable bor) =>
-  Shares α shared ->
-  bor α xs %1 ->
-  t a %1 ->
-  ( forall β.
-    Shares (β /\ α) shared ->
-    bor (β /\ α) xs %1 ->
-    i %1 ->
-    a %1 ->
-    BO (β /\ α) ()
-  ) ->
-  BO α (bor α xs)
-{-# INLINE iforReborrowingWithShares_ #-}
-iforReborrowingWithShares_ = iforReborrowingWithSharesOf_ ifoldMap
 
 toListOf :: Fold s a %1 -> s %1 -> [a]
 {-# INLINE toListOf #-}
@@ -427,20 +343,3 @@ iterReborrowing_ n bor k = go bor 0
           bor <- locally_ bor \bor -> k i bor
           go bor (i + 1)
       | otherwise = Control.pure bor
-
-iterReborrowingWithShares_ ::
-  forall bor α xs shared.
-  (Reborrowable bor) =>
-  Int ->
-  Shares α shared ->
-  bor α xs %1 ->
-  ( forall β.
-    Int ->
-    Shares (β /\ α) shared ->
-    bor (β /\ α) xs %1 ->
-    BO (β /\ α) ()
-  ) ->
-  BO α (bor α xs)
-{-# INLINE iterReborrowingWithShares_ #-}
-iterReborrowingWithShares_ n shared bor k =
-  iterReborrowing_ n bor \i bor -> k i (upcast shared) bor

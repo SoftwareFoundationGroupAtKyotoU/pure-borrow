@@ -80,7 +80,6 @@ common examples
 
 library
   import: defaults
-  ghc-options: -fexpose-all-unfoldings
   build-depends:
     array,
     atomic-primops,

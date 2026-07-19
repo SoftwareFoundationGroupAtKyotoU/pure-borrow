@@ -31,6 +31,14 @@ import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
+{- | Perform one read-modify-write traversal and return an auxiliary result.
+
+This is the canonical operation when a mutation must also report what it
+observed: for example, an insert can return the displaced old value and use it
+to detect a collision without a separate lookup. Prefer this shape over
+lookup-then-update in hot paths, since the latter silently traverses the
+underlying structure twice.
+-}
 update :: (α >= β) => (a %1 -> BO β (b, a)) %1 -> Mut α (Ref a) %1 -> BO β (b, Mut α (Ref a))
 {-# INLINE update #-}
 update f (UnsafeAlias mv) = DataFlow.do

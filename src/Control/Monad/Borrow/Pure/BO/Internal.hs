@@ -131,6 +131,11 @@ instance Data.Applicative (BO α) where
   (<*>) = \f g -> f Control.<*> g
   {-# INLINE (<*>) #-}
 
+  liftA2 f (BO g) (BO h) = BO \s -> case g s of
+    (# s', a #) -> case h s' of
+      (# s'', b #) -> (# s'', f a b #)
+  {-# INLINE liftA2 #-}
+
 instance Control.Applicative (BO α) where
   pure a = BO \s -> (# s, a #)
   {-# INLINE pure #-}
@@ -140,10 +145,19 @@ instance Control.Applicative (BO α) where
       (# s'', a #) -> (# s'', h a #)
   {-# INLINE (<*>) #-}
 
+  liftA2 f (BO g) (BO h) = BO \s -> case g s of
+    (# s', a #) -> case h s' of
+      (# s'', b #) -> (# s'', f a b #)
+  {-# INLINE liftA2 #-}
+
 instance Control.Monad (BO α) where
   BO fa >>= f = BO \s -> case fa s of
     (# s', a #) -> (f a) PL.& \(BO g) -> g s'
   {-# INLINE (>>=) #-}
+
+  BO fa >> BO fb = BO \s -> case fa s of
+    (# s', () #) -> fb s'
+  {-# INLINE (>>) #-}
 
 -- | Unsafely converts a 'BO' computation to linear 'L.IO'.
 unsafeBOToLinIO :: BO α a %1 -> L.IO a

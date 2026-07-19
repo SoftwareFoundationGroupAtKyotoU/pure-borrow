@@ -50,6 +50,7 @@ module Control.Monad.Borrow.Pure.BO (
   Mut,
   Share,
   Lend,
+  subShare,
   coerceShare,
   shareCoercion,
   borrowM,
@@ -339,6 +340,16 @@ asksLinearly k = asksLinearlyM $ Control.pure . k
 pureAfter :: ((End α) => a) %1 -> BO α (After α a)
 {-# INLINE pureAfter #-}
 pureAfter a = Control.pure (After a)
+
+{- | Shorten a shared borrow to a sublifetime.
+
+This is the inference-friendly, borrow-kind-fixed variant of 'upcast'. It is
+particularly useful when a shared borrow is captured outside a read-only loop
+and must be used inside the loop's shorter lifetime.
+-}
+subShare :: (α >= β) => Share α a -> Share β a
+{-# INLINE subShare #-}
+subShare shr = upcast shr
 
 coerceShare :: forall b α a. (Coercible a b) => Share α a %1 -> Share α b
 {-# INLINE coerceShare #-}

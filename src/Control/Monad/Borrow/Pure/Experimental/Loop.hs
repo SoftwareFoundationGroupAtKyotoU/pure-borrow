@@ -21,6 +21,12 @@
 {- |
 This module provides 'Foldable' class, and provides a way to loop through it while reborrowing existing 'Borrow's into sublifetime.
 The module also introduces 'Borrows', which is a heterogeneous list of 'Borrow's in the same lifetime.
+
+For performance-sensitive code, choose the loop's algorithmic structure before
+trying to avoid sublifetimes. If a loop only reads a stable resource, share it
+once outside the loop, capture the resulting 'Share', and use 'subShare' inside
+the iteration. Keep the loop worker @INLINE@ or @INLINABLE@ so 'Ur'-boxed reads
+can be eliminated by the optimiser.
 -}
 module Control.Monad.Borrow.Pure.Experimental.Loop (
   Borrows (..),

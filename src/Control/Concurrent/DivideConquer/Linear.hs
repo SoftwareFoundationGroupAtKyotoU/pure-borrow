@@ -282,6 +282,11 @@ instance Data.Applicative (Par α) where
   Par f <*> Par x = Par Control.do
     (f, x) <- parBO f x
     Control.pure $ f x
+  {-# INLINE (<*>) #-}
+  liftA2 f (Par x) (Par y) = Par Control.do
+    (x, y) <- parBO x y
+    Control.pure $ f x y
+  {-# INLINE liftA2 #-}
 
 instance Control.Applicative (Par α) where
   pure = Par . Control.pure
@@ -289,6 +294,11 @@ instance Control.Applicative (Par α) where
   Par f <*> Par x = Par Control.do
     (f, x) <- parBO f x
     Control.pure $ f x
+  {-# INLINE (<*>) #-}
+  liftA2 f (Par x) (Par y) = Par Control.do
+    (x, y) <- parBO x y
+    Control.pure $ f x y
+  {-# INLINE liftA2 #-}
 
 naiveDivideAndConquer ::
   forall c α t a.

@@ -53,6 +53,10 @@ module Control.Monad.Borrow.Pure (
 
   -- * Parallel computation
   parBO,
+  Par (..),
+  runPar,
+  mapConcurrentlyOf,
+  forConcurrentlyOf,
 
   -- * Borrowing
   -- $borrow
@@ -127,7 +131,10 @@ module Control.Monad.Borrow.Pure (
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.Clone
 import Control.Monad.Borrow.Pure.Copyable
+import Control.Optics.Linear (Traversal, traverseOf)
 import Data.Unrestricted.Linear (Consumable (..), Dupable (..), Movable (..), Ur (..), dup, dup3)
+import Prelude.Linear (($), (.))
+import Prelude.Linear qualified as PL
 
 {- $setup
 >>> :set -XBlockArguments -XLinearTypes -XNoImplicitPrelude -XImpredicativeTypes -XQualifiedDo
@@ -476,3 +483,17 @@ It is morally an instance method of the 'DistributesAlias' class, and you can de
 
 We also provide experimental splitting on record types in "Data.Record.Linear.Borrow.Experimental.PatternMatch" and "Data.Record.Linear.Borrow.Experimental.Split".
 -}
+
+mapConcurrentlyOf ::
+  Traversal s t a b ->
+  (a %1 -> BO α b) ->
+  s %1 ->
+  BO α t
+mapConcurrentlyOf l f = runPar . traverseOf l (Par . f)
+
+forConcurrentlyOf ::
+  Traversal s t a b ->
+  s %1 ->
+  (a %1 -> BO α b) ->
+  BO α t
+forConcurrentlyOf l = PL.flip (mapConcurrentlyOf l)

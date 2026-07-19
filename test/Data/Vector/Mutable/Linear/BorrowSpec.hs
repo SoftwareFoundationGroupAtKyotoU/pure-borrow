@@ -121,6 +121,21 @@ test_example1 =
   testCase "example1" do
     example1 @?= (12, [12, 1, 7])
 
+exampleCopyAtWith :: (Int, [Int])
+exampleCopyAtWith = linearly \lin -> DataFlow.do
+  (lin, lin') <- dup lin
+  vec <- VL.fromList [40, 41, 42] lin
+  runBO lin' Control.do
+    (mvec, lend) <- borrowM vec
+    let !(Ur svec) = share mvec
+    n <- VL.copyAtWith 2 svec (Control.pure . (+ 1))
+    pureAfter (n, unur $ VL.toList (reclaim lend))
+
+test_copyAtWith :: TestTree
+test_copyAtWith =
+  testCase "copyAtWith avoids an Ur result" do
+    exampleCopyAtWith @?= (43, [40, 41, 42])
+
 example2 :: (Int, [Int])
 example2 = linearly \lin -> DataFlow.do
   (lin, lin') <- dup lin

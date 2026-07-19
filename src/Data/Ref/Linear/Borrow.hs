@@ -17,6 +17,7 @@ module Data.Ref.Linear.Borrow (
   modify,
   swap,
   readShare,
+  readShareWith,
   copyRef,
 ) where
 
@@ -65,6 +66,12 @@ readShare :: (α >= β) => Share α (Ref a) %1 -> BO β (Ur (Share α a))
 {-# INLINE readShare #-}
 readShare = Unsafe.toLinear \(UnsafeAlias mv) ->
   Control.pure $ Ur $! UnsafeAlias NonLinear.$! NonLinear.fst $! Ref.unsafeReadRef mv
+
+-- | CPS variant of 'readShare' that never materialises its 'Ur' result.
+readShareWith :: (α >= β) => Share α (Ref a) %1 -> (Share α a -> BO β b) %1 -> BO β b
+{-# INLINE readShareWith #-}
+readShareWith = Unsafe.toLinear2 \(UnsafeAlias mv) k ->
+  k $! UnsafeAlias NonLinear.$! NonLinear.fst $! Ref.unsafeReadRef mv
 
 copyRef :: (Copyable a, α >= β) => Borrow k α (Ref a) %1 -> BO β a
 {-# INLINE copyRef #-}

@@ -22,12 +22,14 @@ The module provides 'Borrows', which is a heterogeneous list of 'Borrow's in the
 -}
 module Control.Monad.Borrow.Pure.Experimental.Borrows (
   Borrows (..),
+  Shares,
 ) where
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Affine
 import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
 import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.Pure.BO.Internal qualified as Internal
 import Control.Monad.Borrow.Pure.Experimental.Reborrowable
 import Data.Coerce.Directed.Unsafe
 import Data.Kind
@@ -41,10 +43,21 @@ data Borrows bk α xs where
 
 infixr 5 :-
 
+-- | An unrestricted bundle of shared borrows captured by a loop.
+type Shares α xs = Borrows 'Internal.Share α xs
+
 instance Affine (Borrows bk α xs) where
   aff = unsafeAff
 
 deriving via AsAffine (Borrows bk α xs) instance Consumable (Borrows bk α xs)
+
+instance Dupable (Shares α xs) where
+  dup2 = Unsafe.toLinear \bors -> (bors, bors)
+  {-# INLINE dup2 #-}
+
+instance Movable (Shares α xs) where
+  move = Unsafe.toLinear Ur
+  {-# INLINE move #-}
 
 instance (β <= α) => Borrows bk α xs <: Borrows bk' β xs where
   subtype = UnsafeSubtype

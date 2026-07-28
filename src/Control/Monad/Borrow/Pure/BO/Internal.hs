@@ -303,10 +303,10 @@ assocBorrowL ::
 assocBorrowL = coerceLin
 
 assocBorrowEq ::
-  forall bk α β γ a.
-  (Borrow (bk ((α /\ β) /\ γ)) a) :~: (Borrow (bk (α /\ (β /\ γ))) a)
+  forall (bk :: BorrowKind) α β γ a.
+  Borrow bk ((α /\ β) /\ γ) a :~: Borrow bk (α /\ (β /\ γ)) a
 {-# INLINE assocBorrowEq #-}
-assocBorrowEq = Unsafe.coerce $ Refl @(Borrow (bk ((α /\ β) /\ γ)) a)
+assocBorrowEq = Unsafe.coerce $ Refl @(Borrow bk ((α /\ β) /\ γ) a)
 
 assocLendR ::
   Lend ((α /\ β) /\ γ) a %1 ->

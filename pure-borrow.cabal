@@ -128,7 +128,10 @@ library
     Data.Ref.Linear.Borrow
     Data.Ref.Linear.Unlifted
     Data.Unique.Linear
+    Data.Vector.Mutable.Growable.Linear.Borrow
+    Data.Vector.Mutable.Growable.Linear.Borrow.Internal
     Data.Vector.Mutable.Linear.Borrow
+    Data.Vector.Mutable.Linear.Borrow.Internal
 
   -- cabal-gild: discover src --include src/**/Utils.hs --include src/**/Utils/**/*.hs
   other-modules:
@@ -147,12 +150,14 @@ test-suite pure-borrow-test
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: Main.hs
-  -- cabal-gild: discover test --exclude=test/Main.hs
+  -- cabal-gild: discover test --exclude=test/Main.hs --exclude=test/typing-fail/**
   other-modules:
     Control.Concurrent.DivideConquer.LinearSpec
     Control.Monad.Borrow.Pure.BOSpec
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
+    Data.Vector.Mutable.Growable.Linear.BorrowSpec
+    Data.Vector.Mutable.Growable.Linear.TypingCases
     Data.Vector.Mutable.Linear.BorrowSpec
 
   ghc-options:
@@ -198,7 +203,7 @@ test-suite pure-borrow-doctests
 library bench-suites
   import: defaults
   hs-source-dirs: internal-src/bench-suites
-  -- cabal-gild: discover internal-src/bench-suites --exclude internal-src/bench-suites/PureBorrow/Internal/Bench/CopyAt.hs
+  -- cabal-gild: discover internal-src/bench-suites --exclude internal-src/bench-suites/PureBorrow/Internal/Bench/CopyAt.hs --exclude internal-src/bench-suites/PureBorrow/Internal/Bench/Growable.hs
   exposed-modules:
     PureBorrow.Internal.Bench.Fft
     PureBorrow.Internal.Bench.QSort
@@ -220,6 +225,19 @@ library copy-at-bench-suites
   import: defaults
   hs-source-dirs: internal-src/bench-suites
   exposed-modules: PureBorrow.Internal.Bench.CopyAt
+  build-depends:
+    base >=4.7 && <5,
+    pure-borrow,
+    tasty-bench,
+    vector,
+
+  ghc-options: -O2
+  default-language: GHC2021
+
+library growable-bench-suites
+  import: defaults
+  hs-source-dirs: internal-src/bench-suites
+  exposed-modules: PureBorrow.Internal.Bench.Growable
   build-depends:
     base >=4.7 && <5,
     pure-borrow,
@@ -260,6 +278,23 @@ benchmark copy-at-bench
   build-depends:
     base >=4.7 && <5,
     pure-borrow:copy-at-bench-suites,
+
+  default-language: GHC2021
+
+benchmark growable-bench
+  import: defaults
+  type: exitcode-stdio-1.0
+  main-is: growable.hs
+  hs-source-dirs: bench
+  ghc-options:
+    -threaded
+    -rtsopts
+    -O2
+    -with-rtsopts=-N1
+
+  build-depends:
+    base >=4.7 && <5,
+    pure-borrow:growable-bench-suites,
 
   default-language: GHC2021
 

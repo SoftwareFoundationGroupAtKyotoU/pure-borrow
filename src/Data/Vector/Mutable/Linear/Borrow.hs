@@ -52,15 +52,9 @@ module Data.Vector.Mutable.Linear.Borrow (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad qualified as NonLinear
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe
-import Control.Monad.Borrow.Pure.Clone
 import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
-  LinearOnly (..),
-  LinearOnlyWitness (..),
- )
 import Control.Monad.Borrow.Pure.Utils
 import Control.Monad.ST.Strict (ST)
 import Control.Syntax.DataFlow qualified as DataFlow
@@ -71,10 +65,10 @@ import Data.Unrestricted.Linear qualified as Ur
 import Data.Vector qualified as V
 import Data.Vector.Mutable (RealWorld)
 import Data.Vector.Mutable qualified as MV
+import Data.Vector.Mutable.Linear.Borrow.Internal (Vector (..))
 import GHC.Exts qualified as GHC
 import GHC.IO (unsafePerformIO)
 import GHC.Stack (HasCallStack)
-import GHC.TypeError
 import Prelude.Linear hiding (head, last, splitAt)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
@@ -85,8 +79,6 @@ Contrary to those in @linear-base@, our 'Vector' owns every element @linearly@.
 This is because Pure Borrow can now treat nested mutability safely, so we must allow mutable values to be stored inside 'Vector'.
 This manifests in the type of 'set' - it returns the old value, which MUST NOT drop in favour of the new value.
 -}
-newtype Vector a = Vector {content :: MV.MVector RealWorld a}
-
 empty :: Linearly %1 -> Vector a
 {-# NOINLINE empty #-}
 empty =
@@ -288,29 +280,6 @@ splitAt :: Int %1 -> Borrow bk α (Vector a) %1 -> (Borrow bk α (Vector a), Bor
 splitAt = Unsafe.toLinear2 \i (UnsafeAlias (Vector v)) ->
   let (v1, v2) = MV.splitAt i v
    in (UnsafeAlias (Vector v1), UnsafeAlias (Vector v2))
-
-instance LinearOnly (Vector a) where
-  linearOnly = UnsafeLinearOnly
-  {-# INLINE linearOnly #-}
-
-instance
-  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copied!")) =>
-  Copyable (Vector a)
-  where
-  copy = unsatisfiable
-
-instance (Dupable a) => Clone (Vector a) where
-  clone = Unsafe.toLinear \(UnsafeAlias (Vector v)) -> unsafeSystemIOToBO do
-    let !n = MV.length v
-    !new <- MV.new n
-    let go !i = NonLinear.when (i < n) do
-          x <- MV.unsafeRead v i
-          let (!_, !x') = dup x
-          MV.unsafeWrite new i x'
-          go (i + 1)
-    go 0
-    NonLinear.pure (Vector new)
-  {-# INLINE clone #-}
 
 unsafeSwap :: (α >= β) => Mut α (Vector a) %1 -> Int -> Int -> BO β (Mut α (Vector a))
 unsafeSwap = Unsafe.toLinear3 \(UnsafeAlias v) i j -> Control.do

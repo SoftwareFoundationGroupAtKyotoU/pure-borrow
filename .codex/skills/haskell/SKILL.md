@@ -23,6 +23,9 @@ Codex skills with the agent-agnostic repository policy in `AGENTS.md`:
 - Format changed `.hs`, `.lhs`, and `.hsig` files with the `haskell-format` skill before compiling.
 - Format changed `.cabal`, `cabal.project`, `cabal.project.local`, and `cabal.project.freeze` files with the `haskell-cabal-gild` skill before compiling.
 - Prefer `(<>)` over `(++)` for all concatenation, including lists and strings.
+- Quantify lifetime type parameters as `α`, `β`, `γ`, with primes or numeric
+  suffixes as needed; do not use prose lifetime names such as `lifetime`,
+  `scope`, or `inner`.
 - There is no `package.yaml`/hpack in this repository; edit `.cabal` files directly.
 
 ## Workflow

@@ -34,6 +34,7 @@ module Control.Monad.Borrow.Pure.Experimental.Borrows (
 ) where
 
 import Control.Functor.Linear qualified as Control
+import Control.Monad qualified as NonLinear
 import Control.Monad.Borrow.Pure.Affine
 import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
 import Control.Monad.Borrow.Pure.BO
@@ -74,6 +75,14 @@ deriving via
   instance
     (k ~ 'Borrow bk) =>
     Consumable (Aliases k xs)
+
+instance (k ~ 'Borrow ('Share α)) => Dupable (Aliases k xs) where
+  dup2 = Unsafe.toLinear $ NonLinear.join (,)
+  {-# INLINE dup2 #-}
+
+instance (k ~ 'Borrow ('Share α)) => Movable (Aliases k xs) where
+  move = Unsafe.toLinear Ur
+  {-# INLINE move #-}
 
 instance (α >= β, xs <: ys, ys <: xs) => Muts α xs <: Muts β ys where
   subtype = UnsafeSubtype

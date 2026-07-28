@@ -326,13 +326,16 @@ assocLendEq = Unsafe.coerce $ Refl @(Lend (α /\ β /\ γ) a)
 instance (bk ~ 'Mut) => LinearOnly (Borrow bk α a) where
   linearOnly = UnsafeLinearOnly
 
-deriving via AsAffine (Borrow bk α a) instance Consumable (Borrow bk α a)
+deriving via
+  AsAffine (Alias ('Borrow bk) a)
+  instance
+    Consumable (Alias ('Borrow bk) a)
 
 -- | Shared borrower, which is unrestricted but usually can only read from the data.
 type Share :: Lifetime -> Type -> Type
 type Share α = Borrow 'Share α
 
-instance Affine (Borrow bk α a) where
+instance Affine (Alias ('Borrow bk) a) where
   aff = UnsafeAff
   {-# INLINE aff #-}
 

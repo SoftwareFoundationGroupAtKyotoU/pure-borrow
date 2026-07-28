@@ -13,6 +13,7 @@
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeAbstractions #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
@@ -39,6 +40,7 @@ import Control.Monad.Borrow.Pure.Affine
 import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Internal
+import Control.Monad.Borrow.Pure.Experimental.Reborrowable
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce.Directed.Unsafe
 import Data.Kind
@@ -69,6 +71,7 @@ type Borrows bk α = Aliases ('Borrow (bk α))
 
 instance Affine (Aliases α xs) where
   aff = unsafeAff
+  {-# INLINE aff #-}
 
 deriving via
   AsAffine (Aliases k xs)
@@ -92,6 +95,12 @@ instance (α >= β, xs <: ys) => Shares α xs <: Shares β ys where
 
 instance (α <= β, a <: b) => Lends α a <: Lends β b where
   subtype = UnsafeSubtype
+
+instance Reborrowable (Muts α) where
+  type LifetimeOf (Muts α) = α
+  type WithLifetime (Muts α) β = Muts β
+  locally' = reborrowings'
+  {-# INLINE locally' #-}
 
 -- | A plural form of 'reborrow', which reborrows multiple borrows in the given 'Muts' at once.
 reborrows :: forall β α a. (α >= β) => Muts α a %1 -> (Muts β a, Lend β (Muts α a))

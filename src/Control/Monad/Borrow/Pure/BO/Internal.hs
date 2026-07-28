@@ -16,6 +16,7 @@
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnliftedNewtypes #-}
@@ -270,20 +271,20 @@ type role Alias nominal representational
 -- | Alias kind.
 data AliasKind
   = -- | Borrower.
-    Borrow BorrowKind
+    Borrow BorrowKind Lifetime
   | -- | Lender.
     Lend Lifetime
 
 -- | Borrower kind.
 data BorrowKind
   = -- | Mutable.
-    Mut Lifetime
+    Mut
   | -- | Shared.
-    Share Lifetime
+    Share
 
 -- | Borrower of kind @bk@ that is active during the lifetime @α@.
-type Borrow :: (Lifetime -> BorrowKind) -> Lifetime -> Type -> Type
-type Borrow bk α = Alias ('Borrow (bk α))
+type Borrow :: BorrowKind -> Lifetime -> Type -> Type
+type Borrow bk α = Alias ('Borrow bk α)
 
 -- | Mutable borrower, which is affine and can update the data.
 type Mut :: Lifetime -> Type -> Type
@@ -303,9 +304,9 @@ assocBorrowL = coerceLin
 
 assocBorrowEq ::
   forall bk α β γ a.
-  (Borrow bk ((α /\ β) /\ γ) a) :~: (Borrow bk (α /\ (β /\ γ)) a)
+  (Borrow (bk ((α /\ β) /\ γ)) a) :~: (Borrow (bk (α /\ (β /\ γ))) a)
 {-# INLINE assocBorrowEq #-}
-assocBorrowEq = Unsafe.coerce $ Refl @(Borrow bk (α /\ β /\ γ) a)
+assocBorrowEq = Unsafe.coerce $ Refl @(Borrow (bk ((α /\ β) /\ γ)) a)
 
 assocLendR ::
   Lend ((α /\ β) /\ γ) a %1 ->
@@ -327,23 +328,23 @@ instance (bk ~ 'Mut) => LinearOnly (Borrow bk α a) where
   linearOnly = UnsafeLinearOnly
 
 deriving via
-  AsAffine (Alias ('Borrow bk) a)
+  AsAffine (Alias bor a)
   instance
-    Consumable (Alias ('Borrow bk) a)
+    (bor ~ ('Borrow bk α)) => Consumable (Alias bor a)
 
 -- | Shared borrower, which is unrestricted but usually can only read from the data.
 type Share :: Lifetime -> Type -> Type
 type Share α = Borrow 'Share α
 
-instance Affine (Alias ('Borrow bk) a) where
+instance (ak ~ 'Borrow bk α) => Affine (Alias ak a) where
   aff = UnsafeAff
   {-# INLINE aff #-}
 
-instance (k ~ 'Borrow ('Share α)) => Dupable (Alias k a) where
+instance (k ~ 'Borrow 'Share α) => Dupable (Alias k a) where
   dup2 = Unsafe.toLinear $ NonLinear.join (,)
   {-# INLINE dup2 #-}
 
-instance (k ~ 'Borrow ('Share α)) => Movable (Alias k a) where
+instance (k ~ 'Borrow 'Share α) => Movable (Alias k a) where
   move = Unsafe.toLinear Ur
   {-# INLINE move #-}
 

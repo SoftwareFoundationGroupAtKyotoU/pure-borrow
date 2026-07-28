@@ -60,14 +60,14 @@ infixr 5 :-
 type Lends :: Lifetime -> [Type] -> Type
 type Lends α = Aliases ('Lend α)
 
+type Borrows :: BorrowKind -> Lifetime -> [Type] -> Type
+type Borrows bk α = Aliases ('Borrow bk α)
+
 type Muts :: Lifetime -> [Type] -> Type
-type Muts α = Aliases ('Borrow ('Mut α))
+type Muts α = Borrows 'Mut α
 
 type Shares :: Lifetime -> [Type] -> Type
-type Shares α = Aliases ('Borrow ('Share α))
-
-type Borrows :: (Lifetime -> BorrowKind) -> Lifetime -> [Type] -> Type
-type Borrows bk α = Aliases ('Borrow (bk α))
+type Shares α = Borrows 'Share α
 
 instance Affine (Aliases α xs) where
   aff = unsafeAff
@@ -76,14 +76,14 @@ instance Affine (Aliases α xs) where
 deriving via
   AsAffine (Aliases k xs)
   instance
-    (k ~ 'Borrow bk) =>
+    (k ~ 'Borrow bk α) =>
     Consumable (Aliases k xs)
 
-instance (k ~ 'Borrow ('Share α)) => Dupable (Aliases k xs) where
+instance (k ~ 'Borrow 'Share α) => Dupable (Aliases k xs) where
   dup2 = Unsafe.toLinear $ NonLinear.join (,)
   {-# INLINE dup2 #-}
 
-instance (k ~ 'Borrow ('Share α)) => Movable (Aliases k xs) where
+instance (k ~ 'Borrow 'Share α) => Movable (Aliases k xs) where
   move = Unsafe.toLinear Ur
   {-# INLINE move #-}
 

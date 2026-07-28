@@ -1,6 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-} 
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ImpredicativeTypes #-}
@@ -54,7 +54,6 @@ import Control.Monad.Borrow.Pure.BO.Unsafe
 import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Experimental.Borrows
 import Control.Monad.Borrow.Pure.Experimental.Loop (iterReborrowing_)
-import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Bifunctor.Linear qualified as BiL
 import Data.Bits (bit, popCount, shiftR)
 import Data.Complex (Complex (..))
@@ -75,7 +74,6 @@ import Prelude.Linear hiding (foldMap)
 import Prelude.Linear.Generically (Generically, Generically1)
 import System.Random (RandomGen)
 import Unsafe.Linear qualified as Unsafe
-import Prelude qualified as NonLinear
 import Prelude qualified as P
 
 data DivideConquer c α t a r = DivideConquer

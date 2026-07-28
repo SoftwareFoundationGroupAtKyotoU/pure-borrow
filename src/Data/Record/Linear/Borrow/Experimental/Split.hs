@@ -45,6 +45,7 @@ module Data.Record.Linear.Borrow.Experimental.Split (
   (!#),
 ) where
 
+import Control.Monad.Borrow.Pure.BO (Lifetime)
 import Control.Monad.Borrow.Pure.BO.Internal
 import Data.Kind (Constraint)
 import GHC.Base (Multiplicity (..), TYPE, Type)
@@ -94,10 +95,10 @@ In above example, we annotate type of the divided field borows for clarity, but 
 For more complex, partial splitting of a record, see [Splitting a record borrow into pieces](#split) for more detail.
 -}
 (.#) ::
-  forall field r a bk.
-  Alias ('Borrow bk) r %1 ->
+  forall field r a bk α.
+  Borrow bk α r %1 ->
   RecordLabel r field a ->
-  Alias ('Borrow bk) a
+  Borrow bk α a
 UnsafeAlias !r .# RecLab = UnsafeAlias $! Unsafe.toLinear (getField @field @r @a) r
 
 infixl 9 .#
@@ -180,10 +181,10 @@ That is, if the field @f@ is removed by some combinators like '(-#)', then the r
 
 At any time, you can 'consume' 'SplitRecord' when the remaining fields are no longer of interest.
 -}
-type SplitRecord :: Type -> BorrowKind -> [(Symbol, (Multiplicity, Type))] -> Type
-newtype SplitRecord a bk s = SplitRecord (Alias ('Borrow bk) a)
+type SplitRecord :: Type -> BorrowKind -> Lifetime -> [(Symbol, (Multiplicity, Type))] -> Type
+newtype SplitRecord a bk α s = SplitRecord (Borrow bk α a)
 
-instance Consumable (SplitRecord a bk fs) where
+instance Consumable (SplitRecord a bk α fs) where
   consume (SplitRecord a) = consume a
   {-# INLINE consume #-}
 
@@ -256,7 +257,7 @@ instance (GSplittableRecord f, GSplittableRecord g) => GSplittableRecord (f GL.:
   type GFields (f GL.:*: g) = GFields f ++ GFields g
 
 -- | Start subdividing a borrow of a record.
-splitRecord :: (SplittableRecord a) => Borrow bk α a %m -> SplitRecord a (bk α) (Fields a)
+splitRecord :: (SplittableRecord a) => Borrow bk α a %m -> SplitRecord a bk α (Fields a)
 splitRecord !bor = SplitRecord bor
 {-# INLINE splitRecord #-}
 
@@ -268,9 +269,9 @@ Mnemonic: '(-#)' /subtracts/ the field from the record.
 -}
 (-#) ::
   (SplittableRecord a, Lookup field fs ~ 'Just '( 'One, x)) =>
-  SplitRecord a (bk α) fs %m ->
+  SplitRecord a bk α fs %m ->
   RecordLabel a field x ->
-  (Borrow bk α x, SplitRecord a (bk α) (Delete field fs))
+  (Borrow bk α x, SplitRecord a bk α (Delete field fs))
 (-#) = Unsafe.toLinear \(SplitRecord !bor) lab ->
   let !fieldBor = bor .# lab
       !restBor = SplitRecord bor
@@ -285,7 +286,7 @@ Mnemonic: '(!#)' /destructs/ a borrow of a record to that of a single field.
 -}
 (!#) ::
   (SplittableRecord a, Lookup field fs ~ 'Just '( 'One, x)) =>
-  SplitRecord a (bk α) fs %m ->
+  SplitRecord a bk α fs %m ->
   RecordLabel a field x ->
   Borrow bk α x
 (!#) = Unsafe.toLinear \(SplitRecord !bor) lab ->
@@ -302,9 +303,9 @@ Mnenonic: '(+#)' you can use nonlinear field /more/ (@+@) than once.
 -}
 (+#) ::
   (SplittableRecord a, Lookup field fs ~ 'Just '( 'Many, Ur x)) =>
-  SplitRecord a bk fs %m ->
+  SplitRecord a bk α fs %m ->
   RecordLabel a field (Ur x) ->
-  (Ur x, SplitRecord a bk fs)
+  (Ur x, SplitRecord a bk α fs)
 (+#) = Unsafe.toLinear \recd@(SplitRecord !bor) lab ->
   let UnsafeAlias !field = bor .# lab
    in (field, recd)

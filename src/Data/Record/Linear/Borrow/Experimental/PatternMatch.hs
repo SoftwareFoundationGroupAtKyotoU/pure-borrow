@@ -192,8 +192,8 @@ A class for *eliminators* of record, which can split a borrow of the whole recor
 Typically, an eliminator is a tuple of 'RecordLabel's or heterogeneous 'RecordLabels'.
 -}
 class RecordEliminator elim a where
-  type SplitBorrow elim (bk :: BorrowKind) a :: Type
-  splitRecord :: elim %1 -> Alias ('Borrow bk) a %1 -> SplitBorrow elim bk a
+  type SplitBorrow elim (bk :: BorrowKind) (α :: Lifetime) a :: Type
+  splitRecord :: elim %1 -> Borrow bk α a %1 -> SplitBorrow elim bk α a
 
 {- |
 Divides a borrow of a record into multiple FieldBorrows of its fields, according to the given @elim@inator.
@@ -218,7 +218,7 @@ Typically, @elim@ is one of the following:
       'FieldBorrows' '[ '(f1, v1), '(f2, v2), '(f3, v3) ]
     @
 -}
-(.@) :: (RecordEliminator elim a) => Alias ('Borrow bk) a %1 -> elim %1 -> SplitBorrow elim bk a
+(.@) :: (RecordEliminator elim a) => Borrow bk α a %1 -> elim %1 -> SplitBorrow elim bk α a
 (.@) = flip splitRecord
 {-# INLINE (.@) #-}
 
@@ -236,7 +236,7 @@ See [Splitting a record borrow into pieces](#split) for more details.
 infixl 4 .@
 
 instance (a ~ r) => RecordEliminator (RecordLabel' r '(field, val)) a where
-  type SplitBorrow (RecordLabel' r '(field, val)) bk a = Alias ('Borrow bk) val
+  type SplitBorrow (RecordLabel' r '(field, val)) bk α a = Borrow bk α val
   splitRecord RecLab = unsafeMapAlias (Unsafe.toLinear $ getField @field)
   {-# INLINE splitRecord #-}
 
@@ -257,8 +257,8 @@ instance
   RecordEliminator (l, r) a
   where
   type
-    SplitBorrow (l, r) bk a =
-      (Alias ('Borrow bk) (ValueOf l), Alias ('Borrow bk) (ValueOf r))
+    SplitBorrow (l, r) bk α a =
+      (Borrow bk α (ValueOf l), Borrow bk α (ValueOf r))
   splitRecord (RecLab, RecLab) = Unsafe.toLinear \r ->
     ( unsafeMapAlias (Unsafe.toLinear (getField @f1)) r
     , unsafeMapAlias (Unsafe.toLinear (getField @f2)) r
@@ -275,8 +275,8 @@ instance
   RecordEliminator (l1, l2, l3) a
   where
   type
-    SplitBorrow (l1, l2, l3) bk a =
-      (Alias ('Borrow bk) (ValueOf l1), Alias ('Borrow bk) (ValueOf l2), Alias ('Borrow bk) (ValueOf l3))
+    SplitBorrow (l1, l2, l3) bk α a =
+      (Borrow bk α (ValueOf l1), Borrow bk α (ValueOf l2), Borrow bk α (ValueOf l3))
   splitRecord (RecLab, RecLab, RecLab) = Unsafe.toLinear \r ->
     ( unsafeMapAlias (Unsafe.toLinear (getField @f1)) r
     , unsafeMapAlias (Unsafe.toLinear (getField @f2)) r
@@ -298,8 +298,12 @@ instance
   RecordEliminator (l1, l2, l3, l4) a
   where
   type
-    SplitBorrow (l1, l2, l3, l4) bk a =
-      (Alias ('Borrow bk) (ValueOf l1), Alias ('Borrow bk) (ValueOf l2), Alias ('Borrow bk) (ValueOf l3), Alias ('Borrow bk) (ValueOf l4))
+    SplitBorrow (l1, l2, l3, l4) bk α a =
+      ( Borrow bk α (ValueOf l1)
+      , Borrow bk α (ValueOf l2)
+      , Borrow bk α (ValueOf l3)
+      , Borrow bk α (ValueOf l4)
+      )
   splitRecord (RecLab, RecLab, RecLab, RecLab) = Unsafe.toLinear \r ->
     ( unsafeMapAlias (Unsafe.toLinear (getField @f1)) r
     , unsafeMapAlias (Unsafe.toLinear (getField @f2)) r
@@ -327,12 +331,12 @@ instance
   RecordEliminator (l1, l2, l3, l4, l5) a
   where
   type
-    SplitBorrow (l1, l2, l3, l4, l5) bk a =
-      ( Alias ('Borrow bk) (ValueOf l1)
-      , Alias ('Borrow bk) (ValueOf l2)
-      , Alias ('Borrow bk) (ValueOf l3)
-      , Alias ('Borrow bk) (ValueOf l4)
-      , Alias ('Borrow bk) (ValueOf l5)
+    SplitBorrow (l1, l2, l3, l4, l5) bk α a =
+      ( Borrow bk α (ValueOf l1)
+      , Borrow bk α (ValueOf l2)
+      , Borrow bk α (ValueOf l3)
+      , Borrow bk α (ValueOf l4)
+      , Borrow bk α (ValueOf l5)
       )
   splitRecord (RecLab, RecLab, RecLab, RecLab, RecLab) = Unsafe.toLinear \r ->
     ( unsafeMapAlias (Unsafe.toLinear (getField @f1)) r
@@ -343,12 +347,12 @@ instance
     )
 
 type data Fun
-  = BorrowOf BorrowKind
+  = BorrowOf BorrowKind Lifetime
   | RecordLabelOf Type
 
 type Apply :: Fun -> (Symbol, Type) -> Type
 type family Apply fun a where
-  Apply (BorrowOf bk) kv = Alias ('Borrow bk) (Snd kv)
+  Apply (BorrowOf bk α) kv = Borrow bk α (Snd kv)
   Apply (RecordLabelOf r) kv = RecordLabel' r '(Fst kv, Snd kv)
 
 type LabelsOrBorrows :: Fun -> [(Symbol, Type)] -> Type
@@ -379,7 +383,7 @@ mutRec = ...
 buzMut ':#-' fooMut ':#-' 'RNil' = mutRec '.@' #buz ':#-' #foo ':#-' 'RNil'
 @
 -}
-type FieldBorrows bk α fs = LabelsOrBorrows (BorrowOf bk) fs
+type FieldBorrows bk α fs = LabelsOrBorrows (BorrowOf bk α) fs
 
 instance Affine (LabelsOrBorrows h xs) where
   aff = unsafeAff
@@ -396,7 +400,7 @@ instance
   (IsUnique fvs, label ~ RecordLabelOf a) =>
   RecordEliminator (LabelsOrBorrows label fvs) a
   where
-  type SplitBorrow (LabelsOrBorrows label fvs) bk a = LabelsOrBorrows (BorrowOf bk) fvs
+  type SplitBorrow (LabelsOrBorrows label fvs) bk α a = LabelsOrBorrows (BorrowOf bk α) fvs
   splitRecord = Unsafe.toLinear \case
     RNil -> (`lseq` RNil)
     lab :#- xs -> Unsafe.toLinear \r ->

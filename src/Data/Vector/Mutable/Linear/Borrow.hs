@@ -330,7 +330,17 @@ copyAt :: (Copyable a, α >= β) => Int -> Share α (Vector a) -> BO β (Ur a)
 copyAt i v = Control.do Ur !s <- move Control.<$> get i v; Control.pure $! Ur $! copy s
 
 copyAtMut :: forall a α β. (Copyable a, α >= β) => Int -> Mut α (Vector a) %1 -> BO β (Ur a, Mut α (Vector a))
-copyAtMut i v = upcast $ sharing @_ @α v $ copyAt i
+{-# INLINE copyAtMut #-}
+copyAtMut = Unsafe.toLinear2 \i mut@(UnsafeAlias (Vector v)) ->
+  let !len = MV.length v
+   in if i < 0 || i >= len
+        then error ("get: index " <> show i <> " out of bound: " <> show len) mut
+        else unsafeSystemIOToBO do
+          !a <- MV.unsafeRead v i
+          -- The raw read temporarily aliases the element retained by the
+          -- vector. 'copy' consumes that alias and returns only an authorized
+          -- unrestricted copy; the mutable vector borrow stays exclusive.
+          NonLinear.pure (Ur $! copy (UnsafeAlias a), mut)
 
 -- | Applies an in-place mutation on 'V.MVector' from @vector@ package.
 unsafeInplace ::

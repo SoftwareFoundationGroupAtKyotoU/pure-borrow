@@ -11,6 +11,7 @@ module Data.Vector.Mutable.Linear.BorrowSpec (
   module Data.Vector.Mutable.Linear.BorrowSpec,
 ) where
 
+import Control.Exception qualified as Exception
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.Copyable
@@ -28,6 +29,38 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Falsify (testProperty)
 import Test.Tasty.HUnit
 import Prelude qualified as NonLinear
+
+copyAtMutValue :: Int -> [Int] -> (Int, [Int])
+copyAtMutValue i xs = linearly \lin -> DataFlow.do
+  (lin, lin') <- dup lin
+  vec <- VL.fromList xs lin
+  runBO lin' Control.do
+    (mvec, lend) <- borrowM vec
+    (Ur x, mvec) <- VL.copyAtMut i mvec
+    let !() = consume mvec
+    pureAfter (x, unur $ VL.toList (reclaim lend))
+
+assertCopyAtMutBoundsError :: Int -> Assertion
+assertCopyAtMutBoundsError i = do
+  result <- Exception.try @Exception.ErrorCall $ Exception.evaluate $ copyAtMutValue i [10, 20, 30]
+  case result of
+    Left exception ->
+      assertBool
+        ("unexpected error: " <> Exception.displayException exception)
+        (("get: index " <> show i <> " out of bound: 3") `List.isPrefixOf` Exception.displayException exception)
+    Right value -> assertFailure ("expected bounds error, got " <> show value)
+
+test_copyAtMut :: TestTree
+test_copyAtMut =
+  testGroup
+    "copyAtMut"
+    [ testCase "copies the selected element and preserves the vector" do
+        copyAtMutValue 1 [10, 20, 30] @?= (20, [10, 20, 30])
+    , testCase "rejects a negative index" do
+        assertCopyAtMutBoundsError (-1)
+    , testCase "rejects an index at the upper bound" do
+        assertCopyAtMutBoundsError 3
+    ]
 
 qsortVec :: (Ord a, Copyable a) => V.Vector a -> V.Vector a
 qsortVec v = unur $ linearly \lin -> DataFlow.do

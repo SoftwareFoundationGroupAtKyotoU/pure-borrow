@@ -10,6 +10,7 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeAbstractions #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -18,38 +19,98 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 {- |
-The module provides 'Borrows', which is a heterogeneous list of 'Borrow's in the same lifetime.
+The module provides 'Aliases', which is a heterogeneous list of 'Alias'es in the same lifetime.
 -}
 module Control.Monad.Borrow.Pure.Experimental.Borrows (
-  Borrows (..),
+  Aliases (..),
+  Muts,
+  Shares,
+  Borrows,
+  Lends,
+  reborrows,
+  reborrowings',
+  reborrowings,
+  reborrowings_,
 ) where
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Affine
 import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
 import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.Experimental.Reborrowable
+import Control.Monad.Borrow.Pure.BO.Internal
+import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce.Directed.Unsafe
 import Data.Kind
 import Prelude.Linear hiding (foldMap)
+import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Linear qualified as Unsafe
 
-type Borrows :: BorrowKind -> Lifetime -> [Type] -> Type
-data Borrows bk α xs where
-  BNil :: Borrows bk α '[]
-  (:-) :: !(Borrow bk α x) %1 -> !(Borrows bk α xs) %1 -> Borrows bk α (x ': xs)
+type Aliases :: AliasKind -> [Type] -> Type
+data Aliases k xs where
+  BNil :: Aliases k '[]
+  (:-) :: !(Alias k x) %1 -> !(Aliases k xs) %1 -> Aliases k (x ': xs)
+
+type role Aliases nominal nominal
 
 infixr 5 :-
 
-instance Affine (Borrows bk α xs) where
+type Lends :: Lifetime -> [Type] -> Type
+type Lends α = Aliases ('Lend α)
+
+type Muts :: Lifetime -> [Type] -> Type
+type Muts α = Aliases ('Borrow ('Mut α))
+
+type Shares :: Lifetime -> [Type] -> Type
+type Shares α = Aliases ('Borrow ('Share α))
+
+type Borrows :: (Lifetime -> BorrowKind) -> Lifetime -> [Type] -> Type
+type Borrows bk α = Aliases ('Borrow (bk α))
+
+instance Affine (Aliases α xs) where
   aff = unsafeAff
 
-deriving via AsAffine (Borrows bk α xs) instance Consumable (Borrows bk α xs)
+deriving via
+  AsAffine (Aliases k xs)
+  instance
+    (k ~ 'Borrow bk) =>
+    Consumable (Aliases k xs)
 
-instance (β <= α) => Borrows bk α xs <: Borrows bk' β xs where
+instance (α >= β, xs <: ys, ys <: xs) => Muts α xs <: Muts β ys where
   subtype = UnsafeSubtype
 
-instance Reborrowable (Borrows bk) where
-  locally' = Unsafe.toLinear \bors k -> Control.do
-    (,bors) Control.<$> srunBO (k $ upcast bors)
-  {-# INLINE locally' #-}
+instance (α >= β, xs <: ys) => Shares α xs <: Shares β ys where
+  subtype = UnsafeSubtype
+
+instance (α <= β, a <: b) => Lends α a <: Lends β b where
+  subtype = UnsafeSubtype
+
+-- | A plural form of 'reborrow', which reborrows multiple borrows in the given 'Muts' at once.
+reborrows :: forall β α a. (α >= β) => Muts α a %1 -> (Muts β a, Lend β (Muts α a))
+reborrows = Unsafe.toLinear \v -> (unsafeCoerce v, unsafeCoerce v)
+
+-- | A plural form of 'reborrowing''.
+reborrowings' ::
+  Muts α a %1 ->
+  (forall β. Muts (β /\ α) a %1 -> BO (β /\ α') (After β r)) %1 ->
+  BO α' (r, Muts α a)
+{-# INLINE reborrowings' #-}
+reborrowings' v k = srunBO DataFlow.do
+  (v, lend) <- reborrows v
+  Control.do
+    v <- k v
+    Control.pure $ (,) Control.<$> v Control.<*> upcast (reclaim' lend)
+
+reborrowings ::
+  Muts α a %1 ->
+  (forall β. Muts (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
+  BO α' (r, Muts α a)
+{-# INLINE reborrowings #-}
+reborrowings mutα k = reborrowings' mutα (\mut -> Control.pure Control.<$> k mut)
+
+reborrowings_ ::
+  (Consumable r) =>
+  Muts α a %1 ->
+  (forall β. Muts (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
+  BO α' (Muts α a)
+{-# INLINE reborrowings_ #-}
+reborrowings_ mutα k = reborrowings mutα (Control.fmap consume . k) Control.<&> \((), a) -> a

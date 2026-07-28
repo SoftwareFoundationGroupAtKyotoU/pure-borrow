@@ -200,3 +200,24 @@ test_example3 :: TestTree
 test_example3 =
   testCase "example3" do
     example3 @?= (12, [12, 1, 7])
+
+discardingScopes :: (Int, [Int])
+discardingScopes = linearly \lin -> DataFlow.do
+  (lin, lin') <- dup lin
+  vec <- VL.fromList [10, 20, 30] lin
+  runBO lin' Control.do
+    (mvec, lend) <- borrowM vec
+    mvec <- reborrowing_ mvec \mvec -> Control.do
+      mvec <- sharing_ mvec \shared ->
+        consume Control.<$> parBO (VL.copyAt 0 shared) (VL.copyAt 1 shared)
+      mvec <- VL.modify 0 (+ 1) mvec
+      Control.pure $ consume mvec
+    mvec <- VL.modify 2 (+ 2) mvec
+    let !(Ur svec) = share mvec
+    Ur n <- VL.copyAt 0 svec
+    pureAfter $ (n, unur $ VL.toList (reclaim lend))
+
+test_discardingScopes :: TestTree
+test_discardingScopes =
+  testCase "result-discarding scopes restore the outer mutable borrow" do
+    discardingScopes @?= (11, [11, 20, 32])

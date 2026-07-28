@@ -170,7 +170,7 @@ sharing_ ::
   (forall β. Share (β /\ α) a -> BO (β /\ α') r) %1 ->
   BO α' (Mut α a)
 {-# INLINE sharing_ #-}
-sharing_ v k = uncurry lseq Control.<$> sharing v k
+sharing_ = unsafeBorrowScope_
 
 -- | Flipped infix version of 'sharing_', smoewhat analgous to '(Control.<$>)' and @(<%=)@ in @lens@ package.
 (<$=) ::
@@ -269,7 +269,7 @@ reborrowing_ ::
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
   BO α' (Mut α a)
 {-# INLINE reborrowing_ #-}
-reborrowing_ mutα k = reborrowing mutα (Control.fmap consume . k) Control.<&> \((), a) -> a
+reborrowing_ = unsafeBorrowScope_
 
 -- | Flipped infix version of 'reborrowing_', smoewhat analgous to '(Control.<$>)' and @(<%=)@ in @lens@ package.
 (<%=) ::

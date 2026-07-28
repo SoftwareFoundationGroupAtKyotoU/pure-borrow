@@ -198,7 +198,7 @@ test-suite pure-borrow-doctests
 library bench-suites
   import: defaults
   hs-source-dirs: internal-src/bench-suites
-  -- cabal-gild: discover internal-src/bench-suites
+  -- cabal-gild: discover internal-src/bench-suites --exclude internal-src/bench-suites/PureBorrow/Internal/Bench/CopyAt.hs
   exposed-modules:
     PureBorrow.Internal.Bench.Fft
     PureBorrow.Internal.Bench.QSort
@@ -216,6 +216,19 @@ library bench-suites
 
   default-language: GHC2021
 
+library copy-at-bench-suites
+  import: defaults
+  hs-source-dirs: internal-src/bench-suites
+  exposed-modules: PureBorrow.Internal.Bench.CopyAt
+  build-depends:
+    base >=4.7 && <5,
+    pure-borrow,
+    tasty-bench,
+    vector,
+
+  ghc-options: -O2
+  default-language: GHC2021
+
 benchmark qsort-bench
   import: defaults
   type: exitcode-stdio-1.0
@@ -230,6 +243,23 @@ benchmark qsort-bench
   build-depends:
     base >=4.7 && <5,
     pure-borrow:bench-suites,
+
+  default-language: GHC2021
+
+benchmark copy-at-bench
+  import: defaults
+  type: exitcode-stdio-1.0
+  main-is: copy-at.hs
+  hs-source-dirs: bench
+  ghc-options:
+    -threaded
+    -rtsopts
+    -O2
+    -with-rtsopts=-N1
+
+  build-depends:
+    base >=4.7 && <5,
+    pure-borrow:copy-at-bench-suites,
 
   default-language: GHC2021
 

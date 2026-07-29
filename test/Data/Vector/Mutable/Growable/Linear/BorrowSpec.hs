@@ -31,7 +31,6 @@ import Test.Falsify.Predicate qualified as P
 import Test.Falsify.Property qualified as F
 import Test.Falsify.Range qualified as G
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.ExpectedFailure (expectFailBecause)
 import Test.Tasty.Falsify (testProperty)
 import Test.Tasty.HUnit
 import Unsafe.Linear qualified as Unsafe
@@ -556,40 +555,56 @@ test_typingBoundaries :: TestTree
 test_typingBoundaries =
   testGroup
     "typing boundaries"
-    [ expectDeferredFailure
+    [ expectDeferredTypeError
         "GrowableVector element role is nominal"
+        "Couldn't match type"
         badElementCoercion
-    , expectDeferredFailure
+    , expectDeferredTypeError
         "GrowableVector cannot be coerced to a fixed Vector"
+        "Couldn't match representation of type"
         badGrowableToFixed
-    , expectDeferredFailure
+    , expectDeferredTypeError
         "a fixed Vector cannot be coerced to GrowableVector"
+        "Couldn't match representation of type"
         badFixedToGrowable
-    , expectDeferredFailure
+    , expectDeferredTypeError
         "GrowableVector cannot be upcast to a fixed Vector"
+        "Couldn't match representation of type"
         badGrowableToFixedUpcast
-    , expectDeferredFailure
+    , expectDeferredTypeError
         "a fixed Vector cannot be upcast to GrowableVector"
+        "Couldn't match representation of type"
         badFixedToGrowableUpcast
-    , expectDeferredFailure
+    , expectDeferredTypeError
         "a growable borrow cannot swap lifetime indices"
+        "Couldn't match type"
         badLifetimeSwap
-    , expectDeferredFailure
+    , expectDeferredTypeError
         "GrowableVector has no generic split"
+        "DistributesAlias Growable.GrowableVector"
         badSplit
-    , expectDeferredFailure
+    , expectDeferredTypeError
         "GrowableVector cannot be copied"
+        "cannot be copied!"
         badDuplicate
-    , expectDeferredFailure
+    , expectDeferredTypeError
         "fixed content cannot escape withContent"
+        "Couldn't match type"
         badContentEscapeCase
-    , expectDeferredFailure
+    , expectDeferredTypeError
         "shared fixed content cannot escape withContent"
+        "Couldn't match type"
         badSharedContentEscapeCase
     ]
   where
-    expectDeferredFailure description value =
-      expectFailBecause description $
-        testCase description do
-          _ <- Exception.evaluate value
-          NonLinear.pure ()
+    expectDeferredTypeError description expectedFragment value =
+      testCase description do
+        result <- Exception.try @Exception.SomeException (Exception.evaluate value)
+        case result of
+          Left exception ->
+            assertBool
+              ("unexpected deferred type error: " <> Exception.displayException exception)
+              (expectedFragment `List.isInfixOf` Exception.displayException exception)
+          Right _ ->
+            assertFailure
+              ("expected deferred type error containing " <> expectedFragment)

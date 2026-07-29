@@ -64,6 +64,13 @@ cabal test pure-borrow-test --test-options='-p "Lifetime"'   # run a subset by p
 `test/Control/Monad/Borrow/Pure/Lifetime/TypingCases.hs` holds type-level (compile-time)
 constraint checks, not runtime assertions.
 
+For negative type-check tests, define the intentionally ill-typed cases in a separate
+`TypingCases` module compiled with `-fdefer-type-errors -Wno-deferred-type-errors`. In the
+corresponding `*Spec.hs`, force each case to WHNF with `evaluate`, catch the exception with
+`try`, and inspect its diagnostic text. Do not use `expectFail`, `expectFailBecause`, or
+another expected-failure wrapper: the test itself must pass only when it observes the
+intended deferred type error.
+
 ### Benchmarks & profiling
 
 Benchmarks are `tasty-bench` executables; pass options through cabal, e.g.

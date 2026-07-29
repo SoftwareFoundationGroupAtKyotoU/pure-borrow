@@ -132,6 +132,8 @@ library
     Data.Vector.Mutable.Growable.Linear.Borrow.Internal
     Data.Vector.Mutable.Linear.Borrow
     Data.Vector.Mutable.Linear.Borrow.Internal
+    Data.Vector.Unboxed.Mutable.Linear.Borrow
+    Data.Vector.Unboxed.Mutable.Linear.Borrow.Internal
 
   -- cabal-gild: discover src --include src/**/Utils.hs --include src/**/Utils/**/*.hs
   other-modules:
@@ -159,6 +161,8 @@ test-suite pure-borrow-test
     Data.Vector.Mutable.Growable.Linear.BorrowSpec
     Data.Vector.Mutable.Growable.Linear.TypingCases
     Data.Vector.Mutable.Linear.BorrowSpec
+    Data.Vector.Unboxed.Mutable.Linear.BorrowSpec
+    Data.Vector.Unboxed.Mutable.Linear.TypingCases
 
   ghc-options:
     -O2
@@ -172,6 +176,7 @@ test-suite pure-borrow-test
     deepseq,
     falsify,
     pure-borrow,
+    pure-borrow:unboxed-bench-suites,
     random,
     tasty,
     tasty-expected-failure,
@@ -203,7 +208,7 @@ test-suite pure-borrow-doctests
 library bench-suites
   import: defaults
   hs-source-dirs: internal-src/bench-suites
-  -- cabal-gild: discover internal-src/bench-suites --exclude internal-src/bench-suites/PureBorrow/Internal/Bench/CopyAt.hs --exclude internal-src/bench-suites/PureBorrow/Internal/Bench/Growable.hs
+  -- cabal-gild: discover internal-src/bench-suites --exclude internal-src/bench-suites/PureBorrow/Internal/Bench/CopyAt.hs --exclude internal-src/bench-suites/PureBorrow/Internal/Bench/Growable.hs --exclude internal-src/bench-suites/PureBorrow/Internal/Bench/Unboxed.hs
   exposed-modules:
     PureBorrow.Internal.Bench.Fft
     PureBorrow.Internal.Bench.QSort
@@ -238,6 +243,19 @@ library growable-bench-suites
   import: defaults
   hs-source-dirs: internal-src/bench-suites
   exposed-modules: PureBorrow.Internal.Bench.Growable
+  build-depends:
+    base >=4.7 && <5,
+    pure-borrow,
+    tasty-bench,
+    vector,
+
+  ghc-options: -O2
+  default-language: GHC2021
+
+library unboxed-bench-suites
+  import: defaults
+  hs-source-dirs: internal-src/bench-suites
+  exposed-modules: PureBorrow.Internal.Bench.Unboxed
   build-depends:
     base >=4.7 && <5,
     pure-borrow,
@@ -295,6 +313,23 @@ benchmark growable-bench
   build-depends:
     base >=4.7 && <5,
     pure-borrow:growable-bench-suites,
+
+  default-language: GHC2021
+
+benchmark unboxed-bench
+  import: defaults
+  type: exitcode-stdio-1.0
+  main-is: unboxed.hs
+  hs-source-dirs: bench
+  ghc-options:
+    -threaded
+    -rtsopts
+    -O2
+    -with-rtsopts=-N1
+
+  build-depends:
+    base >=4.7 && <5,
+    pure-borrow:unboxed-bench-suites,
 
   default-language: GHC2021
 

@@ -2,7 +2,8 @@
 
 ## Status and scope
 
-This is a planning document only. It responds to
+This document records both the remaining plan and the status of implemented
+prerequisites. It responds to
 `workspace/FEEDBACK-FOR-PURE-BORROW.md`, collected during the ongoing port of
 the [Herbrand CDCL SAT solver](https://github.com/konn/herbrand) on branch
 `konn/pure-borrow`. The feedback was produced against Pure Borrow revision
@@ -16,15 +17,30 @@ methods, `subShare`, and hot-loop API guidance. R1 now also has a provisional
 direct `copyAtMut` fast path.
 
 The current worktree additionally contains the boxed fixed-storage
-safe/`.Internal` split and a boxed growable MVP exposed from
-`Data.Vector.Mutable.Growable.Linear.Borrow`. The growable owner uses a stable
-`Ref` header over logical length plus replaceable backing storage, projects
-only its initialized prefix through `getContents`, and deliberately cannot be
-split. Focused semantics, ownership, role, and compile-failure coverage is in
-place. A first optimized-Core smoke check shows one header read outside the
-fixed-view worker and no header operation in that worker; full allocation,
-paired runtime, R2/R3, unboxed-container, and supported-GHC inspection gates
-remain pending. This structural result is not yet a performance claim.
+safe/`.Internal` split, a boxed growable MVP exposed from
+`Data.Vector.Mutable.Growable.Linear.Borrow`, and a fixed unboxed
+implementation exposed from `Data.Vector.Unboxed.Mutable.Linear.Borrow`. The
+growable owner uses a stable `Ref` header over logical length plus replaceable
+backing storage, projects only its initialized prefix through `getContents`,
+and deliberately cannot be split. The fixed unboxed owner mirrors the boxed
+`Vector` name and borrowed-read surface, with `copyAt`/`copyAtMut` as the
+`Copyable` copied-read operations. Focused semantics, ownership, role, and
+negative-typing coverage is in place for both additions. The ordinary local
+suite passes all 101 tests and all 20 doctest examples.
+
+The boxed growable optimized-Core smoke check shows one header read outside
+the fixed-view worker and no header operation in that worker. The fixed
+unboxed update worker likewise reduces to the same primitive
+`readIntArray#`/`writeIntArray#` loop shape as its direct control, with no
+lifetime or `BO` operation in the recursive worker; the whole Pure Borrow root
+still contains its one-time `askLinearly`/finalization boundary. One local
+wall-time smoke run measured 1.50 µs for both variants at 1,024 elements and
+1.24 ms direct versus 1.47 ms Pure Borrow at 1,048,576 elements. This noisy
+single-machine result does not pass the paired-runtime gate or support a
+performance claim. A semantic regression test first verifies that the direct
+and Pure Borrow benchmark roots produce equal full vectors. Full allocation,
+R2/R3, repeated runtime, and
+supported-GHC inspection gates remain pending.
 
 The intended outcome is:
 
@@ -53,7 +69,7 @@ elements.
 | Herbrand's former `Data.Set` conflict-analysis cost was a downstream algorithm gap. | Confirmed and already removed downstream. | Do not design a Pure Borrow change around this obsolete gap. |
 | Historical paired runs contain a 6–10× `3blocks` slowdown despite less total allocation and comparable search work. | A real signal, but the cited campaign lacked complete provenance and replacement exact-checkpoint results are pending. | Freeze a new exact downstream snapshot and do not use the historical ratio as an acceptance baseline. |
 | The remaining slowdown is caused by `BO`, or entirely by the uninterrupted six-store watch scan. | Not established. The production path still crosses trail-literal and unit-enqueue/resume boundaries. | Keep separate generic linked-scan and resumable-worklist regressions; do not redesign `BO` from this evidence. |
-| Safe fixed and boxed-growable low-level containers now exist in the worktree; fixed-unboxed, growable-unboxed, and a compact multi-store transaction pattern remain absent. | The boxed growable API and its fixed initialized-prefix projection are implemented and tested. Downstream R2/R3 composition and unboxed controls have not yet been supplied. | Complete the remaining unboxed and multi-store deliverables, then validate the boxed API in R2/R3 rather than treating API presence alone as acceptance. |
+| Safe boxed fixed, boxed growable, and fixed unboxed low-level containers now exist in the worktree; growable unboxed and a compact multi-store transaction pattern remain absent. | The boxed growable projection and fixed unboxed API have focused tests. The fixed unboxed mutation worker matches the direct primitive loop structurally, but its initial large-input wall-time smoke result is slower and is not an acceptance campaign. | Complete the growable-unboxed and multi-store deliverables, repeat the fixed-unboxed runtime/allocation gate, and validate the container APIs in R2/R3 rather than treating API presence alone as acceptance. |
 
 The plan targets a confirmed granularity problem and a missing safe
 abstraction. It does not promise that the new API will remove the full Herbrand
@@ -446,11 +462,15 @@ In either case preserve `copyAtMut`'s checked bounds behaviour. Accept the
 change only when typing/soundness review, R1 semantics, optimized Core,
 allocation, and runtime gates all pass.
 
-### Phase 2 — Fixed-storage prerequisites and unboxed borrowed-array MVP
+### Phase 2 — Fixed-storage prerequisites and unboxed borrowed-vector MVP
 
-Prototype a fixed-capacity unboxed owner behind a safe experimental module and
-a Haddock-hidden `.Internal` implementation. A stable module after promotion
-could be `Data.Array.Mutable.Linear.Unboxed.Borrow`.
+The fixed-capacity unboxed owner is implemented under the stable, vector-aligned
+module `Data.Vector.Unboxed.Mutable.Linear.Borrow`, with a Haddock-hidden
+`.Internal` implementation and the owner type named `Vector`. This deliberately
+mirrors `Data.Vector.Mutable.Linear.Borrow` and @vector@'s
+`Data.Vector.Unboxed.Mutable` namespace. Stable exposure here records the
+chosen public shape; it does not waive the remaining allocation, repeated
+runtime, R2/R3, or supported-GHC gates.
 
 Before either growable MVP, move the existing boxed
 `Data.Vector.Mutable.Linear.Borrow.Vector` representation into a
@@ -468,7 +488,10 @@ The MVP distinguishes these operations:
 - safe construction from an immutable unboxed vector copies it;
 - an unsafe ownership-taking thaw, if useful, is named separately;
 - owner size;
-- checked and unchecked copied reads, requiring `Unbox a` and `Copyable a`;
+- checked and unchecked `get`/`head`/`last` operations returning an element
+  `Borrow` under `Unbox a`, matching the boxed vector;
+- `copyAt` and `copyAtMut` producing `Ur`-wrapped copied values under
+  `Unbox a` and `Copyable a`;
 - checked and unchecked writes returning the displaced value;
 - consuming zero-copy freeze, requiring `Copyable a` when it returns an
   unrestricted immutable vector;
@@ -478,9 +501,12 @@ The MVP distinguishes these operations:
 - direct mutation through `Mut`, without an additional scoped-view type for an
   already fixed-capacity owner.
 
-Do not assume that `Unbox a` proves Pure Borrow's `Copyable` or `Consumable`
-invariants. Add negative role tests for element-to-element and
-backend-to-backend coercions.
+All construction, replacement, update, swap, and element-wise consumption
+ownership claims are normal-return guarantees; no owner recovery is promised
+after a synchronous or asynchronous exception. Keep a possible tail-recursive
+or single-pass replacement for the current recursive `fromList` length/fill
+path as follow-up work if large-list stack or retention measurements justify
+it.
 
 ### Phase 3 — Growable unboxed and Copyable/Consumable boxed MVPs
 
@@ -853,13 +879,13 @@ Promote experimental modules to stable safe names only after:
 Removal of Herbrand's unsafe adapters is desirable external validation, not a
 condition for landing or promoting the general API.
 
-Stable candidates, subject to that gate, are:
+Stable modules and candidates, subject to their remaining gates, are:
 
 - `Data.Vector.Mutable.Linear.Borrow[.Internal]`, with the current safe
   surface preserved and only the representation moved;
-- `Data.Array.Mutable.Linear.Unboxed.Borrow[.Internal]`;
+- `Data.Vector.Unboxed.Mutable.Linear.Borrow[.Internal]`;
 - `Data.Vector.Mutable.Growable.Linear.Borrow[.Internal]`; and
-- `Data.Vector.Mutable.Linear.Unboxed.Borrow[.Internal]`.
+- `Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow[.Internal]`.
 
 Mirror them under `test/`, let cabal-gild discover the modules, and add only
 the inspection dependencies needed by the dedicated test component. Existing

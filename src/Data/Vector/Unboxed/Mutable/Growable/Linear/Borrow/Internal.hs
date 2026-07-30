@@ -11,8 +11,8 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# OPTIONS_HADDOCK hide #-}
 
-module Data.Vector.Mutable.Growable.Linear.Borrow.Internal (
-  module Data.Vector.Mutable.Growable.Linear.Borrow.Internal,
+module Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow.Internal (
+  module Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow.Internal,
 ) where
 
 import Control.Functor.Linear qualified as Control
@@ -26,14 +26,13 @@ import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnlyWitness (..),
  )
 import Control.Syntax.DataFlow qualified as DataFlow
-import Data.IntSet qualified as IntSet
 import Data.Ref.Linear qualified as Ref
 import Data.Ref.Linear.Borrow qualified as RefBorrow
 import Data.Unrestricted.Linear qualified as Ur
-import Data.Vector qualified as V
-import Data.Vector.Mutable qualified as MV
-import Data.Vector.Mutable.Linear.Borrow qualified as Fixed
-import Data.Vector.Mutable.Linear.Borrow.Internal qualified as Fixed.Internal
+import Data.Vector.Unboxed qualified as U
+import Data.Vector.Unboxed.Mutable qualified as UM
+import Data.Vector.Unboxed.Mutable.Linear.Borrow qualified as Fixed
+import Data.Vector.Unboxed.Mutable.Linear.Borrow.Internal qualified as Fixed.Internal
 import GHC.Exts qualified as GHC
 import GHC.IO (unsafePerformIO)
 import GHC.Stack (HasCallStack)
@@ -45,10 +44,10 @@ import Prelude qualified as NonLinear
 data Header a where
   Header ::
     {-# UNPACK #-} !Int ->
-    !(MV.IOVector a) %1 ->
+    !(UM.IOVector a) %1 ->
     Header a
 
--- | A linearly owned boxed vector with a stable header and replaceable backing allocation.
+-- | Growable unboxed linear mutable vector.
 data GrowableVector a where
   GrowableVector :: !(Ref.Ref (Header a)) %1 -> GrowableVector a
 
@@ -66,85 +65,109 @@ instance
   where
   copy = unsatisfiable
 
-instance (Consumable a) => Consumable (GrowableVector a) where
+instance (U.Unbox a, Consumable a) => Consumable (GrowableVector a) where
   consume =
     Unsafe.toLinear \(GrowableVector ref) ->
       case Ref.free ref of
         Header logicalSize buffer -> consumeInitialized logicalSize buffer
   {-# INLINE consume #-}
 
-allocateBuffer :: Int -> Linearly %1 -> MV.IOVector a
+allocateBuffer ::
+  (U.Unbox a) =>
+  Int ->
+  Linearly %1 ->
+  UM.IOVector a
 {-# NOINLINE allocateBuffer #-}
 allocateBuffer =
   GHC.noinline \count linear ->
-    linear `lseq` unsafePerformIO (MV.unsafeNew count)
+    linear `lseq` unsafePerformIO (UM.unsafeNew count)
 
-cloneBuffer :: V.Vector a -> Linearly %1 -> MV.IOVector a
+cloneBuffer ::
+  (U.Unbox a) =>
+  U.Vector a ->
+  Linearly %1 ->
+  UM.IOVector a
 {-# NOINLINE cloneBuffer #-}
 cloneBuffer =
   GHC.noinline \source linear ->
-    linear `lseq` unsafePerformIO (V.thaw source)
+    linear `lseq` unsafePerformIO (U.thaw source)
 
 -- | \(O(1)\). Construct an empty vector with zero capacity.
-empty :: Linearly %1 -> GrowableVector a
+empty :: (U.Unbox a) => Linearly %1 -> GrowableVector a
 {-# NOINLINE empty #-}
 empty = withCapacity 0
 
--- | \(O(n)\). Construct @n@ initialized elements. The count must be non-negative.
+-- | \(O(n)\). Construct @n@ initialized copies of a value.
 constant ::
+  (U.Unbox a) =>
   Int ->
   a ->
   Linearly %1 ->
   GrowableVector a
 {-# NOINLINE constant #-}
-constant = GHC.noinline \count value linear ->
-  fromVector (V.replicate count value) linear
+constant =
+  GHC.noinline \count value linear ->
+    fromVector (U.replicate count value) linear
 
--- | \(O(n)\). Construct a vector from a list.
+-- | \(O(n)\). Move a linear list into a new vector.
 fromList ::
-  [a] ->
+  (U.Unbox a) =>
+  [a] %1 ->
   Linearly %1 ->
   GrowableVector a
 {-# NOINLINE fromList #-}
-fromList = GHC.noinline \values linear ->
-  fromVector (V.fromList values) linear
-
-{- | \(O(1)\). Construct an empty vector with the requested capacity.
-
-The capacity must be non-negative. No element in the spare allocation is
-considered initialized.
--}
-withCapacity :: (HasCallStack) => Int -> Linearly %1 -> GrowableVector a
-{-# NOINLINE withCapacity #-}
-withCapacity = GHC.noinline \requested linear ->
-  if requested < 0
-    then error ("withCapacity: negative capacity " <> show requested) linear
-    else
+fromList =
+  GHC.noinline $
+    Unsafe.toLinear2 \values linear ->
       dup linear & \(bufferLinear, refLinear) ->
-        GrowableVector
-          (Ref.new (Header 0 (allocateBuffer requested bufferLinear)) refLinear)
+        case Fixed.fromList values bufferLinear of
+          Fixed.Internal.Vector buffer ->
+            GrowableVector
+              (Ref.new (Header (UM.length buffer) buffer) refLinear)
 
--- | \(O(n)\). Copy all elements of an immutable boxed vector.
+{- | \(O(1)\). Construct an empty vector with requested capacity.
+
+The capacity must be non-negative. Spare storage is not initialized.
+-}
+withCapacity ::
+  (HasCallStack, U.Unbox a) =>
+  Int ->
+  Linearly %1 ->
+  GrowableVector a
+{-# NOINLINE withCapacity #-}
+withCapacity =
+  GHC.noinline \requested linear ->
+    if requested < 0
+      then error ("withCapacity: negative capacity " <> show requested) linear
+      else
+        dup linear & \(bufferLinear, refLinear) ->
+          GrowableVector
+            (Ref.new (Header 0 (allocateBuffer requested bufferLinear)) refLinear)
+
+-- | \(O(n)\). Copy an immutable unboxed vector into a new owner.
 fromVector ::
-  V.Vector a ->
+  (U.Unbox a) =>
+  U.Vector a ->
   Linearly %1 ->
   GrowableVector a
 {-# NOINLINE fromVector #-}
-fromVector = GHC.noinline \source linear ->
-  dup linear & \(bufferLinear, refLinear) ->
-    GrowableVector
-      ( Ref.new
-          (Header (V.length source) (cloneBuffer source bufferLinear))
-          refLinear
-      )
+fromVector =
+  GHC.noinline \source linear ->
+    dup linear & \(bufferLinear, refLinear) ->
+      GrowableVector
+        ( Ref.new
+            (Header (U.length source) (cloneBuffer source bufferLinear))
+            refLinear
+        )
 
-{- | \(O(1)\). Take ownership of a boxed mutable vector without copying.
+{- | \(O(1)\). Take ownership of a mutable unboxed vector.
 
-The complete source is treated as initialized. The caller must not retain any
-alias that can access the source allocation.
+The complete source slice must be initialized, and the caller must retain no
+alias or overlapping slice.
 -}
 unsafeFromMutable ::
-  MV.MVector state a %1 ->
+  (U.Unbox a) =>
+  UM.MVector state a %1 ->
   Linearly %1 ->
   GrowableVector a
 {-# INLINE unsafeFromMutable #-}
@@ -152,17 +175,18 @@ unsafeFromMutable =
   Unsafe.toLinear \source linear ->
     GrowableVector
       ( Ref.new
-          (Header (MV.length source) (Unsafe.coerce source))
+          (Header (UM.length source) (Unsafe.coerce source))
           linear
       )
 
-{- | \(O(1)\). Unsafely take ownership of an immutable boxed vector's storage.
+{- | \(O(1)\). Unsafely take ownership of immutable unboxed storage.
 
-The complete source is treated as initialized. No immutable alias may be read
-after this operation, because subsequent growable mutation reuses its storage.
+No immutable alias, including an overlapping slice, may be observed after
+this operation.
 -}
 unsafeFromVector ::
-  V.Vector a %1 ->
+  (U.Unbox a) =>
+  U.Vector a %1 ->
   Linearly %1 ->
   GrowableVector a
 {-# NOINLINE unsafeFromVector #-}
@@ -172,21 +196,21 @@ unsafeFromVector =
       GrowableVector
         ( Ref.new
             ( Header
-                (V.length source)
-                (unsafePerformIO (V.unsafeThaw source))
+                (U.length source)
+                (unsafePerformIO (U.unsafeThaw source))
             )
             linear
         )
 
 {- | \(O(n)\). Move every initialized element into GC ownership, then freeze
-exactly that prefix.
+that prefix.
 
-Spare capacity is neither exposed nor materialized.
+Spare capacity is not exposed.
 -}
 toVector ::
-  (Movable a) =>
+  (U.Unbox a, Movable a) =>
   GrowableVector a %1 ->
-  Ur (V.Vector a)
+  Ur (U.Vector a)
 {-# NOINLINE toVector #-}
 toVector =
   GHC.noinline $
@@ -196,21 +220,21 @@ toVector =
           let !frozen =
                 unsafePerformIO do
                   moveInitialized logicalSize buffer
-                  V.unsafeFreeze (MV.unsafeTake logicalSize buffer)
+                  U.unsafeFreeze (UM.unsafeTake logicalSize buffer)
            in Ur frozen
 
--- | \(O(n)\). Consume the owner and materialize its initialized prefix as a list.
+-- | \(O(n)\). Consume the owner and materialize its initialized prefix.
 toList ::
-  (Movable a) =>
+  (U.Unbox a, Movable a) =>
   GrowableVector a %1 ->
   Ur [a]
 {-# INLINE toList #-}
-toList = Ur.lift V.toList . toVector
+toList = Ur.lift U.toList . toVector
 
 moveInitialized ::
-  (Movable a) =>
+  (U.Unbox a, Movable a) =>
   Int ->
-  MV.IOVector a ->
+  UM.IOVector a ->
   NonLinear.IO ()
 {-# INLINE moveInitialized #-}
 moveInitialized !logicalSize buffer = go 0
@@ -218,15 +242,15 @@ moveInitialized !logicalSize buffer = go 0
     go !index
       | index >= logicalSize = NonLinear.pure ()
       | otherwise = do
-          value <- MV.unsafeRead buffer index
+          value <- UM.unsafeRead buffer index
           case move value of
-            Ur !moved -> MV.unsafeWrite buffer index moved
+            Ur !moved -> UM.unsafeWrite buffer index moved
           go (index + 1)
 
 consumeInitialized ::
-  (Consumable a) =>
+  (U.Unbox a, Consumable a) =>
   Int ->
-  MV.IOVector a %1 ->
+  UM.IOVector a %1 ->
   ()
 {-# INLINE consumeInitialized #-}
 consumeInitialized =
@@ -234,7 +258,7 @@ consumeInitialized =
     let go !index
           | index >= logicalSize = NonLinear.pure ()
           | otherwise = do
-              value <- MV.unsafeRead buffer index
+              value <- UM.unsafeRead buffer index
               let !() = consume value
               go (index + 1)
      in unsafePerformIO (go 0)
@@ -265,8 +289,9 @@ withHeader action vector = Control.do
   (result, ref) <- RefBorrow.update action (toRefMut vector)
   Control.pure (result, fromRefMut ref)
 
--- | \(O(1)\). Return the number of initialized elements and thread the borrow.
+-- | \(O(1)\). Return logical size and thread the borrow.
 size ::
+  (U.Unbox a) =>
   Borrow borrowKind α (GrowableVector a) %1 ->
   (Ur Int, Borrow borrowKind α (GrowableVector a))
 {-# INLINE size #-}
@@ -276,8 +301,9 @@ size =
       (Header logicalSize _, duplicateRef) ->
         pop (aff duplicateRef) `lseq` (Ur logicalSize, vector)
 
--- | \(O(1)\). Return the backing allocation size and thread the borrow.
+-- | \(O(1)\). Return allocation capacity and thread the borrow.
 capacity ::
+  (U.Unbox a) =>
   Borrow borrowKind α (GrowableVector a) %1 ->
   (Ur Int, Borrow borrowKind α (GrowableVector a))
 {-# INLINE capacity #-}
@@ -285,16 +311,11 @@ capacity =
   Unsafe.toLinear \vector@(UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq` (Ur (MV.length buffer), vector)
+        pop (aff duplicateRef) `lseq` (Ur (UM.length buffer), vector)
 
-{- | Borrow the element at an index in the initialized prefix.
-
-This consumes the growable borrow. The growable owner can be recovered only
-through its enclosing lender after the returned element borrow ends. Use
-'withContent' for repeated no-growth access.
--}
+-- | Borrow an initialized element at an index.
 get ::
-  (HasCallStack, α >= β) =>
+  (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
   Borrow borrowKind α (GrowableVector a) %1 ->
   BO β (Borrow borrowKind α a)
@@ -314,7 +335,7 @@ get index vector = DataFlow.do
 
 -- | Unchecked 'get'. The index must satisfy @0 <= index < size@.
 unsafeGet ::
-  (α >= β) =>
+  (U.Unbox a, α >= β) =>
   Int ->
   Borrow borrowKind α (GrowableVector a) %1 ->
   BO β (Borrow borrowKind α a)
@@ -324,11 +345,11 @@ unsafeGet =
     case Ref.unsafeReadRef ref of
       (Header _ buffer, duplicateRef) ->
         pop (aff duplicateRef) `lseq`
-          UnsafeAlias Control.<$> unsafeSystemIOToBO (MV.unsafeRead buffer index)
+          UnsafeAlias Control.<$> unsafeSystemIOToBO (UM.unsafeRead buffer index)
 
--- | Borrow the first initialized element. Fails when the vector is empty.
+-- | Borrow the first initialized element.
 head ::
-  (HasCallStack, α >= β) =>
+  (HasCallStack, U.Unbox a, α >= β) =>
   Borrow borrowKind α (GrowableVector a) %1 ->
   BO β (Borrow borrowKind α a)
 {-# INLINE head #-}
@@ -336,15 +357,15 @@ head = get 0
 
 -- | Unchecked 'head'. The vector must be non-empty.
 unsafeHead ::
-  (α >= β) =>
+  (U.Unbox a, α >= β) =>
   Borrow borrowKind α (GrowableVector a) %1 ->
   BO β (Borrow borrowKind α a)
 {-# INLINE unsafeHead #-}
 unsafeHead = unsafeGet 0
 
--- | Borrow the last initialized element. Fails when the vector is empty.
+-- | Borrow the last initialized element.
 last ::
-  (HasCallStack, α >= β) =>
+  (HasCallStack, U.Unbox a, α >= β) =>
   Borrow borrowKind α (GrowableVector a) %1 ->
   BO β (Borrow borrowKind α a)
 {-# INLINE last #-}
@@ -356,7 +377,7 @@ last vector = DataFlow.do
 
 -- | Unchecked 'last'. The vector must be non-empty.
 unsafeLast ::
-  (α >= β) =>
+  (U.Unbox a, α >= β) =>
   Borrow borrowKind α (GrowableVector a) %1 ->
   BO β (Borrow borrowKind α a)
 {-# INLINE unsafeLast #-}
@@ -364,99 +385,46 @@ unsafeLast vector = DataFlow.do
   (Ur logicalSize, vector) <- size vector
   unsafeGet (logicalSize - 1) vector
 
--- | Copy the element at an index through a shared borrow.
+-- | Copy an initialized element through a shared borrow.
 copyAt ::
-  (HasCallStack, Copyable a, α >= β) =>
+  (HasCallStack, U.Unbox a, Copyable a, α >= β) =>
   Int ->
   Share α (GrowableVector a) ->
   BO β (Ur a)
 {-# INLINE copyAt #-}
-copyAt index = checkedCopyAt "copyAt" index
+copyAt index vector = Control.do
+  Ur !value <- move Control.<$> get index vector
+  Control.pure $! Ur $! copy value
 
--- | Unchecked 'copyAt'. The index must satisfy @0 <= index < size@.
-unsafeCopyAt ::
-  (Copyable a, α >= β) =>
+-- | Copy an initialized element and retain the mutable borrow.
+copyAtMut ::
+  (HasCallStack, U.Unbox a, Copyable a, α >= β) =>
   Int ->
-  Share α (GrowableVector a) ->
-  BO β (Ur a)
-{-# INLINE unsafeCopyAt #-}
-unsafeCopyAt =
-  Unsafe.toLinear2 \index (UnsafeAlias (GrowableVector ref)) ->
-    case Ref.unsafeReadRef ref of
-      (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          unsafeSystemIOToBO do
-            !value <- MV.unsafeRead buffer index
-            let !copied = copy (UnsafeAlias value)
-            NonLinear.pure (Ur copied)
-
-checkedCopyAt ::
-  (HasCallStack, Copyable a, α >= β) =>
-  NonLinear.String ->
-  Int ->
-  Share α (GrowableVector a) ->
-  BO β (Ur a)
-{-# INLINE checkedCopyAt #-}
-checkedCopyAt =
-  Unsafe.toLinear3 \operation index (UnsafeAlias (GrowableVector ref)) ->
+  Mut α (GrowableVector a) %1 ->
+  BO β (Ur a, Mut α (GrowableVector a))
+{-# INLINE copyAtMut #-}
+copyAtMut =
+  Unsafe.toLinear2 \index vector@(UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header logicalSize buffer, duplicateRef) ->
         pop (aff duplicateRef) `lseq`
           if index < 0 || index >= logicalSize
             then
               error
-                ( operation
-                    <> ": index "
+                ( "copyAtMut: index "
                     <> show index
                     <> " out of bounds for length "
                     <> show logicalSize
                 )
-                buffer
+                vector
             else unsafeSystemIOToBO do
-              !value <- MV.unsafeRead buffer index
+              !value <- UM.unsafeRead buffer index
               let !copied = copy (UnsafeAlias value)
-              NonLinear.pure (Ur copied)
-
--- | Copy the element at an index and return the mutable growable borrow.
-copyAtMut ::
-  (HasCallStack, Copyable a, α >= β) =>
-  Int ->
-  Mut α (GrowableVector a) %1 ->
-  BO β (Ur a, Mut α (GrowableVector a))
-{-# INLINE copyAtMut #-}
-copyAtMut index vector = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  if index < 0 || index >= logicalSize
-    then
-      error
-        ( "copyAtMut: index "
-            <> show index
-            <> " out of bounds for length "
-            <> show logicalSize
-        )
-        vector
-    else unsafeCopyAtMut index vector
-
--- | Unchecked 'copyAtMut'. The index must satisfy @0 <= index < size@.
-unsafeCopyAtMut ::
-  (Copyable a, α >= β) =>
-  Int ->
-  Mut α (GrowableVector a) %1 ->
-  BO β (Ur a, Mut α (GrowableVector a))
-{-# INLINE unsafeCopyAtMut #-}
-unsafeCopyAtMut =
-  Unsafe.toLinear2 \index vector@(UnsafeAlias (GrowableVector ref)) ->
-    case Ref.unsafeReadRef ref of
-      (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          unsafeSystemIOToBO do
-            !value <- MV.unsafeRead buffer index
-            let !copied = copy (UnsafeAlias value)
-            NonLinear.pure (Ur copied, vector)
+              NonLinear.pure (Ur copied, vector)
 
 -- | Replace an initialized element and return the displaced value.
 set ::
-  (HasCallStack, α >= β) =>
+  (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
   a %1 ->
   Mut α (GrowableVector a) %1 ->
@@ -478,26 +446,24 @@ set index value vector = DataFlow.do
 
 -- | Unchecked 'set'. The index must satisfy @0 <= index < size@.
 unsafeSet ::
-  (α >= β) =>
+  (U.Unbox a, α >= β) =>
   Int ->
   a %1 ->
   Mut α (GrowableVector a) %1 ->
   BO β (a, Mut α (GrowableVector a))
 {-# INLINE unsafeSet #-}
 unsafeSet =
-  Unsafe.toLinear3 \index !value vector ->
-    withHeader
-      ( Unsafe.toLinear \(Header logicalSize buffer) ->
+  Unsafe.toLinear3 \index !value vector@(UnsafeAlias (GrowableVector ref)) ->
+    case Ref.unsafeReadRef ref of
+      (Header _ buffer, duplicateRef) ->
+        pop (aff duplicateRef) `lseq`
           unsafeSystemIOToBO do
-            !oldValue <- MV.unsafeRead buffer index
-            MV.unsafeWrite buffer index value
-            NonLinear.pure (oldValue, Header logicalSize buffer)
-      )
-      vector
+            !oldValue <- UM.unsafeExchange buffer index value
+            NonLinear.pure (oldValue, vector)
 
 -- | Linearly transform an initialized element and return an auxiliary result.
 update ::
-  (HasCallStack, α >= β) =>
+  (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
   (a %1 -> BO β (result, a)) %1 ->
   Mut α (GrowableVector a) %1 ->
@@ -517,27 +483,33 @@ update index action vector = DataFlow.do
         vector
     else unsafeUpdate index action vector
 
--- | Unchecked 'update'. The index must satisfy @0 <= index < size@.
+{- | Unchecked 'update'. The index must satisfy @0 <= index < size@.
+
+The callback must return exactly one replacement before the growable borrow is
+restored. No exceptional owner recovery is claimed.
+-}
 unsafeUpdate ::
-  (α >= β) =>
+  (U.Unbox a, α >= β) =>
   Int ->
   (a %1 -> BO β (result, a)) %1 ->
   Mut α (GrowableVector a) %1 ->
   BO β (result, Mut α (GrowableVector a))
 {-# INLINE unsafeUpdate #-}
-unsafeUpdate index action vector =
-  withHeader
-    ( Unsafe.toLinear \(Header logicalSize buffer) -> Control.do
-        value <- unsafeSystemIOToBO (MV.unsafeRead buffer index)
-        (!result, !updatedValue) <- action value
-        buffer <- writeAt index updatedValue buffer
-        Control.pure (result, Header logicalSize buffer)
-    )
-    vector
+unsafeUpdate index =
+  Unsafe.toLinear2 \action vector@(UnsafeAlias (GrowableVector ref)) ->
+    case Ref.unsafeReadRef ref of
+      (Header _ buffer, duplicateRef) ->
+        pop (aff duplicateRef) `lseq` Control.do
+          value <- unsafeSystemIOToBO (UM.unsafeRead buffer index)
+          (!result, !updatedValue) <- action value
+          () <-
+            unsafeSystemIOToBO
+              (Unsafe.toLinear3 UM.unsafeWrite buffer index updatedValue)
+          Control.pure (result, vector)
 
 -- | Linearly transform an initialized element.
 modify ::
-  (HasCallStack, α >= β) =>
+  (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
   (a %1 -> a) %1 ->
   Mut α (GrowableVector a) %1 ->
@@ -547,33 +519,13 @@ modify index function vector = Control.do
   ((), vector) <-
     update
       index
-      (Control.pure . ((),) . function)
+      (\value -> Control.pure ((), function value))
       vector
   Control.pure vector
 
--- | Unchecked 'swap'. Both indices must satisfy @0 <= index < size@.
-unsafeSwap ::
-  (α >= β) =>
-  Mut α (GrowableVector a) %1 ->
-  Int ->
-  Int ->
-  BO β (Mut α (GrowableVector a))
-{-# INLINE unsafeSwap #-}
-unsafeSwap =
-  Unsafe.toLinear3 \vector first second -> Control.do
-    ((), vector) <-
-      withHeader
-        ( Unsafe.toLinear \(Header logicalSize buffer) ->
-            unsafeSystemIOToBO do
-              MV.unsafeSwap buffer first second
-              NonLinear.pure ((), Header logicalSize buffer)
-        )
-        vector
-    Control.pure vector
-
 -- | Swap two initialized elements.
 swap ::
-  (HasCallStack, α >= β) =>
+  (HasCallStack, U.Unbox a, α >= β) =>
   Mut α (GrowableVector a) %1 ->
   Int ->
   Int ->
@@ -599,62 +551,26 @@ swap vector first second = DataFlow.do
         vector
     else unsafeSwap vector first second
 
-{- | Borrow several initialized elements mutably without validation.
-
-Every index must satisfy @0 <= index < size@, and the indices must be
-pairwise distinct. Violating distinctness can create aliased mutable borrows
-and a data race when they are used in parallel.
--}
-unsafeIndicesMut ::
-  (α >= β) =>
+-- | Unchecked 'swap'. Both indices must satisfy @0 <= index < size@.
+unsafeSwap ::
+  (U.Unbox a, α >= β) =>
   Mut α (GrowableVector a) %1 ->
-  [Int] %1 ->
-  BO β [Mut α a]
-{-# INLINE unsafeIndicesMut #-}
-unsafeIndicesMut vector =
-  Fixed.unsafeIndicesMut (getContents vector)
+  Int ->
+  Int ->
+  BO β (Mut α (GrowableVector a))
+{-# INLINE unsafeSwap #-}
+unsafeSwap =
+  Unsafe.toLinear3 \vector@(UnsafeAlias (GrowableVector ref)) first second ->
+    case Ref.unsafeReadRef ref of
+      (Header _ buffer, duplicateRef) ->
+        pop (aff duplicateRef) `lseq`
+          unsafeSystemIOToBO do
+            UM.unsafeSwap buffer first second
+            NonLinear.pure vector
 
-{- | Borrow several initialized elements mutably.
-
-Fails if any index is out of bounds or if an index occurs more than once.
--}
-indicesMut ::
-  (HasCallStack, α >= β) =>
-  Mut α (GrowableVector a) %1 ->
-  [Int] %1 ->
-  BO β [Mut α a]
-{-# INLINE indicesMut #-}
-indicesMut =
-  Unsafe.toLinear2 \vector indices ->
-    case size vector of
-      (Ur logicalSize, vector)
-        | any
-            ( \index ->
-                move index & \(Ur index) ->
-                  index < 0 || index >= logicalSize
-            )
-            indices ->
-            error
-              ( "indicesMut: indices out of bounds: "
-                  <> show indices
-                  <> " for length "
-                  <> show logicalSize
-              )
-              vector
-        | NonLinear.length indices
-            > IntSet.size (IntSet.fromList indices) ->
-            error ("indicesMut: duplicate indices: " <> show indices) vector
-        | otherwise ->
-            Fixed.unsafeIndicesMut (getContents vector) indices
-
-{- | Ensure that the absolute capacity is at least the requested value.
-
-The requested capacity must be non-negative. Logical size and initialized
-contents do not change. Reallocation destructively transfers the initialized
-prefix into fresh storage.
--}
+-- | Ensure at least the requested absolute capacity.
 reserve ::
-  (HasCallStack, α >= β) =>
+  (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
   Mut α (GrowableVector a) %1 ->
   BO β (Mut α (GrowableVector a))
@@ -672,13 +588,9 @@ reserve requested vector
           vector
       Control.pure vector
 
-{- | Ensure capacity for at least the current size plus the requested amount.
-
-The additional amount must be non-negative. Logical size and initialized
-contents do not change.
--}
+-- | Ensure capacity for at least current size plus the requested amount.
 reserveAdditional ::
-  (HasCallStack, α >= β) =>
+  (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
   Mut α (GrowableVector a) %1 ->
   BO β (Mut α (GrowableVector a))
@@ -701,13 +613,9 @@ reserveAdditional additional vector
           vector
       Control.pure vector
 
-{- | Append one linearly supplied element to the initialized prefix.
-
-Reallocation, when required, destructively transfers the old initialized
-prefix into fresh storage.
--}
+-- | Append one linearly supplied element.
 push ::
-  (HasCallStack, α >= β) =>
+  (HasCallStack, U.Unbox a, α >= β) =>
   a %1 ->
   Mut α (GrowableVector a) %1 ->
   BO β (Mut α (GrowableVector a))
@@ -718,7 +626,7 @@ push =
       withHeader
         ( Unsafe.toLinear \(Header logicalSize buffer) ->
             let !required = checkedAdd "push" logicalSize 1
-                !target = growthTarget (MV.length buffer) required
+                !target = growthTarget (UM.length buffer) required
              in Control.do
                   grown <- growTo logicalSize target buffer
                   grown <- writeAt logicalSize value grown
@@ -727,10 +635,10 @@ push =
         vector
     Control.pure vector
 
--- | Append copies of all elements of an immutable boxed vector.
+-- | Append copies of all elements of an immutable unboxed vector.
 extend ::
-  (HasCallStack, α >= β) =>
-  V.Vector a ->
+  (HasCallStack, U.Unbox a, α >= β) =>
+  U.Vector a ->
   Mut α (GrowableVector a) %1 ->
   BO β (Mut α (GrowableVector a))
 {-# INLINE extend #-}
@@ -738,9 +646,9 @@ extend source vector = Control.do
   ((), vector) <-
     withHeader
       ( Unsafe.toLinear \(Header logicalSize buffer) ->
-          let !sourceSize = V.length source
+          let !sourceSize = U.length source
               !required = checkedAdd "extend" logicalSize sourceSize
-              !target = growthTarget (MV.length buffer) required
+              !target = growthTarget (UM.length buffer) required
            in Control.do
                 grown <- growTo logicalSize target buffer
                 grown <- copyImmutableInto source logicalSize grown
@@ -749,16 +657,22 @@ extend source vector = Control.do
       vector
   Control.pure vector
 
-copyImmutable :: V.Vector a -> Int -> MV.IOVector a -> NonLinear.IO ()
+copyImmutable ::
+  (U.Unbox a) =>
+  U.Vector a ->
+  Int ->
+  UM.IOVector a ->
+  NonLinear.IO ()
 {-# INLINE copyImmutable #-}
 copyImmutable source offset target =
-  V.copy (MV.unsafeSlice offset (V.length source) target) source
+  U.copy (UM.unsafeSlice offset (U.length source) target) source
 
 copyImmutableInto ::
-  V.Vector a ->
+  (U.Unbox a) =>
+  U.Vector a ->
   Int ->
-  MV.IOVector a %1 ->
-  BO β (MV.IOVector a)
+  UM.IOVector a %1 ->
+  BO β (UM.IOVector a)
 {-# INLINE copyImmutableInto #-}
 copyImmutableInto source offset =
   Unsafe.toLinear \target -> unsafeSystemIOToBO do
@@ -766,32 +680,34 @@ copyImmutableInto source offset =
     NonLinear.pure target
 
 writeAt ::
+  (U.Unbox a) =>
   Int ->
   a %1 ->
-  MV.IOVector a %1 ->
-  BO β (MV.IOVector a)
+  UM.IOVector a %1 ->
+  BO β (UM.IOVector a)
 {-# INLINE writeAt #-}
 writeAt =
   Unsafe.toLinear3 \index value target -> unsafeSystemIOToBO do
-    MV.unsafeWrite target index value
+    UM.unsafeWrite target index value
     NonLinear.pure target
 
 growTo ::
+  (U.Unbox a) =>
   Int ->
   Int ->
-  MV.IOVector a %1 ->
-  BO β (MV.IOVector a)
+  UM.IOVector a %1 ->
+  BO β (UM.IOVector a)
 {-# INLINE growTo #-}
 growTo =
   Unsafe.toLinear3 \logicalSize requested buffer ->
-    let !oldCapacity = MV.length buffer
+    let !oldCapacity = UM.length buffer
      in if requested <= oldCapacity
           then Control.pure buffer
           else unsafeSystemIOToBO do
-            grown <- MV.unsafeNew requested
-            MV.unsafeCopy
-              (MV.unsafeTake logicalSize grown)
-              (MV.unsafeTake logicalSize buffer)
+            grown <- UM.unsafeNew requested
+            UM.unsafeCopy
+              (UM.unsafeTake logicalSize grown)
+              (UM.unsafeTake logicalSize buffer)
             NonLinear.pure grown
 
 growthTarget :: Int -> Int -> Int
@@ -809,16 +725,13 @@ checkedAdd operation left right
       error (operation <> ": capacity overflow")
   | otherwise = left + right
 
-{- | Project a growable borrow to a fixed borrow of its initialized prefix.
+{- | Project a growable borrow to its fixed initialized prefix.
 
-This consumes one occurrence of the growable borrow, preserves its borrow kind
-and lifetime, and performs one header read. The result exposes neither spare
-capacity nor growth. A mutable result may be split using the fixed-vector API;
-the mutable growable owner becomes recoverable only after every resulting
-fixed borrow has ended. A shared input follows the ordinary unrestricted
-'Share' rules.
+The projection preserves borrow kind and lifetime and exposes no spare
+capacity or growth operation.
 -}
 getContents ::
+  (U.Unbox a) =>
   Borrow borrowKind α (GrowableVector a) %1 ->
   Borrow borrowKind α (Fixed.Vector a)
 {-# INLINE getContents #-}
@@ -830,23 +743,9 @@ getContents =
           UnsafeAlias
             (Fixed.Internal.unsafeFromMutableSlice 0 logicalSize buffer)
 
-{- | Borrow the fixed initialized prefix in a rank-2 no-growth scope.
-
-The callback and returned growable borrow preserve the input borrow kind. The
-callback receives one linear occurrence for either kind; use 'move' on shared
-content when unrestricted use is desired. For a mutable input, the growable
-borrow is restored only after the callback result is produced and the fixed
-view has ended.
-
-Note [Uniformly linear content callback]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Ideally the callback arrow would use @BorrowMultiplicity borrowKind@, making a
-shared callback unrestricted. GHC 9.12 rejects that signature because type
-families cannot witness multiplicity equality (GHC #19517). Keep one linear
-callback occurrence for both borrow kinds until that limitation is removed;
-shared callers can use 'move' to recover unrestricted use.
--}
+-- | Borrow the fixed initialized prefix in a rank-2 no-growth scope.
 withContent ::
+  (U.Unbox a) =>
   Borrow borrowKind α (GrowableVector a) %1 ->
   ( forall β.
     Borrow borrowKind (β /\ α) (Fixed.Vector a) %1 ->
@@ -862,7 +761,7 @@ withContent =
 
 -- | A result-discarding variant of 'withContent'.
 withContent_ ::
-  (Consumable result) =>
+  (U.Unbox a, Consumable result) =>
   Borrow borrowKind α (GrowableVector a) %1 ->
   ( forall β.
     Borrow borrowKind (β /\ α) (Fixed.Vector a) %1 ->

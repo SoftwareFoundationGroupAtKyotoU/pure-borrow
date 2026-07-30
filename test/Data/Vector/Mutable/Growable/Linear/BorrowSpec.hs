@@ -14,11 +14,13 @@ module Data.Vector.Mutable.Growable.Linear.BorrowSpec (
 import Control.Exception qualified as Exception
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (UnsafeAlias))
+import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (..))
 import Control.Monad.Borrow.Pure.Copyable (Copyable (copy), copyMut)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import Data.List qualified as List
+import Data.Ref.Linear qualified as Ref
+import Data.Ref.Linear.Borrow qualified as RefBorrow
 import Data.Vector qualified as V
 import Data.Vector.Mutable qualified as MV
 import Data.Vector.Mutable.Growable.Linear.Borrow qualified as Growable
@@ -46,13 +48,79 @@ data Operation
 
 newtype Tracked = Tracked (IORef Int)
 
-instance Copyable Tracked where
-  copy (UnsafeAlias tracked) = tracked
-
 instance Consumable Tracked where
   consume =
     Unsafe.toLinear \(Tracked counter) ->
       unsafePerformIO (modifyIORef' counter NonLinear.succ)
+
+newtype NestedRef = NestedRef (Ref.Ref Int)
+
+instance Consumable NestedRef where
+  consume =
+    Unsafe.toLinear \(NestedRef ref) ->
+      consume ref
+
+asBorrowedRef ::
+  Mut α NestedRef %1 ->
+  Mut α (Ref.Ref Int)
+asBorrowedRef = upcast
+
+data CopyTracked = CopyTracked !(IORef Int) !(IORef Int) !Int
+
+instance Copyable CopyTracked where
+  copy =
+    Unsafe.toLinear \(UnsafeAlias value@(CopyTracked copies retired _)) ->
+      case unsafePerformIO do
+        retirementCount <- readIORef retired
+        if retirementCount == 0
+          then modifyIORef' copies NonLinear.succ
+          else NonLinear.error "copy invoked after source retirement" of
+        () -> value
+
+instance Consumable CopyTracked where
+  consume =
+    Unsafe.toLinear \(CopyTracked _ retired _) ->
+      unsafePerformIO (modifyIORef' retired NonLinear.succ)
+
+data MoveTracked = MoveTracked !(IORef Int) !Int !Bool
+
+instance Consumable MoveTracked where
+  consume = Unsafe.toLinear \_ -> ()
+
+instance Dupable MoveTracked where
+  dup2 = Unsafe.toLinear \value -> (value, value)
+
+instance Movable MoveTracked where
+  move =
+    Unsafe.toLinear \(MoveTracked moves value _) ->
+      case unsafePerformIO (modifyIORef' moves NonLinear.succ) of
+        () -> Ur (MoveTracked moves value True)
+
+materializeMoveTracked :: IORef Int -> [(Int, Bool)]
+materializeMoveTracked moves =
+  NonLinear.map
+    (\(MoveTracked _ value wasMoved) -> (value, wasMoved))
+    ( V.toList $
+        unur $
+          linearly \linear -> DataFlow.do
+            (ownerLinear, runLinear) <- dup linear
+            runBO runLinear Control.do
+              (vector, lend) <- borrowM (Growable.empty ownerLinear)
+              vector <- Growable.push (MoveTracked moves 10 False) vector
+              vector <- Growable.push (MoveTracked moves 20 False) vector
+              let !() = consume vector
+              pureAfter (Growable.toVector (reclaim lend))
+    )
+
+discardMaterializedMoveTracked :: IORef Int -> ()
+discardMaterializedMoveTracked moves =
+  linearly \linear ->
+    case Growable.toVector
+      ( Growable.fromVector
+          (V.fromList [MoveTracked moves 10 False, MoveTracked moves 20 False])
+          linear
+      ) of
+      Ur _ -> ()
 
 decodeOperation :: Int -> Operation
 decodeOperation seed =
@@ -214,10 +282,32 @@ discardingContentScope =
       let !() = consume vector
       pureAfter $ freezeListUr (reclaim lend)
 
+countedContentScope :: IORef Int -> [Int]
+countedContentScope counter =
+  unur $ linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM (Growable.fromVector (V.fromList [1, 2, 3]) ownerLinear)
+      vector <- Growable.withContent_ vector \contents ->
+        case unsafePerformIO (modifyIORef' counter NonLinear.succ) of
+          () -> Control.pure (consume contents)
+      vector <- Growable.push 4 vector
+      let !() = consume vector
+      pureAfter $ freezeListUr (reclaim lend)
+
 test_withContent_ :: TestTree
 test_withContent_ =
-  testCase "discarding content scope restores the growable borrow" do
-    discardingContentScope @?= [11, 2, 3, 4]
+  testGroup
+    "discarding content scopes"
+    [ testCase "restores the growable borrow" do
+        discardingContentScope @?= [11, 2, 3, 4]
+    , testCase "runs the callback exactly once" do
+        counter <- newIORef 0
+        countedContentScope counter @?= [1, 2, 3, 4]
+        count <- readIORef counter
+        count @?= 1
+    ]
 
 sharedContentProjection :: ((Int, Int, Int), [Int])
 sharedContentProjection =
@@ -474,13 +564,116 @@ trackedConsumption counter =
       let !() = consume vector
       pureAfter (consume (reclaim lend))
 
+boxedRefAcrossGrowth :: Int
+boxedRefAcrossGrowth =
+  linearly \linear -> DataFlow.do
+    (refLinear, remainingLinear) <- dup linear
+    (ownerLinear, runLinear) <- dup remainingLinear
+    runBO runLinear Control.do
+      (vector, lend) <- borrowM (Growable.empty ownerLinear)
+      vector <- Growable.push (NestedRef (Ref.new 1 refLinear)) vector
+      vector <- Growable.reserve 64 vector
+      ((), vector) <-
+        reborrowing vector \short -> Control.do
+          element <- Growable.get 0 short
+          ref <- RefBorrow.modify (+ 41) (asBorrowedRef element)
+          Control.pure (consume ref)
+      (observed, vector) <-
+        reborrowing vector \short -> Control.do
+          element <- Growable.get 0 short
+          RefBorrow.copyRef (asBorrowedRef element)
+      let !() = consume vector
+      pureAfter (consume (reclaim lend) `lseq` observed)
+
+immutableCopyLifecycle :: IORef Int -> IORef Int -> ()
+immutableCopyLifecycle copies retired =
+  linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM
+          ( Growable.fromVector
+              ( V.fromList
+                  [ CopyTracked copies retired 10
+                  , CopyTracked copies retired 20
+                  ]
+              )
+              ownerLinear
+          )
+      vector <- Growable.reserve 64 vector
+      vector <-
+        Growable.extend
+          (V.singleton (CopyTracked copies retired 30))
+          vector
+      vector <- Growable.reserveAdditional 64 vector
+      let !() = consume vector
+      pureAfter (consume (reclaim lend))
+
+gcOwnedImmutableLifecycle :: IORef Int -> ()
+gcOwnedImmutableLifecycle retired =
+  linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM
+          ( Growable.fromVector
+              (V.singleton (Tracked retired))
+              ownerLinear
+          )
+      vector <-
+        Growable.extend
+          (V.fromList [Tracked retired, Tracked retired])
+          vector
+      let !() = consume vector
+      pureAfter (consume (reclaim lend))
+
 test_consumable :: TestTree
 test_consumable =
-  testCase "growth retires old capabilities and final consumption retires live ones" do
-    counter <- newIORef 0
-    _ <- Exception.evaluate (trackedConsumption counter)
-    count <- readIORef counter
-    count @?= 6
+  testGroup
+    "destructive growth"
+    [ testCase "growth moves capabilities and final consumption retires each once" do
+        counter <- newIORef 0
+        _ <- Exception.evaluate (trackedConsumption counter)
+        count <- readIORef counter
+        count @?= 3
+    , testCase "preserves a nested Ref identity across reallocation" do
+        boxedRefAcrossGrowth @?= 42
+    , testCase "ordinary constructors need no Copyable instance" do
+        counter <- newIORef 0
+        _ <-
+          Exception.evaluate $
+            linearly \linear ->
+              dup linear & \(constantLinear, listLinear) ->
+                consume
+                  (Growable.constant 2 (Tracked counter) constantLinear)
+                  `lseq` consume
+                    (Growable.fromList [Tracked counter] listLinear)
+        retired <- readIORef counter
+        retired @?= 3
+    , testCase "ordinary immutable sources need no Copyable instance" do
+        counter <- newIORef 0
+        _ <- Exception.evaluate (gcOwnedImmutableLifecycle counter)
+        retired <- readIORef counter
+        retired @?= 3
+    , testCase "ordinary immutable copies do not invoke Copyable" do
+        copies <- newIORef 0
+        retired <- newIORef 0
+        _ <- Exception.evaluate (immutableCopyLifecycle copies retired)
+        copyCount <- readIORef copies
+        retiredCount <- readIORef retired
+        copyCount @?= 0
+        retiredCount @?= 3
+    , testCase "materialization invokes move for every owned element" do
+        moves <- newIORef 0
+        materializeMoveTracked moves @?= [(10, True), (20, True)]
+        moveCount <- readIORef moves
+        moveCount @?= 2
+    , testCase "discarding materialization still invokes every move" do
+        moves <- newIORef 0
+        _ <- Exception.evaluate (discardMaterializedMoveTracked moves)
+        moveCount <- readIORef moves
+        moveCount @?= 2
+    ]
 
 sharedCopy :: (Int, [Int])
 sharedCopy =
@@ -491,6 +684,71 @@ sharedCopy =
       let !(Ur shared) = share vector
       Ur value <- Growable.copyAt 1 shared
       pureAfter (value, freezeList (reclaim lend))
+
+retireCopiedResult ::
+  (Ur CopyTracked, Mut α (Growable.GrowableVector CopyTracked)) %1 ->
+  Growable.GrowableVector CopyTracked %1 ->
+  Int
+retireCopiedResult =
+  Unsafe.toLinear2 \(copiedResult, borrowed) owner ->
+    consume borrowed `lseq`
+      consume owner `lseq`
+        case copiedResult of
+          Ur (CopyTracked _ _ value) -> value
+
+retireSharedCopiedResult ::
+  Ur CopyTracked %1 ->
+  Growable.GrowableVector CopyTracked %1 ->
+  Int
+retireSharedCopiedResult =
+  Unsafe.toLinear2 \copiedResult owner ->
+    consume owner `lseq`
+      case copiedResult of
+        Ur (CopyTracked _ _ value) -> value
+
+copyAtAfterRetirement :: IORef Int -> IORef Int -> Int
+copyAtAfterRetirement copies retired =
+  linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM
+          ( Growable.fromList
+              [CopyTracked copies retired 10]
+              ownerLinear
+          )
+      let !(Ur shared) = share vector
+      copiedResult <- Growable.copyAt 0 shared
+      pureAfter (retireSharedCopiedResult copiedResult (reclaim lend))
+
+unsafeCopyAtAfterRetirement :: IORef Int -> IORef Int -> Int
+unsafeCopyAtAfterRetirement copies retired =
+  linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM
+          ( Growable.fromList
+              [CopyTracked copies retired 10]
+              ownerLinear
+          )
+      let !(Ur shared) = share vector
+      copiedResult <- Growable.unsafeCopyAt 0 shared
+      pureAfter (retireSharedCopiedResult copiedResult (reclaim lend))
+
+copyAtMutAfterRetirement :: IORef Int -> IORef Int -> Int
+copyAtMutAfterRetirement copies retired =
+  linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM
+          ( Growable.fromList
+              [CopyTracked copies retired 10]
+              ownerLinear
+          )
+      copiedResult <- Growable.copyAtMut 0 vector
+      pureAfter (retireCopiedResult copiedResult (reclaim lend))
 
 selectedValues :: ((Int, Int), [Int])
 selectedValues =
@@ -541,6 +799,30 @@ test_additionalSurface =
     "additional mirrored surface"
     [ testCase "shared copyAt reads without mutable recovery plumbing" do
         sharedCopy @?= (5, [4, 5, 6])
+    , testCase "copyAt completes copying before the shared borrow ends" do
+        copies <- newIORef 0
+        retired <- newIORef 0
+        copyAtAfterRetirement copies retired @?= 10
+        copyCount <- readIORef copies
+        copyCount @?= 1
+        retirementCount <- readIORef retired
+        retirementCount @?= 1
+    , testCase "unsafeCopyAt completes copying before the shared borrow ends" do
+        copies <- newIORef 0
+        retired <- newIORef 0
+        unsafeCopyAtAfterRetirement copies retired @?= 10
+        copyCount <- readIORef copies
+        copyCount @?= 1
+        retirementCount <- readIORef retired
+        retirementCount @?= 1
+    , testCase "copyAtMut completes copying before mutable recovery" do
+        copies <- newIORef 0
+        retired <- newIORef 0
+        copyAtMutAfterRetirement copies retired @?= 10
+        copyCount <- readIORef copies
+        copyCount @?= 1
+        retirementCount <- readIORef retired
+        retirementCount @?= 1
     , testCase "indicesMut returns the requested distinct elements" do
         selectedValues @?= ((4, 6), [4, 5, 6])
     , testCase "indicesMut rejects duplicate indices" do
@@ -578,7 +860,7 @@ test_typingBoundaries =
     , expectDeferredTypeError
         "a growable borrow cannot swap lifetime indices"
         "Couldn't match type"
-        badLifetimeSwap
+        badLifetimeSwapCase
     , expectDeferredTypeError
         "GrowableVector has no generic split"
         "DistributesAlias Growable.GrowableVector"
@@ -595,6 +877,22 @@ test_typingBoundaries =
         "shared fixed content cannot escape withContent"
         "Couldn't match type"
         badSharedContentEscapeCase
+    , expectDeferredTypeError
+        "Copyable alone does not permit growable materialization"
+        "Movable CopyOnly"
+        badGrowableCopyableOnlyToVectorCase
+    , expectDeferredTypeError
+        "Copyable alone does not permit fixed materialization"
+        "Movable CopyOnly"
+        badFixedCopyableOnlyToVectorCase
+    , expectDeferredTypeError
+        "Movable alone does not permit copying through a shared borrow"
+        "Copyable NonCopyable"
+        badNonCopyableCopyAtCase
+    , expectDeferredTypeError
+        "Movable alone does not permit copying through a mutable borrow"
+        "Copyable NonCopyable"
+        badNonCopyableCopyAtMutCase
     ]
   where
     expectDeferredTypeError description expectedFragment value =

@@ -42,6 +42,7 @@ module Control.Concurrent.DivideConquer.Linear (
 
 import Control.Applicative qualified as NonLinear
 import Control.Concurrent (ThreadId, forkIO)
+import Control.Concurrent.DivideConquer.Linear.Types.Internal
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (Sink, Source)
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear qualified as Once
 import Control.Concurrent.DivideConquer.Utils.QueuePool (QueuePool, newQueuePool, popWork, pushWorkMaster, pushWorks)
@@ -85,8 +86,6 @@ data DivideConquer c α t a r = DivideConquer
 data Conquer c α t a r where
   NoConquer :: Conquer c α t a ()
   Conquer :: (forall β. (α >= β) => c -> Mut β a %1 -> t r %1 -> BO β r) -> Conquer c α t a r
-
-data Result c β t a r = Done !r | Continue !(t (Ur c, Mut β a))
 
 data Switch r a
   = Switch

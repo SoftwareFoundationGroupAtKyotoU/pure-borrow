@@ -8,8 +8,8 @@
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -fdefer-type-errors -Wno-deferred-type-errors #-}
 
-module Data.Vector.Mutable.Growable.Linear.TypingCases (
-  module Data.Vector.Mutable.Growable.Linear.TypingCases,
+module Data.Vector.Unboxed.Mutable.Growable.Linear.TypingCases (
+  module Data.Vector.Unboxed.Mutable.Growable.Linear.TypingCases,
 ) where
 
 import Control.Functor.Linear qualified as Control
@@ -17,9 +17,10 @@ import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.Copyable (Copyable (copy))
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce (coerce)
-import Data.Vector qualified as V
-import Data.Vector.Mutable.Growable.Linear.Borrow qualified as Growable
-import Data.Vector.Mutable.Linear.Borrow qualified as Fixed
+import Data.Vector.Mutable.Growable.Linear.Borrow qualified as BoxedGrowable
+import Data.Vector.Unboxed qualified as U
+import Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow qualified as Growable
+import Data.Vector.Unboxed.Mutable.Linear.Borrow qualified as Fixed
 import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
 
@@ -27,18 +28,22 @@ newtype WrappedInt = WrappedInt Int
 
 newtype CopyOnly = CopyOnly Int
 
-instance Copyable CopyOnly where
+type UnboxedCopyOnly = U.DoNotUnboxLazy CopyOnly
+
+instance Copyable UnboxedCopyOnly where
   copy = Unsafe.coerce
 
 newtype NonCopyable = NonCopyable Int
 
-instance Consumable NonCopyable where
+type UnboxedNonCopyable = U.DoNotUnboxLazy NonCopyable
+
+instance Consumable UnboxedNonCopyable where
   consume = Unsafe.toLinear \_ -> ()
 
-instance Dupable NonCopyable where
+instance Dupable UnboxedNonCopyable where
   dup2 = Unsafe.toLinear \value -> (value, value)
 
-instance Movable NonCopyable where
+instance Movable UnboxedNonCopyable where
   move = Unsafe.toLinear \value -> Ur value
 
 badElementCoercion ::
@@ -65,6 +70,26 @@ badFixedToGrowableUpcast ::
   Fixed.Vector Int %1 ->
   Growable.GrowableVector Int
 badFixedToGrowableUpcast = upcast
+
+badUnboxedGrowableToBoxedGrowable ::
+  Growable.GrowableVector Int %1 ->
+  BoxedGrowable.GrowableVector Int
+badUnboxedGrowableToBoxedGrowable = Unsafe.toLinear coerce
+
+badBoxedGrowableToUnboxedGrowable ::
+  BoxedGrowable.GrowableVector Int %1 ->
+  Growable.GrowableVector Int
+badBoxedGrowableToUnboxedGrowable = Unsafe.toLinear coerce
+
+badUnboxedGrowableToBoxedGrowableUpcast ::
+  Growable.GrowableVector Int %1 ->
+  BoxedGrowable.GrowableVector Int
+badUnboxedGrowableToBoxedGrowableUpcast = upcast
+
+badBoxedGrowableToUnboxedGrowableUpcast ::
+  BoxedGrowable.GrowableVector Int %1 ->
+  Growable.GrowableVector Int
+badBoxedGrowableToUnboxedGrowableUpcast = upcast
 
 badLifetimeSwap ::
   forall α β.
@@ -104,11 +129,12 @@ badContentEscapeCase =
     runBO runLinear Control.do
       (vector, lend) <- borrowM (Growable.empty ownerLinear)
       (escaped, vector) <- Growable.withContent vector Control.pure
-      let !() = consume escaped
-          !() = consume vector
+      let
+        !() = consume escaped
+        !() = consume vector
       pureAfter $
         case Growable.toVector (reclaim lend) of
-          Ur frozen -> V.length frozen
+          Ur frozen -> U.length frozen
 
 badSharedContentEscapeCase :: Int
 badSharedContentEscapeCase =
@@ -124,21 +150,27 @@ badSharedContentEscapeCase =
           !() = consume sharedVector
         pureAfter $
           case Growable.toVector (reclaim lend) of
-            Ur frozen -> V.length frozen
+            Ur frozen -> U.length frozen
 
 badGrowableCopyableOnlyToVectorCase :: Int
 badGrowableCopyableOnlyToVectorCase =
   linearly \linear ->
     case Growable.toVector
-      (Growable.fromVector (V.singleton (CopyOnly 1)) linear) of
-      Ur frozen -> V.length frozen
+      ( Growable.fromVector
+          (U.singleton (U.DoNotUnboxLazy (CopyOnly 1)))
+          linear
+      ) of
+      Ur frozen -> U.length frozen
 
 badFixedCopyableOnlyToVectorCase :: Int
 badFixedCopyableOnlyToVectorCase =
   linearly \linear ->
     case Fixed.toVector
-      (Fixed.fromVector (V.singleton (CopyOnly 1)) linear) of
-      Ur frozen -> V.length frozen
+      ( Fixed.fromVector
+          (U.singleton (U.DoNotUnboxLazy (CopyOnly 1)))
+          linear
+      ) of
+      Ur frozen -> U.length frozen
 
 badNonCopyableCopyAtCase :: Int
 badNonCopyableCopyAtCase =
@@ -148,7 +180,7 @@ badNonCopyableCopyAtCase =
       (vector, lend) <-
         borrowM
           ( Growable.fromVector
-              (V.singleton (NonCopyable 1))
+              (U.singleton (U.DoNotUnboxLazy (NonCopyable 1)))
               ownerLinear
           )
       share vector & \(Ur shared) -> Control.do
@@ -164,9 +196,10 @@ badNonCopyableCopyAtMutCase =
       (vector, lend) <-
         borrowM
           ( Growable.fromVector
-              (V.singleton (NonCopyable 1))
+              (U.singleton (U.DoNotUnboxLazy (NonCopyable 1)))
               ownerLinear
           )
-      (Ur (NonCopyable copied), vector) <- Growable.copyAtMut 0 vector
+      (Ur (U.DoNotUnboxLazy (NonCopyable copied)), vector) <-
+        Growable.copyAtMut 0 vector
       let !() = consume vector
       pureAfter (consume (reclaim lend) `lseq` copied)

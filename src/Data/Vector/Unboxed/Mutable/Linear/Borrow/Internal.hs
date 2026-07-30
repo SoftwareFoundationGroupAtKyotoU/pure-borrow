@@ -36,6 +36,18 @@ newtype Vector a = Vector {content :: UM.IOVector a}
 
 type role Vector nominal
 
+-- | Construct a fixed-size view over a raw mutable-vector slice.
+unsafeFromMutableSlice ::
+  (U.Unbox a) =>
+  Int ->
+  Int ->
+  UM.IOVector a %1 ->
+  Vector a
+{-# INLINE unsafeFromMutableSlice #-}
+unsafeFromMutableSlice =
+  Unsafe.toLinear3 \offset length_ buffer ->
+    Vector (UM.unsafeSlice offset length_ buffer)
+
 instance LinearOnly (Vector a) where
   linearOnly = UnsafeLinearOnly
   {-# INLINE linearOnly #-}
@@ -78,7 +90,7 @@ empty =
 As in @vector@, a negative count produces an empty vector.
 -}
 constant ::
-  (U.Unbox a, Copyable a) =>
+  (U.Unbox a) =>
   Int ->
   a ->
   Linearly %1 ->
@@ -124,7 +136,7 @@ fillList !index vector (value : values) = do
 
 -- | \(O(n)\). Copy an immutable unboxed vector into a new owner.
 fromVector ::
-  (U.Unbox a, Copyable a) =>
+  (U.Unbox a) =>
   U.Vector a ->
   Linearly %1 ->
   Vector a
@@ -165,27 +177,47 @@ unsafeFromMutable =
   Unsafe.toLinear2 \source linear ->
     linear `lseq` Vector (Unsafe.coerce source)
 
-{- | \(O(1)\). Consume the owner and freeze its storage without copying.
+{- | \(O(n)\). Move every element into GC ownership, then freeze the storage.
 
-'Copyable' authorizes returning the immutable vector unrestrictedly.
+'Movable' authorizes transferring the consumed elements into the unrestricted
+immutable vector. Each 'move' may perform a deep copy.
 -}
 toVector ::
-  (U.Unbox a, Copyable a) =>
+  (U.Unbox a, Movable a) =>
   Vector a %1 ->
   Ur (U.Vector a)
 {-# NOINLINE toVector #-}
 toVector =
   GHC.noinline $
     Unsafe.toLinear \(Vector vector) ->
-      Ur (unsafePerformIO (U.unsafeFreeze vector))
+      let !frozen =
+            unsafePerformIO do
+              moveElements 0 (UM.length vector) vector
+              U.unsafeFreeze vector
+       in Ur frozen
 
 -- | \(O(n)\). Consume the owner and materialize its elements as a list.
 toList ::
-  (U.Unbox a, Copyable a) =>
+  (U.Unbox a, Movable a) =>
   Vector a %1 ->
   Ur [a]
 {-# INLINE toList #-}
 toList = Ur.lift U.toList . toVector
+
+moveElements ::
+  (U.Unbox a, Movable a) =>
+  Int ->
+  Int ->
+  UM.IOVector a ->
+  IO ()
+{-# INLINE moveElements #-}
+moveElements !index !length_ vector
+  | index >= length_ = NonLinear.pure ()
+  | otherwise = do
+      value <- UM.unsafeRead vector index
+      case move value of
+        Ur !moved -> UM.unsafeWrite vector index moved
+      moveElements (index + 1) length_ vector
 
 {- | \(O(n)\). Copy a live vector into an immutable vector and thread its borrow.
 
@@ -199,8 +231,26 @@ copyToVector ::
 copyToVector =
   Unsafe.toLinear \array@(UnsafeAlias (Vector vector)) ->
     unsafeSystemIOToBO do
-      snapshot <- U.freeze vector
+      target <- UM.unsafeNew (UM.length vector)
+      copyElements 0 (UM.length vector) vector target
+      snapshot <- U.unsafeFreeze target
       NonLinear.pure (Ur snapshot, array)
+
+copyElements ::
+  (U.Unbox a, Copyable a) =>
+  Int ->
+  Int ->
+  UM.IOVector a ->
+  UM.IOVector a ->
+  IO ()
+{-# INLINE copyElements #-}
+copyElements !index !length_ source target
+  | index >= length_ = NonLinear.pure ()
+  | otherwise = do
+      value <- UM.unsafeRead source index
+      let !copied = copy (UnsafeAlias value)
+      UM.unsafeWrite target index copied
+      copyElements (index + 1) length_ source target
 
 -- | \(O(1)\). Return the number of elements and thread the vector borrow.
 size ::
@@ -317,10 +367,8 @@ copyAtMut =
               vector
           else unsafeSystemIOToBO do
             !value <- UM.unsafeRead buffer index
-            NonLinear.pure
-              ( Ur $! copy (UnsafeAlias value)
-              , vector
-              )
+            let !copied = copy (UnsafeAlias value)
+            NonLinear.pure (Ur copied, vector)
 
 -- | Replace an element and return the displaced value linearly.
 set ::

@@ -16,15 +16,28 @@ module PureBorrow.Internal.Bench.Fft (
 
 import Control.Applicative
 import Control.Concurrent (getNumCapabilities)
-import Control.Concurrent.DivideConquer.Linear (fftDC, fftDC', naiveDivideAndConquer, sequentialDivideAndConquer)
+import Control.Concurrent.DivideConquer.Linear (
+  DivideConquer,
+  naiveDivideAndConquer,
+  sequentialDivideAndConquer,
+ )
+import Control.Concurrent.DivideConquer.Linear.Unrestricted (
+  fftDC,
+  fftDC',
+ )
+import Control.Concurrent.DivideConquer.Linear.Unrestricted.Internal (
+  FftCoe,
+  Pair,
+  combineLoop,
+ )
 import Control.Exception (evaluate)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Complex (Complex (..))
 import Data.Proxy (Proxy (..))
-import Data.Vector qualified as V
-import Data.Vector.Mutable.Linear.Borrow qualified as VL
+import Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted qualified as VL
+import Data.Vector.Unboxed qualified as V
 import Options.Applicative qualified as Opts
 import Prelude.Linear (dup, unur)
 import Prelude.Linear qualified as PL
@@ -39,6 +52,25 @@ import Prelude as P
 
 data Mode = NaiveDC | Worksteal Int | Sequential
   deriving (Show, Eq, Ord)
+
+{-# SPECIALIZE fftDC' ::
+  Int ->
+  DivideConquer
+    FftCoe
+    α
+    Pair
+    (VL.Vector V.Vector (Complex Double))
+    ()
+  #-}
+
+{-# SPECIALIZE combineLoop ::
+  Int ->
+  Complex Double ->
+  Int ->
+  Complex Double ->
+  Mut α (VL.Vector V.Vector (Complex Double)) %1 ->
+  BO α ()
+  #-}
 
 data BenchOpts = BenchOpts {numThreads :: !Int, sampleSize :: !Int}
   deriving (Show, Eq, Ord)
@@ -64,7 +96,8 @@ optionsP =
           ( Opts.long "size"
               <> Opts.short 's'
               <> Opts.metavar "SAMPLE_SIZE"
-              <> Opts.help "Number of samples to take (must divide 32768)"
+              <> Opts.help
+                "Number of logarithmic size steps (positive divisor of 10)"
           )
 
 fun :: Double -> Double
@@ -89,8 +122,9 @@ rawOptsP =
       ( Opts.long "size"
           <> Opts.short 's'
           <> Opts.metavar "SAMPLE_SIZE"
-          <> Opts.value 32
-          <> Opts.help "Number of samples to take (must divide 32768)"
+          <> Opts.value 10
+          <> Opts.help
+            "Number of logarithmic size steps (positive divisor of 10)"
       )
 
 fftWith :: Mode -> V.Vector (Complex Double) -> V.Vector (Complex Double)
@@ -126,10 +160,10 @@ instance IsOption SampleSize where
   defaultValue = SampleSize 10
   parseValue s =
     case readMaybe s of
-      Just n | kMAX_SIZE `rem` n == 0 -> Just (SampleSize n)
+      Just n | n > 0, kMAX_SIZE `rem` n == 0 -> Just (SampleSize n)
       _ -> Nothing
   optionName = return "size"
-  optionHelp = return "Step size to take a sample (must divide 32768)"
+  optionHelp = return "Number of logarithmic size steps (positive divisor of 10)"
 
 defaultMain :: IO ()
 defaultMain = do

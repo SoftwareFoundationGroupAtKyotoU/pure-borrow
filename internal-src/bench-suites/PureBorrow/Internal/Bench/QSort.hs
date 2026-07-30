@@ -16,14 +16,19 @@ module PureBorrow.Internal.Bench.QSort (
 
 import Control.Applicative
 import Control.Concurrent (getNumCapabilities)
-import Control.Concurrent.DivideConquer.Linear (naiveDivideAndConquer, qsortDC, qsortDC')
+import Control.Concurrent.DivideConquer.Linear (naiveDivideAndConquer)
+import Control.Concurrent.DivideConquer.Linear.Unrestricted (
+  qsort,
+  qsortDC,
+  qsortDC',
+ )
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Proxy (Proxy (..))
-import Data.Vector qualified as V
 import Data.Vector.Algorithms.Intro qualified as AI
-import Data.Vector.Mutable.Linear.Borrow qualified as VL
+import Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted qualified as VL
+import Data.Vector.Unboxed qualified as V
 import Options.Applicative qualified as Opts
 import Prelude.Linear (dup, unur)
 import Prelude.Linear qualified as PL
@@ -63,7 +68,8 @@ optionsP =
           ( Opts.long "size"
               <> Opts.short 's'
               <> Opts.metavar "SAMPLE_SIZE"
-              <> Opts.help "Number of samples to take (must divide 32768)"
+              <> Opts.help
+                "Number of linear size steps (positive divisor of 32768)"
           )
 
 rawOptsP :: Opts.Parser BenchOpts
@@ -83,7 +89,8 @@ rawOptsP =
           <> Opts.short 's'
           <> Opts.metavar "SAMPLE_SIZE"
           <> Opts.value 32
-          <> Opts.help "Number of samples to take (must divide 32768)"
+          <> Opts.help
+            "Number of linear size steps (positive divisor of 32768)"
       )
 
 qsortWith :: Mode -> V.Vector Int -> V.Vector Int
@@ -94,7 +101,7 @@ qsortWith (Parallel budget) v =
       (lin, l2) <- dup lin
       runBO lin Control.do
         (v, lend) <- borrowM (VL.fromVector v l2)
-        VL.qsort budget v
+        qsort budget v
         Control.pure PL.$ VL.toVector Control.<$> reclaim' lend
 qsortWith Sequential v =
   unur PL.$ linearly \lin ->
@@ -102,7 +109,7 @@ qsortWith Sequential v =
       (lin, l2) <- dup lin
       runBO lin Control.do
         (v, lend) <- borrowM (VL.fromVector v l2)
-        VL.qsort 0 v
+        qsort 0 v
         pureAfter (VL.toVector PL.$ reclaim lend)
 qsortWith (NaiveDC p) v =
   unur PL.$ linearly \lin ->
@@ -128,10 +135,11 @@ instance IsOption SampleSize where
   defaultValue = SampleSize 32
   parseValue s =
     case readMaybe s of
-      Just n | kMAX_SIZE `rem` n == 0 -> Just (SampleSize n)
+      Just n | n > 0, kMAX_SIZE `rem` n == 0 -> Just (SampleSize n)
       _ -> Nothing
   optionName = return "size"
-  optionHelp = return "Step size to take a sample (must divide 32768)"
+  optionHelp =
+    return "Number of linear size steps (positive divisor of 32768)"
 
 defaultMain :: IO ()
 defaultMain = do
@@ -159,14 +167,14 @@ benches BenchOpts {..} =
               ( [ bench "intro" $ nf (qsortWith IntroSort) vec
                 , bench "sequential" $ nf (qsortWith Sequential) vec
                 ]
-                  ++ [ bench ("parallel (budget = " <> show n <> ")") $
+                  <> [ bench ("parallel (budget = " <> show n <> ")") $
                          nf (qsortWith $ Parallel n) vec
                      | n <- [4, 8, 16, 32]
                      ]
-                  ++ [ bench ("parallel-dc (thresh = 128)") $
+                  <> [ bench ("parallel-dc (thresh = 128)") $
                          nf (qsortWith $ NaiveDC 128) vec
                      ]
-                  ++ [ bench ("worksteal (workers = " <> show n <> ")") $
+                  <> [ bench ("worksteal (workers = " <> show n <> ")") $
                          nf (qsortWith $ Worksteal n) vec
                      | n <- [2, 4 .. numThreads]
                      ]

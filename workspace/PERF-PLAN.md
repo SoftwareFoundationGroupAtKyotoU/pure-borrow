@@ -16,31 +16,123 @@ is already present in the repository: direct inlinable `BO`/`After`/`Par`
 methods, `subShare`, and hot-loop API guidance. R1 now also has a provisional
 direct `copyAtMut` fast path.
 
-The current worktree additionally contains the boxed fixed-storage
-safe/`.Internal` split, a boxed growable MVP exposed from
-`Data.Vector.Mutable.Growable.Linear.Borrow`, and a fixed unboxed
-implementation exposed from `Data.Vector.Unboxed.Mutable.Linear.Borrow`. The
-growable owner uses a stable `Ref` header over logical length plus replaceable
-backing storage, projects only its initialized prefix through `getContents`,
-and deliberately cannot be split. The fixed unboxed owner mirrors the boxed
-`Vector` name and borrowed-read surface, with `copyAt`/`copyAtMut` as the
-`Copyable` copied-read operations. Focused semantics, ownership, role, and
-negative-typing coverage is in place for both additions. The ordinary local
-suite passes all 101 tests and all 20 doctest examples.
+The current worktree additionally contains boxed and unboxed fixed and
+growable owners. These four Pure Borrow families are element-owning: they
+exclusively own the resources represented by their entries and bind those
+entries linearly. The growable variants are exposed from
+`Data.Vector.Mutable.Growable.Linear.Borrow` and
+`Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow`. They use stable `Ref`
+headers over logical length plus replaceable backing storage, project only
+their initialized prefixes through `getContents`, and deliberately cannot be
+split. Growth destructively transfers the initialized prefix into fresh
+uninitialized storage, so `reserve` and `push` do not require element
+`Copyable` or `Consumable` constraints. Focused model, ownership, role,
+negative-typing, content-scope, and benchmark-equivalence coverage is in
+place.
 
-The boxed growable optimized-Core smoke check shows one header read outside
-the fixed-view worker and no header operation in that worker. The fixed
-unboxed update worker likewise reduces to the same primitive
-`readIntArray#`/`writeIntArray#` loop shape as its direct control, with no
-lifetime or `BO` operation in the recursive worker; the whole Pure Borrow root
-still contains its one-time `askLinearly`/finalization boundary. One local
-wall-time smoke run measured 1.50 µs for both variants at 1,024 elements and
-1.24 ms direct versus 1.47 ms Pure Borrow at 1,048,576 elements. This noisy
-single-machine result does not pass the paired-runtime gate or support a
-performance claim. A semantic regression test first verifies that the direct
-and Pure Borrow benchmark roots produce equal full vectors. Full allocation,
-R2/R3, repeated runtime, and
-supported-GHC inspection gates remain pending.
+A fifth fixed-capacity family is now implemented at
+`Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted`. Its public
+`Vector v a` keeps the owner and backing storage linear while binding
+elements nonlinearly as GC-owned values. The backend parameter remains public;
+safe immutable construction copies, consuming freeze is O(1), live snapshots
+copy the backing, and no element capability class participates in ordinary
+container operations. The qsort and FFT APIs using this family remain backend
+polymorphic. Only their benchmark roots select the unboxed backend.
+
+The boxed and unboxed growable optimized-Core smoke checks show one header
+read outside each fixed-view worker and no header operation in those workers.
+The unboxed worker reduces to `readIntArray#`/`writeIntArray#` recursion, while
+the whole Pure Borrow root retains its one-time
+`askLinearly`/finalization boundary. The unboxed benchmark now separates two
+different questions under descriptive names:
+
+- `kernel/...` roots use benchmark-local, monomorphic `Int` finalizers after
+  owner reclamation. They exclude public `Movable` materialization solely to
+  isolate update and growth work; they are not public-API parity evidence.
+- `public-materialization/...` roots exercise the real consuming `toVector`
+  boundary of the element-owning family, including one `move` call per owned
+  element. They do not predict the freeze cost of a distinct
+  non-element-owning family.
+
+At 1,048,576 elements, a noisy kernel run measured 1.22 ms direct versus
+1.48 ms Pure Borrow for fixed storage, 1.25 ms versus 1.48 ms for growable
+no-growth, and 4.33 ms versus 8.25 ms for forced geometric growth. The
+separate public-materialization roots measured 128 μs and 8.0 MB versus
+13.4 ms and 56 MB for fixed storage, and 127 μs and 8.0 MB versus 11.8 ms
+and 56 MB for growable storage. These are smoke results, not parity claims:
+the public Pure Borrow roots include the required per-element `move`, while
+the direct controls merely freeze GC-owned `Int` storage. Semantic tests
+verify equal complete results at both evidence boundaries and the same final
+geometric-growth capacity.
+The direct six-root multi-store scan is also frozen under descriptive
+`MultiStoreScan` names. A separate evidence root observes operation counts at
+the actual access sites and matches the uninstrumented benchmark root's output
+and digest; its Pure Borrow candidate, full paired timing, R3, and
+supported-GHC inspection remain pending.
+
+On the pinned GHC 9.12.4 O2 build, paired single-capability runs against the
+previous boxed element-owning roots measured:
+
+- qsort at 8,192 elements: 1.35 ms and 2.1 MB before, 0.435 ms and
+  2.4 MB with the unboxed unrestricted root;
+- qsort at 32,768 elements: 6.88 ms and 8.5 MB before, 3.21 ms and
+  9.5 MB after;
+- FFT at 65,536 elements: 18.8 ms and 74 MB before, 3.26 ms and
+  26 MB after; and
+- FFT at 1,048,576 elements: 635 ms and 1.4 GB before, 57.9 ms and
+  418 MB after.
+
+The monomorphic benchmark Core contains primitive unboxed array reads and
+writes in the recursive workers, without generic-vector method calls there.
+The qsort object shrank from 147 KB to 142 KB even though its Core text grew
+from 245 KB to 279 KB. The FFT object grew from 105 KB to 142 KB, and its Core
+text from 57 KB to 119 KB. The final specialization shape has exactly one
+primitive recursive combine worker. A second, non-recursive entry worker
+performs only the first iteration before entering that recursive SCC; the
+generic defining module is compiled without `SpecConstr` so it does not also
+retain a recursive specialized clone.
+
+A dedicated O2 `pure-borrow-inspection` suite now materializes the stable
+negative Core facts. Each monomorphic term and its inspection cases live in
+the same module and the term has an explicit type signature. The FFT combine
+root has no type-class dictionaries, boxed mutable-vector backing, or listed
+generic-vector operations. The qsort root has no boxed mutable-vector backing
+or listed generic-vector operations and may retain only its concrete
+`Vector` and `Ord` dictionaries. The ordinary GHC matrix runs this suite
+through `cabal test`. Positive primitive-operation presence, exact recursive
+SCC and entry-worker counts, object size, and compile/simplifier cost are not
+expressible by these inspection predicates and remain version-aware
+diagnostics.
+
+One forced O2 compile of the benchmark FFT module reported 675 ms total and
+327 ms in simplifier passes, versus 352 ms and 132 ms for the previous
+module. The approximately 323 ms absolute module-compile increase is recorded
+as part of the specialization tradeoff; supported-GHC CI must catch any
+substantially worse shape or cost.
+
+The permanent same-root decomposition benchmark separates element ownership
+from storage representation. On GHC 9.12.4 O2 with one capability:
+
+- qsort at 8,192 elements measured 1.48 ms and 3.2 MB for owning boxed,
+  644 μs and 2.1 MB for unrestricted boxed, and 392 μs and 2.3 MB for
+  unrestricted unboxed;
+- qsort at 32,768 elements measured 7.50 ms and 14 MB, 3.97 ms and 8.5 MB,
+  and 2.65 ms and 9.0 MB respectively;
+- FFT at 65,536 elements measured 19.2 ms and 79 MB, 23.3 ms and 114 MB,
+  and 3.35 ms and 26 MB respectively; and
+- FFT at 1,048,576 elements measured 578 ms and 1.5 GB, 775 ms and 2.2 GB,
+  and 58.1 ms and 418 MB respectively.
+
+Thus qsort benefits first from the unrestricted element policy and then from
+unboxed storage; its unboxed backend adds 0.2–0.5 MB relative to unrestricted
+boxed storage while materially reducing time. FFT does not benefit from
+unrestricted boxed storage: its improvement is specifically the primitive
+unboxed specialization. The approximately 35% FFT benchmark-object growth is
+a deliberate, bounded specialization tradeoff for about 10× lower runtime and
+72% lower allocation at the large root. It remains acceptable only while the
+stable inspection obligations pass and the supported-GHC diagnostic
+inspection retains one primitive recursive hot SCC; a second recursive worker
+remains a rejection.
 
 The intended outcome is:
 
@@ -69,7 +161,7 @@ elements.
 | Herbrand's former `Data.Set` conflict-analysis cost was a downstream algorithm gap. | Confirmed and already removed downstream. | Do not design a Pure Borrow change around this obsolete gap. |
 | Historical paired runs contain a 6–10× `3blocks` slowdown despite less total allocation and comparable search work. | A real signal, but the cited campaign lacked complete provenance and replacement exact-checkpoint results are pending. | Freeze a new exact downstream snapshot and do not use the historical ratio as an acceptance baseline. |
 | The remaining slowdown is caused by `BO`, or entirely by the uninterrupted six-store watch scan. | Not established. The production path still crosses trail-literal and unit-enqueue/resume boundaries. | Keep separate generic linked-scan and resumable-worklist regressions; do not redesign `BO` from this evidence. |
-| Safe boxed fixed, boxed growable, and fixed unboxed low-level containers now exist in the worktree; growable unboxed and a compact multi-store transaction pattern remain absent. | The boxed growable projection and fixed unboxed API have focused tests. The fixed unboxed mutation worker matches the direct primitive loop structurally, but its initial large-input wall-time smoke result is slower and is not an acceptance campaign. | Complete the growable-unboxed and multi-store deliverables, repeat the fixed-unboxed runtime/allocation gate, and validate the container APIs in R2/R3 rather than treating API presence alone as acceptance. |
+| Safe boxed and unboxed fixed and growable element-owning containers plus a backend-generic fixed GC-element container now exist in the worktree; the growable GC-element family and Pure Borrow multi-store composition remain absent. | The fixed GC-element family has boxed, unboxed, and primitive-backend semantic tests, O(1) consuming freeze, capability-callback absence tests, nominal-role boundaries, and primitive monomorphic qsort/FFT Core. Same-root decomposition attributes qsort's small allocation increase to unboxed storage and FFT's large improvement to that storage specialization. FFT retains one recursive primitive worker plus one bounded non-recursive entry iteration. | Complete the fixed-family final adversarial and supported-GHC gates, then extend the same ownership mode to generic growable storage. After both shapes exist, build the public Pure Borrow `MultiStoreScan` candidate before attempting broad `BO` or stable-header optimization. |
 
 The plan targets a confirmed granularity problem and a missing safe
 abstraction. It does not promise that the new API will remove the full Herbrand
@@ -104,6 +196,76 @@ Multi-store composition uses the existing `Muts`/`reborrowings` API. This plan
 adds no bundle-specific content projection or convenience.
 
 ## Safety and representation constraints
+
+Element ownership is an independent container-design axis:
+
+- Every family considered here linearly owns its mutable backing storage.
+  Element ownership determines how the values stored in that backing are
+  bound; it does not determine storage ownership.
+- An **element-owning** container exclusively owns the resources represented
+  by its entries and binds them linearly. Consuming materialization into an
+  unrestricted result must require `Movable` and invoke `move` for every
+  initialized entry.
+- A **non-element-owning** container binds entries nonlinearly. Those entries
+  are already GC-owned, so consuming freeze may transfer the backing storage
+  to an immutable vector in O(1) without an element capability operation.
+- This choice is orthogonal to boxed versus unboxed representation, fixed
+  versus growable storage, and mutable versus immutable access. The complete
+  design space therefore has a separate element-ownership dimension; no API
+  may infer one axis from another.
+
+The fixed and growable boxed and unboxed representation-specific Pure Borrow
+vectors implemented in this plan are element-owning. The fixed
+non-element-owning family is a distinct public type in an `Unrestricted`
+module, so its nonlinear element binding and O(1) freeze contract cannot be
+confused with those owners. Its addition does not weaken the existing owners'
+materialization boundary or their `Movable` tests.
+
+Avoid multiplying the storage implementation across this matrix. Expose the
+new GC-element family from
+`Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted`, with the
+public type
+`Vector v a = Vector (Mutable v RealWorld a)` parameterized by the immutable
+`vector` backend `v`. The constructor remains hidden. A later growable module
+will expose `GrowableVector v a` analogously. An `MVector mv a` constraint
+alone supplies mutable operations but no immutable-vector operation or result
+in the API; parameterizing by immutable `v` supplies both its associated
+`Mutable v` representation and the correct generic freeze result without
+inverse-family or equality plumbing.
+
+The public backend parameter is an extensibility and trust boundary. Safe
+operations rely on the standard `Data.Vector.Generic.Vector` and `MVector`
+contracts: fresh allocation, exact lengths and bounds, reads and writes that
+affect only the addressed range, disjoint slices for disjoint index ranges,
+and the documented freeze/thaw alias behaviour. No operation may assume a
+stronger backend property without a separately audited constraint. Declare
+both `v` and `a` nominal, hide the representation constructor, and reject
+coercion across backends, element types, and the existing element-owning
+families.
+
+Keep the element-owning and GC-element policies as distinct public types in
+distinct modules; do not encode their different surfaces through an open
+ownership-policy class. Keep algorithms such as qsort and FFT backend
+polymorphic in their public APIs. Their benchmark roots select a concrete
+backend and provide the monomorphic boundary at which optimized Core must
+erase generic backend and element-representation dispatch. Specialization is
+a benchmark-side performance requirement, not a soundness premise or a reason
+to close the public API.
+
+The two ownership modes have deliberately different surfaces:
+
+- element-owning reads return lifetime-indexed element borrows, replacement
+  returns the displaced element linearly, retirement uses `Consumable`, and
+  consuming materialization uses `Movable`;
+- non-element-owning reads and displaced elements are unrestricted, updates
+  and insertion bind their arguments nonlinearly (or consume an explicit
+  `Ur a`), owner retirement consumes only the backing storage and needs no
+  element capability, and consuming freeze is O(1). It does not expose mutable
+  element borrows that would falsely claim exclusive ownership.
+
+Both fixed splitting and growable `getContents` preserve the backend and
+element-ownership mode. Roles and negative typing tests must reject coercion
+between ownership modes and between boxed and unboxed backends.
 
 All proposed APIs must preserve these invariants:
 
@@ -165,8 +327,26 @@ All proposed APIs must preserve these invariants:
 - `0 <= logicalLength <= capacity` is maintained across every public
   operation. Length is published only after all newly initialized cells are
   valid.
-- `Copyable` authorizes copied reads; it does not authorize retirement. Boxed
-  growth that copies and retires old slots also requires `Consumable`.
+- `Copyable` authorizes copied reads; it does not authorize retirement.
+  Evaluating `copy` must complete the copy and return weak-head-normal form.
+  Container copied-read paths must force that result before the source borrow
+  ends or a mutable borrow is recovered. Composite instances must complete
+  every recursive component copy before returning.
+  Growable relocation is instead a destructive ownership transfer: allocate
+  fresh uninitialized storage, bulk-copy exactly `[0, logicalLength)`, abandon
+  the now-inaccessible old backing storage, initialize any new suffix, and
+  publish the new header last.
+- An ordinary arrow binds its input nonlinearly. Immutable vectors, ordinary
+  lists, and their elements are therefore GC-owned; cloning their backing
+  entries must neither require nor invoke an element capability class. Such a
+  value may be consumed repeatedly. Exactly-once retirement applies only when
+  the value is bound linearly. `Copyable` is separate: `copy` consumes a
+  `Borrow` linearly and is not an operation on an unrestricted source.
+- Consuming freeze/materialization transfers elements from a linear owner into
+  an unrestricted, GC-owned result and therefore requires `Movable`, not
+  `Copyable`. It invokes `move` on every initialized element, permitting the
+  `Movable` instance to perform any necessary deep copy before the backing
+  storage becomes unrestricted.
 - Existing `NOINLINE`/`GHC.noinline` barriers around linear lifetime witnesses
   are not weakened. A zero-cost `sharing` path must avoid needing a new
   `Linearly` witness by construction, not expose or inline the existing
@@ -204,15 +384,17 @@ used as a reproducible identity.
 
 ### Three progressively available regressions
 
-The regression suite is staged because Pure Borrow does not yet expose the
-unboxed and growable owners required by the final workloads.
+The regression suite was staged around progressively available container
+support. The fixed and growable boxed and unboxed owners now exist, and the
+direct `MultiStoreScan` control is frozen; its Pure Borrow candidate and R3
+remain pending.
 
 **R1 — Existing boxed-vector copied-read loop.** This is immediately buildable.
 It compares the current public `copyAtMut` loop with an equivalent direct boxed
 mutable-vector control. It freezes semantics, bounds behaviour, optimized Core,
 and allocation before changing `copyAtMut`.
 
-**R2 — Six-root heterogeneous linked scan.** Enable the Pure Borrow candidate
+**MultiStoreScan — six-root heterogeneous linked scan.** Enable the Pure Borrow candidate
 only after the fixed and growable MVPs exist. It contains three fixed unboxed
 roots, one growable boxed root, and two growable unboxed roots; linearly
 separates the six independently constructed owners; opens each growable
@@ -220,8 +402,13 @@ content once; performs a deterministic 4,096-node linked scan; reads all
 roots; conditionally writes two roots; closes the content scopes; and reclaims
 all owners.
 
-R2 is a general container/code-generation stress test. Its shape is motivated
+`MultiStoreScan` is a general container/code-generation stress test. Its shape is motivated
 by the feedback, but its specification is independent of SAT semantics.
+
+Its direct control is now frozen as `MultiStoreScan`: 4,096 visited nodes,
+24,576 element reads, 1,742 element writes, three header reads, and final
+digest `7192365686207673759`. Code and benchmark names describe the workload;
+they do not use a context-dependent round number.
 
 **R3 — Resumable heterogeneous worklist traversal.** Specify this independently
 as a deterministic graph/worklist workload. Fixed roots hold offsets, marks,
@@ -281,18 +468,23 @@ prove associativity for `Borrow bk lifetime resource`, matching
 partially applied formulation does not state that law. Add a focused typing
 case so a future `AliasKind` refactor cannot silently change the theorem again.
 
-Place semantic tests in the existing tasty tree. Plan a dedicated
-optimization-enabled `pure-borrow-inspection` test component for named
-benchmark roots, using `inspection-testing`/`tasty-inspection-testing` or a
-small version-aware Core extraction script after an implementation spike.
-Put runtime workloads in a new internal benchmark module/component rather than
-the qsort or FFT suites. Use cabal-gild discovery for new modules.
+Place semantic tests in the existing tasty tree. The optimization-enabled
+`pure-borrow-inspection` component materializes stable negative Core
+obligations for the monomorphic qsort and FFT roots with
+`tasty-inspection-testing`. Define each inspected term in the same module as
+its test case and give it an explicit monomorphic type signature; keep
+`Main` only as the test-tree aggregator. Add later R1/R2/R3 roots by the same
+pattern. Use version-aware Core extraction for positive primitive-operation
+presence, recursive-SCC counts, entry-worker counts, size, and compile-time
+diagnostics that the inspection predicates cannot express. Put runtime
+workloads in a new internal benchmark module/component rather than the qsort
+or FFT suites. Use cabal-gild discovery for new modules.
 
-Wire structural inspection into each GHC matrix job. Keep paired wall-clock
-campaigns in a controlled/manual performance job; current CI runs only the
-qsort benchmark in one matrix entry and is not a stable timing environment.
-Run explicitly with `+RTS -N1` because existing benchmark components may
-default to all capabilities.
+The ordinary `cabal test` step wires the inspection component into each GHC
+matrix job. Keep paired wall-clock campaigns in a controlled/manual
+performance job; current CI runs only the qsort benchmark in one matrix entry
+and is not a stable timing environment. Run explicitly with `+RTS -N1`
+because existing benchmark components may default to all capabilities.
 
 ### Phase 1 — Runtime-erased sublifetime combinators and fixed-vector fast paths
 
@@ -458,7 +650,9 @@ Keep the restored composition whenever its Core, allocation, and runtime match
 the direct fast path within the frozen R1 tolerance; retain the trusted direct
 read only while benchmark evidence shows a material advantage.
 
-In either case preserve `copyAtMut`'s checked bounds behaviour. Accept the
+In either case preserve `copyAtMut`'s checked bounds behaviour. Require
+retirement-sensitive coverage showing that copied results reach weak head
+normal form before mutable recovery or source-borrow termination. Accept the
 change only when typing/soundness review, R1 semantics, optimized Core,
 allocation, and runtime gates all pass.
 
@@ -493,8 +687,9 @@ The MVP distinguishes these operations:
 - `copyAt` and `copyAtMut` producing `Ur`-wrapped copied values under
   `Unbox a` and `Copyable a`;
 - checked and unchecked writes returning the displaced value;
-- consuming zero-copy freeze, requiring `Copyable a` when it returns an
-  unrestricted immutable vector;
+- consuming materialization, requiring `Movable a`, invoking `move` for every
+  owned element, and freezing the rewritten backing storage as an unrestricted
+  immutable vector;
 - explicitly copying materialization from a live shared borrow, as a distinct
   operation;
 - a conventional `Consumable` instance requiring `Consumable a`; and
@@ -508,7 +703,7 @@ or single-pass replacement for the current recursive `fromList` length/fill
 path as follow-up work if large-list stack or retention measurements justify
 it.
 
-### Phase 3 — Growable unboxed and Copyable/Consumable boxed MVPs
+### Phase 3 — Growable boxed and unboxed MVPs
 
 Run a design spike for the stable owner identity before fixing public types.
 Compare a `Data.Ref.Linear.Ref` header with a new nominal mutable header. A
@@ -523,29 +718,34 @@ stable-header choice:
 - replaces the buffer on growth; and
 - optimizes in R2/R3.
 
-The benchmark-prioritized implementation has produced the boxed MVP first for
-payloads satisfying the required ownership constraints. Keep the unboxed
-growable MVP as the next backend-specific counterpart. The common owner-level
-surface is:
+The benchmark-prioritized implementation now provides both backend-specific
+element-owning MVPs. Their common owner-level surface is:
 
 - empty construction and construction with initial capacity;
 - logical length and capacity;
 - checked/unchecked copied reads and updates;
 - `reserve`/`reserveAdditional`;
 - `push` of one linearly supplied element;
-- `extend` from an immutable input, which copies;
-- consuming freeze/materialization and a conventional `Consumable` instance;
+- `extend` from an immutable input, which copies its GC-owned backing entries
+  without an element capability callback;
+- consuming freeze/materialization under `Movable`, with `move` invoked for
+  every initialized element, and a conventional `Consumable` instance;
   and
 - `getContents` for a same-lifetime initialized fixed-size projection, with
   `withContent` using the trusted runtime-erased rank-2 shortening described
   below and remaining observationally equivalent to `reborrowing` for `Mut`.
 
-Safe construction or `extend` that copies from immutable unboxed input
-requires `Unbox a` and `Copyable a`. Unboxed growth that copies into a new
-buffer and retires the old initialized cells requires
-`Unbox a`, `Copyable a`, and `Consumable a`, just as boxed reallocation needs
-the corresponding ownership proof. A weaker constraint is acceptable only
-after a separate destructive-move implementation and proof.
+Safe construction or `extend` from an immutable input requires no element
+capability class; the source and its entries are bound nonlinearly and are
+GC-owned. The unboxed backend still requires `Unbox a` as a representation
+constraint.
+`reserve`, `reserveAdditional`, and `push` use the reviewed destructive
+transfer described above, so relocation does not copy a value while keeping
+the source reachable and does not retire the transferred values. Those
+operations therefore need no element capability constraint for boxed storage
+and only `Unbox a` for unboxed storage. Final owner retirement still requires
+`Consumable a`; consuming materialization into an unrestricted result instead
+requires `Movable a` and uses its `move` method for every initialized element.
 
 Normal-return ownership is the guarantee: the returned owner contains the
 original initialized prefix exactly once. Preflight size arithmetic and
@@ -554,11 +754,11 @@ document how synchronous/asynchronous exceptions are handled. Do not claim
 that the old owner is recoverable after an exception until that is actually
 implemented.
 
-For boxed v1:
+For both backends:
 
 - copied read requires `Copyable a`;
-- growth that copies to a new backing store and retires old slots requires
-  both `Copyable a` and `Consumable a`;
+- destructive relocation preserves each initialized value exactly once
+  without invoking `copy` or `consume`;
 - consuming the owner is provided only through its `Consumable` instance;
 - non-growth replacement returns the displaced value; and
 - batch move from a linearly owned source is deferred with arbitrary linear
@@ -1069,26 +1269,57 @@ upstream APIs.
    trusted constant-time slice constructor without changing the safe API.
 4. **Minimal growable boxed MVP:** settle its stable header and land boxed
    `getContents`/`withContent` with the one-read/no-write/slice gates, while
-   supporting general Copyable/Consumable payloads without claiming arbitrary
-   linear-element growth.
+   supporting arbitrary linearly owned payloads in `reserve` and `push`
+   through destructive relocation. Do not impose element capability classes
+   on nonlinearly bound immutable sources. Keep `Copyable` for copied
+   extraction from live borrows and `Consumable` for final linear-owner
+   retirement.
 5. **Fixed unboxed MVP:** establish direct fixed-owner mutation on one new
    backend with the same safe/`.Internal` split.
 6. **Growable unboxed MVP:** settle stable header and logical-length
    publication, establish `getContents`, then derive the short-sublifetime
    `withContent` convenience.
-7. **R2 and R3 composition:** validate constructive `reborrowings` over
+7. **Fixed GC-element specialization proof:** expose
+   `Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted.Vector v a`
+   with a hidden constructor and nominal backend/element roles, leaving the
+   current element-owning types and implementations unchanged. Freeze must be
+   O(1) with no element capability callback; safe construction from an
+   immutable vector copies, explicitly unsafe adoption may reuse storage, and
+   a snapshot of a live borrow copies. Verify callback absence,
+   cross-mode/backend coercion rejection, and monomorphic Core with no generic
+   operation selectors for boxed, unboxed, and another supported
+   generic-vector backend. Require dictionary-free FFT combine Core; permit
+   qsort to retain only concrete `Vector` and `Ord` dictionaries when its
+   local root contains no listed generic operations.
+   Keep the qsort/FFT public algorithms backend polymorphic; make only their
+   benchmark roots monomorphic, choosing the backend supported by measured
+   results. Move only the qsort and FFT benchmark roots to this family,
+   compile their benchmark library at `-O2`, then record whole-root
+   runtime/allocation, worker shape, code size, and compile/simplifier cost.
+   Reject the abstraction if generic operation selectors survive the
+   monomorphic roots, specialization leaves multiple recursive hot workers,
+   size growth is not justified by measured runtime/allocation gain, or
+   compile cost regresses materially. A bounded non-recursive specialization
+   entry is acceptable only when exactly one primitive recursive SCC remains
+   in the supported-GHC diagnostic inspection.
+8. **Growable GC-element family:** extend the proven generic storage mechanics
+   to a growable core and nominal boxed/unboxed wrappers. Reuse the fixed
+   GC-element family for `getContents`, preserve ownership/backend indices,
+   and establish O(1) freeze plus one-open/no-header-in-worker evidence before
+   using it in later multi-store workloads.
+9. **R2 and R3 composition:** validate constructive `reborrowings` over
    statically known `Muts` groups, direct per-member `getContents`, and nested
    reopenable groups. Land compiling exact-list, backend-qualified shape
    fixtures—including linear recovery, only-needed spine reconstruction,
    push-or-extend/reopen, and explicit meet reassociation—before implementing or
    timing R3b.
-8. **Evidence-directed delimiter and PB optimization:** only now consider
+10. **Evidence-directed delimiter and PB optimization:** only now consider
    runtime-erasing plural/result-producing combinators, then apply
    representation/inlining/worker changes justified across R1–R3; consider
    `BO` changes only at the stated evidence gate.
-9. **Bulk operations and promotion:** add measured batch operations, finalize
-   docs, and promote APIs deliberately.
-10. **Downstream campaign:** rerun the corrected exact-checkpoint Herbrand
+11. **Bulk operations and promotion:** add measured batch operations, finalize
+   docs, and promote both ownership modes deliberately.
+12. **Downstream campaign:** rerun the corrected exact-checkpoint Herbrand
    comparison as external validation, and decide from new evidence whether
    residual work belongs in general containers, GHC code generation, or the
    downstream application.

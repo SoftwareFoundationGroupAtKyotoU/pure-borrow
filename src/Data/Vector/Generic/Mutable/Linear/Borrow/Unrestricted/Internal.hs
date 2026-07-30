@@ -100,8 +100,8 @@ fromList ::
 {-# NOINLINE fromList #-}
 fromList =
   GHC.noinline \values linear ->
-    linear `lseq`
-      Vector
+    linear
+      `lseq` Vector
         (unsafePerformIO (G.thaw (G.fromList values)))
 
 -- | \(O(n)\). Copy an immutable vector into a new owner.
@@ -170,8 +170,8 @@ borrow.
 -}
 copyToVector ::
   (G.Vector v a, α >= β) =>
-  Borrow borrowKind α (Vector v a) %1 ->
-  BO β (Ur (v a), Borrow borrowKind α (Vector v a))
+  Borrow bk α (Vector v a) %1 ->
+  BO β (Ur (v a), Borrow bk α (Vector v a))
 {-# INLINE copyToVector #-}
 copyToVector =
   Unsafe.toLinear \vectorBorrow@(UnsafeAlias (Vector vector)) ->
@@ -182,8 +182,8 @@ copyToVector =
 -- | \(O(1)\). Return the number of elements and thread the vector borrow.
 size ::
   (G.Vector v a) =>
-  Borrow borrowKind α (Vector v a) %1 ->
-  (Ur Int, Borrow borrowKind α (Vector v a))
+  Borrow bk α (Vector v a) %1 ->
+  (Ur Int, Borrow bk α (Vector v a))
 {-# INLINE size #-}
 size =
   Unsafe.toLinear \vectorBorrow@(UnsafeAlias (Vector vector)) ->
@@ -193,8 +193,8 @@ size =
 get ::
   (HasCallStack, G.Vector v a, α >= β) =>
   Int ->
-  Borrow borrowKind α (Vector v a) %1 ->
-  BO β (Ur a, Borrow borrowKind α (Vector v a))
+  Borrow bk α (Vector v a) %1 ->
+  BO β (Ur a, Borrow bk α (Vector v a))
 {-# INLINE get #-}
 get index vector =
   case size vector of
@@ -213,8 +213,8 @@ get index vector =
 unsafeGet ::
   (G.Vector v a, α >= β) =>
   Int ->
-  Borrow borrowKind α (Vector v a) %1 ->
-  BO β (Ur a, Borrow borrowKind α (Vector v a))
+  Borrow bk α (Vector v a) %1 ->
+  BO β (Ur a, Borrow bk α (Vector v a))
 {-# INLINE unsafeGet #-}
 unsafeGet index =
   Unsafe.toLinear \vectorBorrow@(UnsafeAlias (Vector vector)) ->
@@ -225,24 +225,24 @@ unsafeGet index =
 -- | Read the first element and thread the vector borrow.
 head ::
   (HasCallStack, G.Vector v a, α >= β) =>
-  Borrow borrowKind α (Vector v a) %1 ->
-  BO β (Ur a, Borrow borrowKind α (Vector v a))
+  Borrow bk α (Vector v a) %1 ->
+  BO β (Ur a, Borrow bk α (Vector v a))
 {-# INLINE head #-}
 head = get 0
 
 -- | Unchecked 'head'. The vector must be non-empty.
 unsafeHead ::
   (G.Vector v a, α >= β) =>
-  Borrow borrowKind α (Vector v a) %1 ->
-  BO β (Ur a, Borrow borrowKind α (Vector v a))
+  Borrow bk α (Vector v a) %1 ->
+  BO β (Ur a, Borrow bk α (Vector v a))
 {-# INLINE unsafeHead #-}
 unsafeHead = unsafeGet 0
 
 -- | Read the last element and thread the vector borrow.
 last ::
   (HasCallStack, G.Vector v a, α >= β) =>
-  Borrow borrowKind α (Vector v a) %1 ->
-  BO β (Ur a, Borrow borrowKind α (Vector v a))
+  Borrow bk α (Vector v a) %1 ->
+  BO β (Ur a, Borrow bk α (Vector v a))
 {-# INLINE last #-}
 last vector =
   case size vector of
@@ -253,8 +253,8 @@ last vector =
 -- | Unchecked 'last'. The vector must be non-empty.
 unsafeLast ::
   (G.Vector v a, α >= β) =>
-  Borrow borrowKind α (Vector v a) %1 ->
-  BO β (Ur a, Borrow borrowKind α (Vector v a))
+  Borrow bk α (Vector v a) %1 ->
+  BO β (Ur a, Borrow bk α (Vector v a))
 {-# INLINE unsafeLast #-}
 unsafeLast vector =
   case size vector of
@@ -465,9 +465,9 @@ For a custom backend, safety requires its two returned slices not to overlap.
 splitAt ::
   (G.Vector v a) =>
   Int ->
-  Borrow borrowKind α (Vector v a) %1 ->
-  ( Borrow borrowKind α (Vector v a)
-  , Borrow borrowKind α (Vector v a)
+  Borrow bk α (Vector v a) %1 ->
+  ( Borrow bk α (Vector v a)
+  , Borrow bk α (Vector v a)
   )
 {-# INLINE splitAt #-}
 splitAt index =

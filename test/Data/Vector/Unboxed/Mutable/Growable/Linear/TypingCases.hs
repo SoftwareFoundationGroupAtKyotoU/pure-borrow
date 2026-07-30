@@ -118,7 +118,7 @@ badSplit ::
 badSplit = split
 
 badDuplicate ::
-  Borrow borrowKind α (Growable.GrowableVector Int) %1 ->
+  Borrow bk α (Growable.GrowableVector Int) %1 ->
   Growable.GrowableVector Int
 badDuplicate = copy
 

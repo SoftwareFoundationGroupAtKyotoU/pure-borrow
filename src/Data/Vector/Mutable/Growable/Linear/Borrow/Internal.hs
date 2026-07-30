@@ -267,8 +267,8 @@ withHeader action vector = Control.do
 
 -- | \(O(1)\). Return the number of initialized elements and thread the borrow.
 size ::
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  (Ur Int, Borrow borrowKind α (GrowableVector a))
+  Borrow bk α (GrowableVector a) %1 ->
+  (Ur Int, Borrow bk α (GrowableVector a))
 {-# INLINE size #-}
 size =
   Unsafe.toLinear \vector@(UnsafeAlias (GrowableVector ref)) ->
@@ -278,8 +278,8 @@ size =
 
 -- | \(O(1)\). Return the backing allocation size and thread the borrow.
 capacity ::
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  (Ur Int, Borrow borrowKind α (GrowableVector a))
+  Borrow bk α (GrowableVector a) %1 ->
+  (Ur Int, Borrow bk α (GrowableVector a))
 {-# INLINE capacity #-}
 capacity =
   Unsafe.toLinear \vector@(UnsafeAlias (GrowableVector ref)) ->
@@ -296,8 +296,8 @@ through its enclosing lender after the returned element borrow ends. Use
 get ::
   (HasCallStack, α >= β) =>
   Int ->
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (GrowableVector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE get #-}
 get index vector = DataFlow.do
   (Ur logicalSize, vector) <- size vector
@@ -316,37 +316,38 @@ get index vector = DataFlow.do
 unsafeGet ::
   (α >= β) =>
   Int ->
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (GrowableVector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE unsafeGet #-}
 unsafeGet =
   Unsafe.toLinear2 \index (UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          UnsafeAlias Control.<$> unsafeSystemIOToBO (MV.unsafeRead buffer index)
+        pop (aff duplicateRef)
+          `lseq` UnsafeAlias
+          Control.<$> unsafeSystemIOToBO (MV.unsafeRead buffer index)
 
 -- | Borrow the first initialized element. Fails when the vector is empty.
 head ::
   (HasCallStack, α >= β) =>
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (GrowableVector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE head #-}
 head = get 0
 
 -- | Unchecked 'head'. The vector must be non-empty.
 unsafeHead ::
   (α >= β) =>
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (GrowableVector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE unsafeHead #-}
 unsafeHead = unsafeGet 0
 
 -- | Borrow the last initialized element. Fails when the vector is empty.
 last ::
   (HasCallStack, α >= β) =>
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (GrowableVector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE last #-}
 last vector = DataFlow.do
   (Ur logicalSize, vector) <- size vector
@@ -357,8 +358,8 @@ last vector = DataFlow.do
 -- | Unchecked 'last'. The vector must be non-empty.
 unsafeLast ::
   (α >= β) =>
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (GrowableVector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE unsafeLast #-}
 unsafeLast vector = DataFlow.do
   (Ur logicalSize, vector) <- size vector
@@ -384,8 +385,8 @@ unsafeCopyAt =
   Unsafe.toLinear2 \index (UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          unsafeSystemIOToBO do
+        pop (aff duplicateRef)
+          `lseq` unsafeSystemIOToBO do
             !value <- MV.unsafeRead buffer index
             let !copied = copy (UnsafeAlias value)
             NonLinear.pure (Ur copied)
@@ -401,8 +402,8 @@ checkedCopyAt =
   Unsafe.toLinear3 \operation index (UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header logicalSize buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          if index < 0 || index >= logicalSize
+        pop (aff duplicateRef)
+          `lseq` if index < 0 || index >= logicalSize
             then
               error
                 ( operation
@@ -448,8 +449,8 @@ unsafeCopyAtMut =
   Unsafe.toLinear2 \index vector@(UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          unsafeSystemIOToBO do
+        pop (aff duplicateRef)
+          `lseq` unsafeSystemIOToBO do
             !value <- MV.unsafeRead buffer index
             let !copied = copy (UnsafeAlias value)
             NonLinear.pure (Ur copied, vector)
@@ -819,15 +820,15 @@ fixed borrow has ended. A shared input follows the ordinary unrestricted
 'Share' rules.
 -}
 getContents ::
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  Borrow borrowKind α (Fixed.Vector a)
+  Borrow bk α (GrowableVector a) %1 ->
+  Borrow bk α (Fixed.Vector a)
 {-# INLINE getContents #-}
 getContents =
   Unsafe.toLinear \(UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header logicalSize buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          UnsafeAlias
+        pop (aff duplicateRef)
+          `lseq` UnsafeAlias
             (Fixed.Internal.unsafeFromMutableSlice 0 logicalSize buffer)
 
 {- | Borrow the fixed initialized prefix in a rank-2 no-growth scope.
@@ -840,19 +841,19 @@ view has ended.
 
 Note [Uniformly linear content callback]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Ideally the callback arrow would use @BorrowMultiplicity borrowKind@, making a
+Ideally the callback arrow would use @BorrowMultiplicity bk@, making a
 shared callback unrestricted. GHC 9.12 rejects that signature because type
 families cannot witness multiplicity equality (GHC #19517). Keep one linear
 callback occurrence for both borrow kinds until that limitation is removed;
 shared callers can use 'move' to recover unrestricted use.
 -}
 withContent ::
-  Borrow borrowKind α (GrowableVector a) %1 ->
+  Borrow bk α (GrowableVector a) %1 ->
   ( forall β.
-    Borrow borrowKind (β /\ α) (Fixed.Vector a) %1 ->
+    Borrow bk (β /\ α) (Fixed.Vector a) %1 ->
     BO (β /\ α) result
   ) %1 ->
-  BO α (result, Borrow borrowKind α (GrowableVector a))
+  BO α (result, Borrow bk α (GrowableVector a))
 {-# INLINE withContent #-}
 withContent =
   Unsafe.toLinear2 \vector action ->
@@ -863,12 +864,12 @@ withContent =
 -- | A result-discarding variant of 'withContent'.
 withContent_ ::
   (Consumable result) =>
-  Borrow borrowKind α (GrowableVector a) %1 ->
+  Borrow bk α (GrowableVector a) %1 ->
   ( forall β.
-    Borrow borrowKind (β /\ α) (Fixed.Vector a) %1 ->
+    Borrow bk (β /\ α) (Fixed.Vector a) %1 ->
     BO (β /\ α) result
   ) %1 ->
-  BO α (Borrow borrowKind α (GrowableVector a))
+  BO α (Borrow bk α (GrowableVector a))
 {-# INLINE withContent_ #-}
 withContent_ vector action =
   withContent vector action Control.<&> \(result, vector) ->

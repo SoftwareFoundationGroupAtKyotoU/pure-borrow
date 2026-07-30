@@ -292,8 +292,8 @@ withHeader action vector = Control.do
 -- | \(O(1)\). Return logical size and thread the borrow.
 size ::
   (U.Unbox a) =>
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  (Ur Int, Borrow borrowKind α (GrowableVector a))
+  Borrow bk α (GrowableVector a) %1 ->
+  (Ur Int, Borrow bk α (GrowableVector a))
 {-# INLINE size #-}
 size =
   Unsafe.toLinear \vector@(UnsafeAlias (GrowableVector ref)) ->
@@ -304,8 +304,8 @@ size =
 -- | \(O(1)\). Return allocation capacity and thread the borrow.
 capacity ::
   (U.Unbox a) =>
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  (Ur Int, Borrow borrowKind α (GrowableVector a))
+  Borrow bk α (GrowableVector a) %1 ->
+  (Ur Int, Borrow bk α (GrowableVector a))
 {-# INLINE capacity #-}
 capacity =
   Unsafe.toLinear \vector@(UnsafeAlias (GrowableVector ref)) ->
@@ -317,8 +317,8 @@ capacity =
 get ::
   (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (GrowableVector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE get #-}
 get index vector = DataFlow.do
   (Ur logicalSize, vector) <- size vector
@@ -337,37 +337,38 @@ get index vector = DataFlow.do
 unsafeGet ::
   (U.Unbox a, α >= β) =>
   Int ->
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (GrowableVector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE unsafeGet #-}
 unsafeGet =
   Unsafe.toLinear2 \index (UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          UnsafeAlias Control.<$> unsafeSystemIOToBO (UM.unsafeRead buffer index)
+        pop (aff duplicateRef)
+          `lseq` UnsafeAlias
+          Control.<$> unsafeSystemIOToBO (UM.unsafeRead buffer index)
 
 -- | Borrow the first initialized element.
 head ::
   (HasCallStack, U.Unbox a, α >= β) =>
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (GrowableVector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE head #-}
 head = get 0
 
 -- | Unchecked 'head'. The vector must be non-empty.
 unsafeHead ::
   (U.Unbox a, α >= β) =>
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (GrowableVector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE unsafeHead #-}
 unsafeHead = unsafeGet 0
 
 -- | Borrow the last initialized element.
 last ::
   (HasCallStack, U.Unbox a, α >= β) =>
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (GrowableVector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE last #-}
 last vector = DataFlow.do
   (Ur logicalSize, vector) <- size vector
@@ -378,8 +379,8 @@ last vector = DataFlow.do
 -- | Unchecked 'last'. The vector must be non-empty.
 unsafeLast ::
   (U.Unbox a, α >= β) =>
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (GrowableVector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE unsafeLast #-}
 unsafeLast vector = DataFlow.do
   (Ur logicalSize, vector) <- size vector
@@ -407,8 +408,8 @@ copyAtMut =
   Unsafe.toLinear2 \index vector@(UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header logicalSize buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          if index < 0 || index >= logicalSize
+        pop (aff duplicateRef)
+          `lseq` if index < 0 || index >= logicalSize
             then
               error
                 ( "copyAtMut: index "
@@ -456,8 +457,8 @@ unsafeSet =
   Unsafe.toLinear3 \index !value vector@(UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          unsafeSystemIOToBO do
+        pop (aff duplicateRef)
+          `lseq` unsafeSystemIOToBO do
             !oldValue <- UM.unsafeExchange buffer index value
             NonLinear.pure (oldValue, vector)
 
@@ -563,8 +564,8 @@ unsafeSwap =
   Unsafe.toLinear3 \vector@(UnsafeAlias (GrowableVector ref)) first second ->
     case Ref.unsafeReadRef ref of
       (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          unsafeSystemIOToBO do
+        pop (aff duplicateRef)
+          `lseq` unsafeSystemIOToBO do
             UM.unsafeSwap buffer first second
             NonLinear.pure vector
 
@@ -732,26 +733,26 @@ capacity or growth operation.
 -}
 getContents ::
   (U.Unbox a) =>
-  Borrow borrowKind α (GrowableVector a) %1 ->
-  Borrow borrowKind α (Fixed.Vector a)
+  Borrow bk α (GrowableVector a) %1 ->
+  Borrow bk α (Fixed.Vector a)
 {-# INLINE getContents #-}
 getContents =
   Unsafe.toLinear \(UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header logicalSize buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          UnsafeAlias
+        pop (aff duplicateRef)
+          `lseq` UnsafeAlias
             (Fixed.Internal.unsafeFromMutableSlice 0 logicalSize buffer)
 
 -- | Borrow the fixed initialized prefix in a rank-2 no-growth scope.
 withContent ::
   (U.Unbox a) =>
-  Borrow borrowKind α (GrowableVector a) %1 ->
+  Borrow bk α (GrowableVector a) %1 ->
   ( forall β.
-    Borrow borrowKind (β /\ α) (Fixed.Vector a) %1 ->
+    Borrow bk (β /\ α) (Fixed.Vector a) %1 ->
     BO (β /\ α) result
   ) %1 ->
-  BO α (result, Borrow borrowKind α (GrowableVector a))
+  BO α (result, Borrow bk α (GrowableVector a))
 {-# INLINE withContent #-}
 withContent =
   Unsafe.toLinear2 \vector action ->
@@ -762,12 +763,12 @@ withContent =
 -- | A result-discarding variant of 'withContent'.
 withContent_ ::
   (U.Unbox a, Consumable result) =>
-  Borrow borrowKind α (GrowableVector a) %1 ->
+  Borrow bk α (GrowableVector a) %1 ->
   ( forall β.
-    Borrow borrowKind (β /\ α) (Fixed.Vector a) %1 ->
+    Borrow bk (β /\ α) (Fixed.Vector a) %1 ->
     BO (β /\ α) result
   ) %1 ->
-  BO α (Borrow borrowKind α (GrowableVector a))
+  BO α (Borrow bk α (GrowableVector a))
 {-# INLINE withContent_ #-}
 withContent_ vector action =
   withContent vector action Control.<&> \(result, vector) ->

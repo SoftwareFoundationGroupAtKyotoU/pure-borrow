@@ -110,8 +110,8 @@ fromList ::
 fromList =
   GHC.noinline $
     Unsafe.toLinear \values linear ->
-      linear `lseq`
-        case measureList values of
+      linear
+        `lseq` case measureList values of
           (length_, values) ->
             Vector
               ( unsafePerformIO do
@@ -225,8 +225,8 @@ Unlike 'toVector', this leaves the owner live and therefore performs a copy.
 -}
 copyToVector ::
   (U.Unbox a, Copyable a, α >= β) =>
-  Borrow borrowKind α (Vector a) %1 ->
-  BO β (Ur (U.Vector a), Borrow borrowKind α (Vector a))
+  Borrow bk α (Vector a) %1 ->
+  BO β (Ur (U.Vector a), Borrow bk α (Vector a))
 {-# INLINE copyToVector #-}
 copyToVector =
   Unsafe.toLinear \array@(UnsafeAlias (Vector vector)) ->
@@ -255,8 +255,8 @@ copyElements !index !length_ source target
 -- | \(O(1)\). Return the number of elements and thread the vector borrow.
 size ::
   (U.Unbox a) =>
-  Borrow borrowKind α (Vector a) %1 ->
-  (Ur Int, Borrow borrowKind α (Vector a))
+  Borrow bk α (Vector a) %1 ->
+  (Ur Int, Borrow bk α (Vector a))
 {-# INLINE size #-}
 size =
   Unsafe.toLinear \array@(UnsafeAlias (Vector vector)) ->
@@ -266,8 +266,8 @@ size =
 get ::
   (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
-  Borrow borrowKind α (Vector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (Vector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE get #-}
 get index vector =
   case size vector of
@@ -286,8 +286,8 @@ get index vector =
 unsafeGet ::
   (U.Unbox a, α >= β) =>
   Int ->
-  Borrow borrowKind α (Vector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (Vector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE unsafeGet #-}
 unsafeGet =
   Unsafe.toLinear2 \index (UnsafeAlias (Vector vector)) ->
@@ -296,24 +296,24 @@ unsafeGet =
 -- | Borrow the first element.
 head ::
   (HasCallStack, U.Unbox a, α >= β) =>
-  Borrow borrowKind α (Vector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (Vector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE head #-}
 head = get 0
 
 -- | Unchecked 'head'. The vector must be non-empty.
 unsafeHead ::
   (U.Unbox a, α >= β) =>
-  Borrow borrowKind α (Vector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (Vector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE unsafeHead #-}
 unsafeHead = unsafeGet 0
 
 -- | Borrow the last element.
 last ::
   (HasCallStack, U.Unbox a, α >= β) =>
-  Borrow borrowKind α (Vector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (Vector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE last #-}
 last vector =
   case size vector of
@@ -324,8 +324,8 @@ last vector =
 -- | Unchecked 'last'. The vector must be non-empty.
 unsafeLast ::
   (U.Unbox a, α >= β) =>
-  Borrow borrowKind α (Vector a) %1 ->
-  BO β (Borrow borrowKind α a)
+  Borrow bk α (Vector a) %1 ->
+  BO β (Borrow bk α a)
 {-# INLINE unsafeLast #-}
 unsafeLast vector =
   case size vector of
@@ -519,9 +519,9 @@ The index is clamped to @[0, size]@, matching @vector@'s 'UM.splitAt'.
 splitAt ::
   (U.Unbox a) =>
   Int %1 ->
-  Borrow borrowKind α (Vector a) %1 ->
-  ( Borrow borrowKind α (Vector a)
-  , Borrow borrowKind α (Vector a)
+  Borrow bk α (Vector a) %1 ->
+  ( Borrow bk α (Vector a)
+  , Borrow bk α (Vector a)
   )
 {-# INLINE splitAt #-}
 splitAt =

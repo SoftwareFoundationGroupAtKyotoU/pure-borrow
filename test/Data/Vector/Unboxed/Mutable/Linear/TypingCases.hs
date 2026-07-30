@@ -52,7 +52,7 @@ badSplit ::
 badSplit = split
 
 badDuplicate ::
-  Borrow borrowKind α (Unboxed.Vector Int) %1 ->
+  Borrow bk α (Unboxed.Vector Int) %1 ->
   Unboxed.Vector Int
 badDuplicate = copy
 

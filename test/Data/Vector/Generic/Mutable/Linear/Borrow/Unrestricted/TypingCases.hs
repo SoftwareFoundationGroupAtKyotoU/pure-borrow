@@ -47,7 +47,7 @@ badElementBorrow ::
 badElementBorrow = Vector.get 0
 
 badDuplicate ::
-  Borrow borrowKind α (Vector.Vector V.Vector Int) %1 ->
+  Borrow bk α (Vector.Vector V.Vector Int) %1 ->
   Vector.Vector V.Vector Int
 badDuplicate = copy
 

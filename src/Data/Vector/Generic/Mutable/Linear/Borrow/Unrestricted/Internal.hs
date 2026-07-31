@@ -100,8 +100,8 @@ fromList ::
 {-# NOINLINE fromList #-}
 fromList =
   GHC.noinline \values linear ->
-    linear
-      `lseq` Vector
+    linear `lseq`
+      Vector
         (unsafePerformIO (G.thaw (G.fromList values)))
 
 -- | \(O(n)\). Copy an immutable vector into a new owner.

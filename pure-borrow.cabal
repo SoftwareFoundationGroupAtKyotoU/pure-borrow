@@ -131,6 +131,8 @@ library
     Data.Ref.Linear.Borrow
     Data.Ref.Linear.Unlifted
     Data.Unique.Linear
+    Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted
+    Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted.Internal
     Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity
     Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity.Internal
     Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted
@@ -168,6 +170,8 @@ test-suite pure-borrow-test
     Control.Monad.Borrow.Pure.CopyableSpec
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
+    Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted.TypingCases
+    Data.Vector.Generic.Mutable.Growable.Linear.Borrow.UnrestrictedSpec
     Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity.TypingCases
     Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.MultiplicitySpec
     Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted.TypingCases
@@ -209,6 +213,7 @@ test-suite pure-borrow-inspection
   -- cabal-gild: discover test-inspection --exclude=test-inspection/Main.hs
   other-modules:
     PureBorrow.Inspection.Fft
+    PureBorrow.Inspection.GenericGrowableUnrestricted
     PureBorrow.Inspection.QSort
 
   ghc-options:

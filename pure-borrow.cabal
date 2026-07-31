@@ -214,6 +214,7 @@ test-suite pure-borrow-inspection
   other-modules:
     PureBorrow.Inspection.Fft
     PureBorrow.Inspection.GenericGrowableUnrestricted
+    PureBorrow.Inspection.MultiStoreScan
     PureBorrow.Inspection.QSort
 
   ghc-options:
@@ -222,6 +223,7 @@ test-suite pure-borrow-inspection
 
   build-depends:
     pure-borrow,
+    pure-borrow:multi-store-scan-bench-suites,
     tasty,
     tasty-inspection-testing,
     vector,
@@ -315,6 +317,7 @@ library multi-store-scan-bench-suites
   build-depends:
     base >=4.7 && <5,
     deepseq,
+    pure-borrow,
     tasty-bench,
     vector,
 

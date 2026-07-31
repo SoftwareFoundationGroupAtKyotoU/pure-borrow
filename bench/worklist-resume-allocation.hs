@@ -40,7 +40,8 @@ main = do
   enabled <- getRTSStatsEnabled
   when (not enabled) $
     die "RTS statistics are disabled; run with +RTS -T"
-  root <- selectRoot rootName growth target
+  (root, schedule, initialCapacity, selectedBatchSize) <-
+    selectRoot rootName growth target
   sample <- evaluate (force (root (-1)))
   let sampleSummary = summary sample
       visits = visitedNodes sampleSummary
@@ -64,12 +65,14 @@ main = do
           then 0
           else bytesPerRun / fromIntegral resumes
   printf
-    "root,growth,target,repetitions,visits_per_run,resumes_per_run,allocated_bytes,bytes_per_run,bytes_per_visit,total_bytes_per_resume,copied_bytes,process_max_live_bytes,mutator_cpu_ns,mutator_elapsed_ns,gc_cpu_ns,gc_elapsed_ns,digest\n"
+    "root,schedule,target,initial_capacity,batch_size,repetitions,visits_per_run,resumes_per_run,allocated_bytes,bytes_per_run,bytes_per_visit,total_bytes_per_resume,copied_bytes,process_max_live_bytes,mutator_cpu_ns,mutator_elapsed_ns,gc_cpu_ns,gc_elapsed_ns,digest\n"
   printf
-    "%s,%s,%s,%d,%d,%d,%d,%.3f,%.6f,%.6f,%d,%d,%d,%d,%d,%d,%d\n"
+    "%s,%s,%s,%d,%s,%d,%d,%d,%d,%.3f,%.6f,%.6f,%d,%d,%d,%d,%d,%d,%d\n"
     rootName
-    (show growth)
+    schedule
     (show target)
+    initialCapacity
+    (maybe "" show selectedBatchSize)
     repetitions
     visits
     resumes
@@ -88,6 +91,8 @@ main = do
 parseGrowth :: String -> IO WorklistGrowth
 parseGrowth = \case
   "no-growth" -> pure NoGrowth
+  "no-growth-batch-64" -> pure NoGrowthBatch64
+  "no-growth-batch-8" -> pure NoGrowthBatch8
   "sparse-growth" -> pure SparseGrowth
   "dense-growth" -> pure DenseGrowth
   value -> die ("unknown growth mode: " <> value)
@@ -110,41 +115,69 @@ selectRoot ::
   String ->
   WorklistGrowth ->
   WorklistTarget ->
-  IO (Int -> WorklistOutput)
+  IO (Int -> WorklistOutput, String, Int, Maybe Int)
 selectRoot rootName growth target =
   case rootName of
     "direct-open-once" ->
-      pure \seed ->
-        worklistDirectOpenOnceRootWithSeed seed target
+      pure
+        ( \seed -> worklistDirectOpenOnceRootWithSeed seed target
+        , "OpenOnce"
+        , worklistNodeCount
+        , Nothing
+        )
     "pure-borrow-open-once" ->
-      pure \seed ->
-        worklistPureBorrowOpenOnceRootWithSeed seed target
+      pure
+        ( \seed -> worklistPureBorrowOpenOnceRootWithSeed seed target
+        , "OpenOnce"
+        , worklistNodeCount
+        , Nothing
+        )
     "direct-flat" ->
-      pure \seed ->
-        worklistDirectReopenRootWithSeed
-          seed
-          FlatReopen
-          growth
-          target
+      pure
+        ( \seed ->
+            worklistDirectReopenRootWithSeed
+              seed
+              FlatReopen
+              growth
+              target
+        , show growth
+        , worklistInitialCapacity growth
+        , Just (worklistBatchSize growth)
+        )
     "pure-borrow-flat" ->
-      pure \seed ->
-        worklistPureBorrowFlatReopenRootWithSeed
-          seed
-          growth
-          target
+      pure
+        ( \seed ->
+            worklistPureBorrowFlatReopenRootWithSeed
+              seed
+              growth
+              target
+        , show growth
+        , worklistInitialCapacity growth
+        , Just (worklistBatchSize growth)
+        )
     "direct-nested" ->
-      pure \seed ->
-        worklistDirectReopenRootWithSeed
-          seed
-          NestedReopen
-          growth
-          target
+      pure
+        ( \seed ->
+            worklistDirectReopenRootWithSeed
+              seed
+              NestedReopen
+              growth
+              target
+        , show growth
+        , worklistInitialCapacity growth
+        , Just (worklistBatchSize growth)
+        )
     "pure-borrow-nested" ->
-      pure \seed ->
-        worklistPureBorrowNestedReopenRootWithSeed
-          seed
-          growth
-          target
+      pure
+        ( \seed ->
+            worklistPureBorrowNestedReopenRootWithSeed
+              seed
+              growth
+              target
+        , show growth
+        , worklistInitialCapacity growth
+        , Just (worklistBatchSize growth)
+        )
     _ ->
       die ("unknown root: " <> rootName)
 
@@ -170,5 +203,5 @@ usage =
   die
     "usage: worklist-resume-allocation ROOT GROWTH TARGET REPETITIONS\n\
     \ROOT: direct-open-once | pure-borrow-open-once | direct-flat | pure-borrow-flat | direct-nested | pure-borrow-nested\n\
-    \GROWTH: no-growth | sparse-growth | dense-growth\n\
+    \GROWTH: no-growth | no-growth-batch-64 | no-growth-batch-8 | sparse-growth | dense-growth\n\
     \TARGET: drain | stop-early"

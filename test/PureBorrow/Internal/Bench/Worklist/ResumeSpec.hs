@@ -52,6 +52,19 @@ test_worklistReopenEvidence =
             @?= directNested
       )
       reopenCases
+    mapM_
+      ( \(target, noGrowth, growth) ->
+          assertSameTraversalOutput
+            (worklistDirectReopenRoot NestedReopen noGrowth target)
+            (worklistDirectReopenRoot NestedReopen growth target)
+      )
+      [ (target, noGrowth, growth)
+      | target <- [minBound .. maxBound]
+      , (noGrowth, growth) <-
+          [ (NoGrowthBatch64, SparseGrowth)
+          , (NoGrowthBatch8, DenseGrowth)
+          ]
+      ]
 
 test_worklistSeededEvidence :: TestTree
 test_worklistSeededEvidence =
@@ -124,6 +137,10 @@ reopenCases ::
 reopenCases =
   [ (NoGrowth, Drain, 84, 44, 20, 41, 0)
   , (NoGrowth, StopEarly, 44, 24, 10, 22, 0)
+  , (NoGrowthBatch64, Drain, 272, 138, 67, 131, 0)
+  , (NoGrowthBatch64, StopEarly, 100, 52, 24, 50, 0)
+  , (NoGrowthBatch8, Drain, 2056, 1030, 513, 934, 0)
+  , (NoGrowthBatch8, StopEarly, 692, 348, 172, 346, 0)
   , (SparseGrowth, Drain, 272, 138, 67, 131, 8)
   , (SparseGrowth, StopEarly, 100, 52, 24, 50, 7)
   , (DenseGrowth, Drain, 2056, 1030, 513, 934, 21)

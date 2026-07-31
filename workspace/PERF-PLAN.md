@@ -28,16 +28,16 @@ preferred completion. Signed commit `40b458a` completes P0a's dedicated
 ownership/typing gate, and signed commit `8db6d4a` completes the P0b six-root
 `MultiStoreScan` integration and its GHC 9.12.4 structural gate. Signed commit
 `78f8ce2` completes P1 attribution, the header-matched comparator, allocation
-measurement, and the paired runtime gate. The current worktree implements
+measurement, and the paired runtime gate. Signed commit `25485e5` implements
 P2's resumable R3a/R3b benchmark and freezes its semantic baseline, reviewed
 GHC 9.12.4 O2 Core, whole-root allocation, and selected paired-runtime
 evidence. Three independent adversarial reviews found no soundness or
 ownership violation. The performance review did find comparator, Core-scope,
 and provenance gaps; the current worktree fixes the comparator and preserves
-the reviewed evidence limits below. Dense-drain overhead correlates with the
-more frequent reopen schedule, but capacity and batch size are still coupled,
-so a narrow plural-boundary attribution investigation—not an assumed
-optimization—is the first conditional follow-up. Broad `BO` representation
+the reviewed evidence limits below. The current orthogonal follow-up holds
+capacity or batch size fixed and shows that dense-drain overhead survives with
+zero buffer reallocations. This promotes a narrow plural-boundary attribution
+investigation—not an assumed optimization—while broad `BO` representation
 work remains deferred.
 
 The earlier Tamagoh-driven work recorded in the previous version of this file
@@ -194,14 +194,17 @@ Tests now require seeds 1 and 37 to produce different digests and require
 repeated/interleaved evaluations to remain deterministic.
 
 R3a opens four growable contents once and performs no resume, header-update,
-or growth boundary. R3b freezes 20/67/513 drain resume boundaries for
-no/sparse/dense growth and 10/24/172 for early stop. Flat grouping opens four
-contents per segment; the selected hierarchy holds shared graph views plus
-marks/state in one outer scope and reopens only the two-member queue/log
-frontier. Its observed open formula is `2 + 2 * segments`, versus
-`4 * segments` for flat. The complete main suite now passes 286 tests and the
-inspection suite passes 22 tests. The automated inspection tests cover the
-already projected open-once and resume edge workers only: they exclude
+or growth boundary. R3b freezes 20/67/513 drain resume boundaries for batch
+sizes 256/64/8 and 10/24/172 for early stop. Initial capacities 4,096/256/1
+produce no/sparse/dense growth. Two orthogonal controls retain capacity 4,096
+while selecting batch 64 or 8, so they reproduce the matching sparse/dense
+resume, open, and header-update counts with zero buffer growth. Flat grouping
+opens four contents per segment; the selected hierarchy holds shared graph
+views plus marks/state in one outer scope and reopens only the two-member
+queue/log frontier. Its observed open formula is `2 + 2 * segments`, versus
+`4 * segments` for flat. The complete main suite still passes 286 tests and
+the inspection suite passes 22 tests. The automated inspection tests cover
+the already projected open-once and resume edge workers only: they exclude
 dictionaries, growable headers, plural bundles, projection/extend/reborrow
 calls, and generic fixed-vector access calls. They do not prove the whole
 resume boundary.
@@ -223,24 +226,33 @@ whole-boundary count, size, duplication, or arity obligations.
 
 The fresh-seed allocation harness measures the complete root: symmetric
 allocation/reset plus materialization of all seven direct and safe owners are
-inside the interval. It reports visits and resume counts separately. R3a's
-safe-minus-direct allocation is exactly 2,360 bytes for both drain and early
-stop (0.576 bytes per drain visit). For hierarchical R3b, safe-minus-direct
-whole-root excess is 8,296/5,592 bytes for no-growth drain/early,
-21,016/9,416 for sparse, and 140,888/49,672 for dense. Merely normalizing
-`excess - 2,360` by frozen resume count gives 270--323 bytes per resume; this
-is a descriptive comparison, not a proven decomposition. Dense-drain
-hierarchy allocates 78,160 fewer bytes than the safe flat root, while their
-direct controls differ by only 32 bytes.
+inside the interval. It reports the initial capacity, batch size, visits, and
+resume counts separately. R3a's safe-minus-direct allocation is exactly 2,360
+bytes for both drain and early stop (0.576 bytes per drain visit). For
+hierarchical R3b, safe-minus-direct whole-root excess is 8,296/5,592 bytes for
+capacity 4,096/batch 256. At batch 64 it is 21,016/9,400 with capacity 4,096
+and 21,016/9,416 with capacity 256 and actual growth. At batch 8 it is
+140,904/49,656 with capacity 4,096 and 140,888/49,672 with capacity 1 and
+actual growth. Each pair is drain/early. Thus holding resume count fixed while
+adding growth changes the safe-minus-direct excess by at most 16 bytes per
+root. The material excess is therefore present without buffer replacement and
+is essentially unchanged when growth is added at fixed resume counts. Merely
+normalizing `excess - 2,360` by frozen resume count remains a descriptive
+comparison, not a decomposition of the plural boundary.
+Dense-drain hierarchy allocates 78,160 fewer bytes than the safe flat root in
+the original baseline, while their direct controls differ by only 32 bytes.
 
 This is still a preliminary whole-root allocation gate: it has one graph size,
-two visit targets, no prebuilt-state kernel interval, and modes that couple
-initial capacity with batch size. It therefore cannot yet separate fixed
-setup, reopen, and growth slopes causally. `max_live_bytes` is process-lifetime
-high water including startup and the pre-measurement sample, not interval
-residency. Allocated/copied/time fields are interval deltas; the printed
-`bytes_per_resume` is total allocation per resume, not safe-minus-direct
-boundary excess.
+two visit targets, and no prebuilt-state kernel interval. The orthogonal
+controls separate growth from the resume schedule but do not separate fixed
+setup from the per-resume term. `max_live_bytes` is process-lifetime high water
+including startup and the pre-measurement sample, not interval residency.
+Allocated/copied/time fields are interval deltas; the printed
+`total_bytes_per_resume` is total allocation per resume, not safe-minus-direct
+boundary excess. Each measured root is fully forced with a unique seed, but
+the loop takes visits/resumes from the pre-measurement sample and aggregates
+digests without an independent per-repetition oracle. Per-repetition
+structural/digest validation remains part of the prebuilt-state harness gate.
 
 The selected runtime evidence uses the final O2 source and one executable:
 alternating fresh processes, two excluded warm-up pairs, 21 retained pairs,
@@ -252,8 +264,11 @@ alternating fresh processes, two excluded warm-up pairs, 21 retained pairs,
 1.075265×/1.097431: it narrowly passes the 1.10 engineering gate and misses
 1.05. A direct same-build comparison selects hierarchy over the safe flat
 root at 0.965671×/0.973470 UCB. The correlated dense signal motivates
-boundary attribution, but the coupled capacity/batch modes do not prove that
-reopening rather than growth is the cause.
+boundary attribution, but that original coupled-capacity campaign alone did
+not prove whether reopening or growth was the cause. The orthogonal follow-up
+below closes the immediate question of whether growth is required or a
+material contributor for this workload; it does not identify the remaining
+boundary cost by itself.
 
 The checked-in provenance manifest for those selected rows is:
 
@@ -274,12 +289,31 @@ The checked-in provenance manifest for those selected rows is:
 | dense early, hierarchical safe/direct | 1.009929 | 1.029168 | `06d0ac74ceea51fa017093f91b25ba26a5fbe7610027fef98fcbc4f956a8f48b` |
 | dense drain, hierarchical/flat safe | 0.965671 | 0.973470 | `d00a7d51435b9e071b073690d4dac4a80bc7a04c14b45b23498f3a8855171a75` |
 
+The orthogonal drain campaign uses one later O2 executable and the same
+21-pair protocol. Its source SHA-256 is
+`1ab9422c76cc2fed5a8e4bd92e21dd66a5520dd750964e1694f0554f2bef9da9`
+and executable SHA-256 is
+`a0d1c2af13698673b38268e19522e8d4e9293edf5102de712dc6f1244d00bec0`;
+the runner hash is unchanged. The two same-batch comparisons show that actual
+growth is not required for, and does not materially increase, the safe/direct
+ratio. The high-resume batch-8 control misses 1.05 even with capacity 4,096 and
+zero buffer growth.
+
+| Capacity / batch / growth | Resumes | Geomean | One-sided 95% UCB | Raw JSON SHA-256 |
+| --- | ---: | ---: | ---: | --- |
+| 4,096 / 256 / none | 20 | 1.015817 | 1.021214 | `26697fdcb14780613c69f346317ee4d56952fbe527451fee339aa91ee3d4926c` |
+| 4,096 / 64 / none | 67 | 1.015723 | 1.022836 | `21027e1a345fb2bd298c94e57199fcca2927a7da0d1f9a965af9a685fd913ff5` |
+| 256 / 64 / sparse | 67 | 1.016398 | 1.020767 | `01df7634455652206f37f60e58569c520fb491c2b151be91deb06bbcd08036e6` |
+| 4,096 / 8 / none | 513 | 1.069158 | 1.073317 | `5abe7dd0bd278c6d472fff1cc8827eb131aebf2e090b5338aabf0857dad5b842` |
+| 1 / 8 / dense | 513 | 1.063709 | 1.066591 | `b3dcd644794c65e2a10a7373c2669ea94768ff191c68dcb495bdd3be8c168d31` |
+
 The raw CSV/JSON paths remain ignored under
 `bench-results/worklist-resume/reviewed/`; the manifest retains their digests
-and the exact reproducibility boundary. Remaining no-growth/sparse-early
-final campaigns, the orthogonal capacity/batch controls, node-count/allocation
-sweep, automated whole-boundary Core extraction, and supported-GHC checks keep
-P2 active.
+and the exact reproducibility boundary. The orthogonal capacity/batch control
+and no-growth drain campaign are complete. Remaining early-stop campaigns,
+the node-count/prebuilt-state allocation sweep with per-repetition validation,
+automated whole-boundary Core extraction, exact-one-row paired-runner
+hardening, and supported-GHC checks keep P2 active.
 `worklist-resume-allocation` and
 `bench/run-worklist-resume-paired.mjs` preserve the fresh-seed allocation and
 fresh-process paired protocols under benchmark-specific names.
@@ -1654,21 +1688,24 @@ The active priority order is:
    shapes, frozen modelled counts, semantic tests, edge-worker inspections,
    manual whole-boundary Core, symmetric whole-root allocation, and selected
    O2 paired campaigns now exist. Retain the hierarchical shape: same-build
-   dense timing and allocation both beat flat. Before causal optimization,
-   add a same-batch capacity sweep or same-capacity batch sweep, a node/visit
-   allocation sweep with setup outside the kernel, automated retained Core
-   extraction, the remaining no-growth/sparse-early campaigns, and
-   supported-GHC structural checks.
+   dense timing and allocation both beat flat. The same-capacity batch sweep
+   and same-batch capacity comparisons are complete: zero-growth and growing
+   controls have effectively identical safe-minus-direct allocation at fixed
+   resume counts, and both batch-8 runtime controls miss 1.05. Remaining P2
+   work is the early-stop timing matrix, a node/visit allocation sweep with
+   setup outside the kernel and per-repetition validation, automated retained
+   Core extraction, exact-one-row paired-runner hardening, and supported-GHC
+   structural checks.
 5. **P4a — narrow plural-boundary attribution (ahead of P3, not yet an
-   optimization).** R3a and sparse R3b pass 1.05; dense drain narrowly passes
-   1.10 and misses 1.05. Whole-root allocation correlates with frozen resume
-   count, and hierarchical grouping is materially cheaper than flat, but
-   growth and reopen frequency remain coupled. After P2's orthogonal controls,
-   attribute `Aliases` reconstruction, result tuples, and
-   `reborrowings`/`After` allocation at the two-member frontier boundary.
-   Attempt a safe general optimization only if that attribution survives.
-   Preserve the current API and require the frozen vectors/digests, manual
-   Core shape, and early-stop cases to remain unchanged.
+   optimization).** R3a and the 20/67-resume R3b controls pass 1.05; both
+   513-resume batch-8 controls pass 1.10 and miss 1.05. Orthogonal allocation
+   and timing now rule out actual buffer growth as a prerequisite for the
+   residual. Attribute `Aliases` reconstruction, result tuples, and
+   `reborrowings`/`After` allocation at the two-member frontier boundary; do
+   not reopen the data-access or growable-vector API. Attempt a safe general
+   optimization only if that attribution survives. Preserve the current API
+   and require the frozen vectors/digests, manual Core shape, and early-stop
+   cases to remain unchanged.
 6. **P3 — conditional surface changes (deferred).** R3 currently exposes no
    missing data access, growth, or content-view operation: the public
    unrestricted path expresses the entire workload safely. Add an unchecked

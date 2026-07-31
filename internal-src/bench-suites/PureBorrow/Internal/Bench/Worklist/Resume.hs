@@ -18,6 +18,8 @@ module PureBorrow.Internal.Bench.Worklist.Resume (
   WorklistTarget (..),
   WorklistSummary (..),
   WorklistOutput (..),
+  worklistBatchSize,
+  worklistInitialCapacity,
   worklistNodeCount,
   worklistDirectOpenOnceRoot,
   worklistDirectOpenOnceRootWithSeed,
@@ -72,6 +74,8 @@ import Test.Tasty.Bench qualified as Bench
 
 data WorklistGrowth
   = NoGrowth
+  | NoGrowthBatch64
+  | NoGrowthBatch8
   | SparseGrowth
   | DenseGrowth
   deriving stock (Bounded, Enum, Eq, Generic, Show)
@@ -343,7 +347,7 @@ newWorklistStore =
                                   queueLinear
                               ReopenStorage growth ->
                                 Growable.withCapacity
-                                  (initialCapacity growth)
+                                  (worklistInitialCapacity growth)
                                   queueLinear
                         , frontierLog =
                             case storage of
@@ -353,7 +357,7 @@ newWorklistStore =
                                   logLinear
                               ReopenStorage growth ->
                                 Growable.withCapacity
-                                  (initialCapacity growth)
+                                  (worklistInitialCapacity growth)
                                   logLinear
                         }
                   }
@@ -497,9 +501,9 @@ worklistDirectReopenRootWithSeed seed reopenShape growth target =
     state <- U.thaw initialState
     adjacencyHeader <- newUnboxedHeaderFromVector worklistAdjacency
     payloadHeader <- newBoxedHeaderFromVector worklistPayload
-    queueHeader <- newUnboxedHeader (initialCapacity growth) U.empty
+    queueHeader <- newUnboxedHeader (worklistInitialCapacity growth) U.empty
     _ <- appendUnboxed queueHeader (U.singleton 0)
-    logHeader <- newUnboxedHeader (initialCapacity growth) U.empty
+    logHeader <- newUnboxedHeader (worklistInitialCapacity growth) U.empty
     (finalTraversal, scopeCount, headerUpdateCount, growthCount, finalOutcome) <-
       case reopenShape of
         FlatReopen ->
@@ -739,8 +743,8 @@ worklistPureBorrowReopenRootWithSeed seed reopenShape growth target =
                       growth
                       target
                       seededInitial
-                      (initialCapacity growth)
-                      (initialCapacity growth)
+                      (worklistInitialCapacity growth)
+                      (worklistInitialCapacity growth)
                       0
                       0
                       0
@@ -777,8 +781,8 @@ worklistPureBorrowReopenRootWithSeed seed reopenShape growth target =
                               growth
                               target
                               seededInitial
-                              (initialCapacity growth)
-                              (initialCapacity growth)
+                              (worklistInitialCapacity growth)
+                              (worklistInitialCapacity growth)
                               0
                               0
                               0
@@ -889,7 +893,7 @@ runFlatReopenPureBorrow
                     (targetVisits target)
                     ( min
                         (stateTail current)
-                        (stateHead current + batchSize growth)
+                        (stateHead current + worklistBatchSize growth)
                     )
                     current
                     []
@@ -1067,7 +1071,7 @@ runNestedReopenPureBorrow
                   (targetVisits target)
                   ( min
                       (stateTail current)
-                      (stateHead current + batchSize growth)
+                      (stateHead current + worklistBatchSize growth)
                   )
                   current
                   []
@@ -1932,7 +1936,7 @@ runReopenSegmentDirect
     segment <-
       runSegment
         (targetVisits target)
-        (min queueSize (stateHead current + batchSize growth))
+        (min queueSize (stateHead current + worklistBatchSize growth))
         offsets
         adjacency
         payload
@@ -2277,15 +2281,19 @@ appendUnboxed header values = do
   writeIORef header (UnboxedHeader required grown)
   pure didGrow
 
-initialCapacity :: WorklistGrowth -> Int
-initialCapacity NoGrowth = worklistNodeCount
-initialCapacity SparseGrowth = 256
-initialCapacity DenseGrowth = 1
+worklistInitialCapacity :: WorklistGrowth -> Int
+worklistInitialCapacity NoGrowth = worklistNodeCount
+worklistInitialCapacity NoGrowthBatch64 = worklistNodeCount
+worklistInitialCapacity NoGrowthBatch8 = worklistNodeCount
+worklistInitialCapacity SparseGrowth = 256
+worklistInitialCapacity DenseGrowth = 1
 
-batchSize :: WorklistGrowth -> Int
-batchSize NoGrowth = 256
-batchSize SparseGrowth = 64
-batchSize DenseGrowth = 8
+worklistBatchSize :: WorklistGrowth -> Int
+worklistBatchSize NoGrowth = 256
+worklistBatchSize NoGrowthBatch64 = 64
+worklistBatchSize NoGrowthBatch8 = 8
+worklistBatchSize SparseGrowth = 64
+worklistBatchSize DenseGrowth = 8
 
 growthTarget :: Int -> Int -> Int
 growthTarget oldCapacity required

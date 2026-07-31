@@ -3,7 +3,10 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module PureBorrow.Inspection.QSort (tests) where
+module PureBorrow.Inspection.QSort (
+  tests,
+  unboxedQsort,
+) where
 
 import Control.Concurrent.DivideConquer.Linear.Unrestricted (qsort)
 import Control.Monad.Borrow.Pure.BO (BO, Mut)

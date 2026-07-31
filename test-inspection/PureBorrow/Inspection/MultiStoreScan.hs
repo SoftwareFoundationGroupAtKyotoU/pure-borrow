@@ -1,12 +1,15 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 
-module PureBorrow.Inspection.MultiStoreScan (tests) where
+module PureBorrow.Inspection.MultiStoreScan (
+  tests,
+  hotWorker,
+  boxedContentProjection,
+  unboxedContentProjection,
+) where
 
 import Control.Monad.Borrow.Pure.BO (BO, Mut)
-import Control.Monad.Borrow.Pure.Experimental.Borrows (
-  Aliases,
- )
+import Control.Monad.Borrow.Pure.Experimental.Borrows (Aliases)
 import Data.Int (Int64)
 import Data.Vector qualified as V
 import Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted qualified as Growable

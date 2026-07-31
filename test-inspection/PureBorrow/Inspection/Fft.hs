@@ -3,7 +3,10 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module PureBorrow.Inspection.Fft (tests) where
+module PureBorrow.Inspection.Fft (
+  tests,
+  unboxedFftCombineLoop,
+) where
 
 import Control.Concurrent.DivideConquer.Linear.Unrestricted.Internal (combineLoop)
 import Control.Monad.Borrow.Pure.BO (BO, Mut)

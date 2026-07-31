@@ -206,6 +206,8 @@ test-suite pure-borrow-test
     tasty-hunit,
     vector,
 
+-- Keep Core inspections in a separate component: in the larger main test
+-- component GHC leaves concrete generic-vector dictionaries unspecialized.
 test-suite pure-borrow-inspection
   import: defaults
   default-language: GHC2021

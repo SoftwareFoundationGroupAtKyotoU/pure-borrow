@@ -2,7 +2,11 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 
-module PureBorrow.Inspection.Worklist.Resume (tests) where
+module PureBorrow.Inspection.Worklist.Resume (
+  tests,
+  resumeEdgeWorker,
+  openOnceEdgeWorker,
+) where
 
 import Control.Monad.Borrow.Pure.BO (BO, Borrow, Mut)
 import Control.Monad.Borrow.Pure.Experimental.Borrows (Aliases, reborrowings)

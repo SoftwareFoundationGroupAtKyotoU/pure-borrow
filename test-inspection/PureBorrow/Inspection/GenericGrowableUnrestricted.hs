@@ -1,14 +1,20 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# OPTIONS_GHC -O2 #-}
 
-module PureBorrow.Inspection.GenericGrowableUnrestricted (tests) where
+module PureBorrow.Inspection.GenericGrowableUnrestricted (
+  tests,
+  boxedPush,
+  unboxedPush,
+) where
 
 import Control.Monad.Borrow.Pure.BO (BO, Mut)
 import Data.Vector qualified as Boxed
 import Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted qualified as Growable
 import Data.Vector.Mutable qualified as BoxedMutable
 import Data.Vector.Unboxed qualified as Unboxed
+import GHC.Base (IP)
 import Prelude.Linear
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Inspection
@@ -32,16 +38,16 @@ tests =
   testGroup
     "generic growable unrestricted vector"
     [ $( inspectTest
-           ( (hasNoTypeClasses 'boxedPush)
+           ( (hasNoTypeClassesExcept 'boxedPush [''IP])
                { testName =
-                   Just "boxed push has no type-class dictionaries"
+                   Just "boxed push retains only CallStack dictionaries"
                }
            )
        )
     , $( inspectTest
-           ( (hasNoTypeClasses 'unboxedPush)
+           ( (hasNoTypeClassesExcept 'unboxedPush [''IP])
                { testName =
-                   Just "unboxed push has no type-class dictionaries"
+                   Just "unboxed push retains only CallStack dictionaries"
                }
            )
        )

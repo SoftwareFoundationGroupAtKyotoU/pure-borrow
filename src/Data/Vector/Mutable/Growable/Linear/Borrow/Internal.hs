@@ -25,7 +25,6 @@ import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )
-import Control.Syntax.DataFlow qualified as DataFlow
 import Data.IntSet qualified as IntSet
 import Data.Ref.Linear qualified as Ref
 import Data.Ref.Linear.Borrow qualified as RefBorrow
@@ -299,18 +298,19 @@ get ::
   Borrow bk α (GrowableVector a) %1 ->
   BO β (Borrow bk α a)
 {-# INLINE get #-}
-get index vector = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  if index < 0 || index >= logicalSize
-    then
-      error
-        ( "get: index "
-            <> show index
-            <> " out of bounds for length "
-            <> show logicalSize
-        )
-        vector
-    else unsafeGet index vector
+get index vector =
+  case size vector of
+    (Ur logicalSize, vector) ->
+      if index < 0 || index >= logicalSize
+        then
+          error
+            ( "get: index "
+                <> show index
+                <> " out of bounds for length "
+                <> show logicalSize
+            )
+            vector
+        else unsafeGet index vector
 
 -- | Unchecked 'get'. The index must satisfy @0 <= index < size@.
 unsafeGet ::
@@ -323,9 +323,9 @@ unsafeGet =
   Unsafe.toLinear2 \index (UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef)
-          `lseq` UnsafeAlias
-          Control.<$> unsafeSystemIOToBO (MV.unsafeRead buffer index)
+        pop (aff duplicateRef) `lseq`
+          UnsafeAlias
+            Control.<$> unsafeSystemIOToBO (MV.unsafeRead buffer index)
 
 -- | Borrow the first initialized element. Fails when the vector is empty.
 head ::
@@ -349,11 +349,12 @@ last ::
   Borrow bk α (GrowableVector a) %1 ->
   BO β (Borrow bk α a)
 {-# INLINE last #-}
-last vector = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  if logicalSize <= 0
-    then error "last: empty vector" vector
-    else unsafeGet (logicalSize - 1) vector
+last vector =
+  case size vector of
+    (Ur logicalSize, vector) ->
+      if logicalSize <= 0
+        then error "last: empty vector" vector
+        else unsafeGet (logicalSize - 1) vector
 
 -- | Unchecked 'last'. The vector must be non-empty.
 unsafeLast ::
@@ -361,9 +362,9 @@ unsafeLast ::
   Borrow bk α (GrowableVector a) %1 ->
   BO β (Borrow bk α a)
 {-# INLINE unsafeLast #-}
-unsafeLast vector = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  unsafeGet (logicalSize - 1) vector
+unsafeLast vector =
+  case size vector of
+    (Ur logicalSize, vector) -> unsafeGet (logicalSize - 1) vector
 
 -- | Copy the element at an index through a shared borrow.
 copyAt ::
@@ -385,8 +386,8 @@ unsafeCopyAt =
   Unsafe.toLinear2 \index (UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef)
-          `lseq` unsafeSystemIOToBO do
+        pop (aff duplicateRef) `lseq`
+          unsafeSystemIOToBO do
             !value <- MV.unsafeRead buffer index
             let !copied = copy (UnsafeAlias value)
             NonLinear.pure (Ur copied)
@@ -402,8 +403,8 @@ checkedCopyAt =
   Unsafe.toLinear3 \operation index (UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header logicalSize buffer, duplicateRef) ->
-        pop (aff duplicateRef)
-          `lseq` if index < 0 || index >= logicalSize
+        pop (aff duplicateRef) `lseq`
+          if index < 0 || index >= logicalSize
             then
               error
                 ( operation
@@ -425,18 +426,19 @@ copyAtMut ::
   Mut α (GrowableVector a) %1 ->
   BO β (Ur a, Mut α (GrowableVector a))
 {-# INLINE copyAtMut #-}
-copyAtMut index vector = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  if index < 0 || index >= logicalSize
-    then
-      error
-        ( "copyAtMut: index "
-            <> show index
-            <> " out of bounds for length "
-            <> show logicalSize
-        )
-        vector
-    else unsafeCopyAtMut index vector
+copyAtMut index vector =
+  case size vector of
+    (Ur logicalSize, vector) ->
+      if index < 0 || index >= logicalSize
+        then
+          error
+            ( "copyAtMut: index "
+                <> show index
+                <> " out of bounds for length "
+                <> show logicalSize
+            )
+            vector
+        else unsafeCopyAtMut index vector
 
 -- | Unchecked 'copyAtMut'. The index must satisfy @0 <= index < size@.
 unsafeCopyAtMut ::
@@ -449,8 +451,8 @@ unsafeCopyAtMut =
   Unsafe.toLinear2 \index vector@(UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef)
-          `lseq` unsafeSystemIOToBO do
+        pop (aff duplicateRef) `lseq`
+          unsafeSystemIOToBO do
             !value <- MV.unsafeRead buffer index
             let !copied = copy (UnsafeAlias value)
             NonLinear.pure (Ur copied, vector)
@@ -463,19 +465,20 @@ set ::
   Mut α (GrowableVector a) %1 ->
   BO β (a, Mut α (GrowableVector a))
 {-# INLINE set #-}
-set index value vector = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  if index < 0 || index >= logicalSize
-    then
-      error
-        ( "set: index "
-            <> show index
-            <> " out of bounds for length "
-            <> show logicalSize
-        )
-        value
-        vector
-    else unsafeSet index value vector
+set index value vector =
+  case size vector of
+    (Ur logicalSize, vector) ->
+      if index < 0 || index >= logicalSize
+        then
+          error
+            ( "set: index "
+                <> show index
+                <> " out of bounds for length "
+                <> show logicalSize
+            )
+            value
+            vector
+        else unsafeSet index value vector
 
 -- | Unchecked 'set'. The index must satisfy @0 <= index < size@.
 unsafeSet ::
@@ -504,19 +507,20 @@ update ::
   Mut α (GrowableVector a) %1 ->
   BO β (result, Mut α (GrowableVector a))
 {-# INLINE update #-}
-update index action vector = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  if index < 0 || index >= logicalSize
-    then
-      error
-        ( "update: index "
-            <> show index
-            <> " out of bounds for length "
-            <> show logicalSize
-        )
-        action
-        vector
-    else unsafeUpdate index action vector
+update index action vector =
+  case size vector of
+    (Ur logicalSize, vector) ->
+      if index < 0 || index >= logicalSize
+        then
+          error
+            ( "update: index "
+                <> show index
+                <> " out of bounds for length "
+                <> show logicalSize
+            )
+            action
+            vector
+        else unsafeUpdate index action vector
 
 -- | Unchecked 'update'. The index must satisfy @0 <= index < size@.
 unsafeUpdate ::
@@ -580,25 +584,26 @@ swap ::
   Int ->
   BO β (Mut α (GrowableVector a))
 {-# INLINE swap #-}
-swap vector first second = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  if first
-    < 0
-    || first
-    >= logicalSize
-    || second
-    < 0
-    || second
-    >= logicalSize
-    then
-      error
-        ( "swap: indices "
-            <> show (first, second)
-            <> " out of bounds for length "
-            <> show logicalSize
-        )
-        vector
-    else unsafeSwap vector first second
+swap vector first second =
+  case size vector of
+    (Ur logicalSize, vector) ->
+      if first
+        < 0
+        || first
+        >= logicalSize
+        || second
+        < 0
+        || second
+        >= logicalSize
+        then
+          error
+            ( "swap: indices "
+                <> show (first, second)
+                <> " out of bounds for length "
+                <> show logicalSize
+            )
+            vector
+        else unsafeSwap vector first second
 
 {- | Borrow several initialized elements mutably without validation.
 
@@ -827,8 +832,8 @@ getContents =
   Unsafe.toLinear \(UnsafeAlias (GrowableVector ref)) ->
     case Ref.unsafeReadRef ref of
       (Header logicalSize buffer, duplicateRef) ->
-        pop (aff duplicateRef)
-          `lseq` UnsafeAlias
+        pop (aff duplicateRef) `lseq`
+          UnsafeAlias
             (Fixed.Internal.unsafeFromMutableSlice 0 logicalSize buffer)
 
 {- | Borrow the fixed initialized prefix in a rank-2 no-growth scope.

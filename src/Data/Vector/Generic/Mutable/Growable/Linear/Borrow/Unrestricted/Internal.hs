@@ -26,7 +26,6 @@ import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )
-import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Ref.Linear qualified as Ref
 import Data.Ref.Linear.Borrow qualified as RefBorrow
 import Data.Unrestricted.Linear qualified as Ur
@@ -325,18 +324,19 @@ get ::
   Borrow bk α (GrowableVector v a) %1 ->
   BO β (Ur a, Borrow bk α (GrowableVector v a))
 {-# INLINE get #-}
-get index vector = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  if index < 0 || index >= logicalSize
-    then
-      error
-        ( "get: index "
-            <> show index
-            <> " out of bounds for length "
-            <> show logicalSize
-        )
-        vector
-    else unsafeGet index vector
+get index vector =
+  case size vector of
+    (Ur logicalSize, vector) ->
+      if index < 0 || index >= logicalSize
+        then
+          error
+            ( "get: index "
+                <> show index
+                <> " out of bounds for length "
+                <> show logicalSize
+            )
+            vector
+        else unsafeGet index vector
 
 -- | Unchecked 'get'. The index must satisfy @0 <= index < size@.
 unsafeGet ::
@@ -376,11 +376,12 @@ last ::
   Borrow bk α (GrowableVector v a) %1 ->
   BO β (Ur a, Borrow bk α (GrowableVector v a))
 {-# INLINE last #-}
-last vector = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  if logicalSize <= 0
-    then error "last: empty vector" vector
-    else unsafeGet (logicalSize - 1) vector
+last vector =
+  case size vector of
+    (Ur logicalSize, vector) ->
+      if logicalSize <= 0
+        then error "last: empty vector" vector
+        else unsafeGet (logicalSize - 1) vector
 
 -- | Unchecked 'last'. The vector must be non-empty.
 unsafeLast ::
@@ -388,9 +389,9 @@ unsafeLast ::
   Borrow bk α (GrowableVector v a) %1 ->
   BO β (Ur a, Borrow bk α (GrowableVector v a))
 {-# INLINE unsafeLast #-}
-unsafeLast vector = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  unsafeGet (logicalSize - 1) vector
+unsafeLast vector =
+  case size vector of
+    (Ur logicalSize, vector) -> unsafeGet (logicalSize - 1) vector
 
 -- | Read an initialized element through a shared borrow.
 copyAt ::
@@ -440,18 +441,19 @@ set ::
   Mut α (GrowableVector v a) %1 ->
   BO β (Ur a, Mut α (GrowableVector v a))
 {-# INLINE set #-}
-set index value vector = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  if index < 0 || index >= logicalSize
-    then
-      error
-        ( "set: index "
-            <> show index
-            <> " out of bounds for length "
-            <> show logicalSize
-        )
-        vector
-    else unsafeSet index value vector
+set index value vector =
+  case size vector of
+    (Ur logicalSize, vector) ->
+      if index < 0 || index >= logicalSize
+        then
+          error
+            ( "set: index "
+                <> show index
+                <> " out of bounds for length "
+                <> show logicalSize
+            )
+            vector
+        else unsafeSet index value vector
 
 -- | Unchecked 'set'. The index must satisfy @0 <= index < size@.
 unsafeSet ::
@@ -478,18 +480,19 @@ write ::
   Mut α (GrowableVector v a) %1 ->
   BO β (Mut α (GrowableVector v a))
 {-# INLINE write #-}
-write index value vector = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  if index < 0 || index >= logicalSize
-    then
-      error
-        ( "write: index "
-            <> show index
-            <> " out of bounds for length "
-            <> show logicalSize
-        )
-        vector
-    else unsafeWrite index value vector
+write index value vector =
+  case size vector of
+    (Ur logicalSize, vector) ->
+      if index < 0 || index >= logicalSize
+        then
+          error
+            ( "write: index "
+                <> show index
+                <> " out of bounds for length "
+                <> show logicalSize
+            )
+            vector
+        else unsafeWrite index value vector
 
 -- | Unchecked 'write'. The index must satisfy @0 <= index < size@.
 unsafeWrite ::
@@ -516,18 +519,19 @@ update ::
   Mut α (GrowableVector v a) %1 ->
   BO β (Ur result, Mut α (GrowableVector v a))
 {-# INLINE update #-}
-update index action vector = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  if index < 0 || index >= logicalSize
-    then
-      error
-        ( "update: index "
-            <> show index
-            <> " out of bounds for length "
-            <> show logicalSize
-        )
-        vector
-    else unsafeUpdate index action vector
+update index action vector =
+  case size vector of
+    (Ur logicalSize, vector) ->
+      if index < 0 || index >= logicalSize
+        then
+          error
+            ( "update: index "
+                <> show index
+                <> " out of bounds for length "
+                <> show logicalSize
+            )
+            vector
+        else unsafeUpdate index action vector
 
 -- | Unchecked 'update'. The index must satisfy @0 <= index < size@.
 unsafeUpdate ::
@@ -574,25 +578,26 @@ swap ::
   Int ->
   BO β (Mut α (GrowableVector v a))
 {-# INLINE swap #-}
-swap vector first second = DataFlow.do
-  (Ur logicalSize, vector) <- size vector
-  if first
-    < 0
-    || first
-    >= logicalSize
-    || second
-    < 0
-    || second
-    >= logicalSize
-    then
-      error
-        ( "swap: indices "
-            <> show (first, second)
-            <> " out of bounds for length "
-            <> show logicalSize
-        )
-        vector
-    else unsafeSwap vector first second
+swap vector first second =
+  case size vector of
+    (Ur logicalSize, vector) ->
+      if first
+        < 0
+        || first
+        >= logicalSize
+        || second
+        < 0
+        || second
+        >= logicalSize
+        then
+          error
+            ( "swap: indices "
+                <> show (first, second)
+                <> " out of bounds for length "
+                <> show logicalSize
+            )
+            vector
+        else unsafeSwap vector first second
 
 -- | Unchecked 'swap'. Both indices must satisfy @0 <= index < size@.
 unsafeSwap ::

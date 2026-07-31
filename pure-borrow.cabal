@@ -184,6 +184,7 @@ test-suite pure-borrow-test
     Data.Vector.Unboxed.Mutable.Linear.BorrowSpec
     Data.Vector.Unboxed.Mutable.Linear.TypingCases
     PureBorrow.Internal.Bench.MultiStoreScanSpec
+    PureBorrow.Internal.Bench.Worklist.ResumeSpec
 
   ghc-options:
     -O2
@@ -197,6 +198,7 @@ test-suite pure-borrow-test
     deepseq,
     falsify,
     pure-borrow,
+    pure-borrow:bench-suites,
     pure-borrow:multi-store-scan-bench-suites,
     pure-borrow:unboxed-bench-suites,
     random,
@@ -216,6 +218,7 @@ test-suite pure-borrow-inspection
     PureBorrow.Inspection.GenericGrowableUnrestricted
     PureBorrow.Inspection.MultiStoreScan
     PureBorrow.Inspection.QSort
+    PureBorrow.Inspection.Worklist.Resume
 
   ghc-options:
     -O2
@@ -223,6 +226,7 @@ test-suite pure-borrow-inspection
 
   build-depends:
     pure-borrow,
+    pure-borrow:bench-suites,
     pure-borrow:multi-store-scan-bench-suites,
     tasty,
     tasty-inspection-testing,
@@ -257,9 +261,11 @@ library bench-suites
   exposed-modules:
     PureBorrow.Internal.Bench.Fft
     PureBorrow.Internal.Bench.QSort
+    PureBorrow.Internal.Bench.Worklist.Resume
 
   build-depends:
     base >=4.7 && <5,
+    deepseq,
     optparse-applicative,
     pure-borrow,
     random,
@@ -424,6 +430,40 @@ benchmark multi-store-scan-allocation
     deepseq,
     pure-borrow:multi-store-scan-bench-suites,
     vector,
+
+  default-language: GHC2021
+
+benchmark worklist-resume-bench
+  import: defaults
+  type: exitcode-stdio-1.0
+  main-is: worklist-resume.hs
+  hs-source-dirs: bench
+  ghc-options:
+    -threaded
+    -rtsopts
+    -O2
+    -with-rtsopts=-N1
+
+  build-depends:
+    base >=4.7 && <5,
+    pure-borrow:bench-suites,
+
+  default-language: GHC2021
+
+benchmark worklist-resume-allocation
+  import: defaults
+  type: exitcode-stdio-1.0
+  main-is: worklist-resume-allocation.hs
+  hs-source-dirs: bench
+  ghc-options:
+    -rtsopts
+    -O2
+    -with-rtsopts=-T
+
+  build-depends:
+    base >=4.7 && <5,
+    deepseq,
+    pure-borrow:bench-suites,
 
   default-language: GHC2021
 

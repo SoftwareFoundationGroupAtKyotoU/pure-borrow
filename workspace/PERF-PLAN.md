@@ -26,11 +26,19 @@ implements
 fixed vector. This is the first implementation of the downstream feedback's
 preferred completion. Signed commit `40b458a` completes P0a's dedicated
 ownership/typing gate, and signed commit `8db6d4a` completes the P0b six-root
-`MultiStoreScan` integration and its GHC 9.12.4 structural gate. The current
-worktree completes P1 attribution, the header-matched comparator, allocation
-measurement, and the paired runtime gate. P2's resumable R3a/R3b workload is
-therefore the next active priority. Broad delimiter or `BO` redesign is not
-on the critical path.
+`MultiStoreScan` integration and its GHC 9.12.4 structural gate. Signed commit
+`78f8ce2` completes P1 attribution, the header-matched comparator, allocation
+measurement, and the paired runtime gate. The current worktree implements
+P2's resumable R3a/R3b benchmark and freezes its semantic baseline, reviewed
+GHC 9.12.4 O2 Core, whole-root allocation, and selected paired-runtime
+evidence. Three independent adversarial reviews found no soundness or
+ownership violation. The performance review did find comparator, Core-scope,
+and provenance gaps; the current worktree fixes the comparator and preserves
+the reviewed evidence limits below. Dense-drain overhead correlates with the
+more frequent reopen schedule, but capacity and batch size are still coupled,
+so a narrow plural-boundary attribution investigation—not an assumed
+optimization—is the first conditional follow-up. Broad `BO` representation
+work remains deferred.
 
 The earlier Tamagoh-driven work recorded in the previous version of this file
 is already present in the repository: direct inlinable `BO`/`After`/`Par`
@@ -166,7 +174,115 @@ remains the default. `bench/run-multi-store-scan-paired.mjs` preserves the
 fresh-process pairing/bootstrap protocol, while the
 `multi-store-scan-allocation` benchmark component preserves the
 prebuilt-input, GC-flushed allocation measurement. Supported-GHC inspection
-and R3 remain pending.
+for P1 remains pending; the current P2 evidence follows.
+
+P2 now freezes a benchmark-local deterministic graph/worklist under
+`PureBorrow.Internal.Bench.Worklist.Resume`: 4,096 nodes, degree three,
+fixed offsets/marks/state roots, growable adjacency/payload/queue/log roots,
+mark-on-enqueue traversal, and both complete drain and 1,365-visit early stop.
+The direct and safe roots agree on every final vector and all operation
+models for open-once plus flat and hierarchical reopen shapes across
+no-growth, sparse-growth, and dense-growth schedules. These access counts are
+derived from visits/enqueues rather than independently instrumented; final
+vectors and digests are the semantic oracle. Drain performs 4,096
+visits, 4,095 enqueue transitions, 12,288 edge/payload/mark reads, and ends at
+digest `2728622868939553119`; early stop performs 1,365 visits, 2,888 enqueue
+transitions, 4,095 edge/payload/mark reads, and ends at digest
+`5952155574826728904`. Seeded roots provide independent fresh traversals for
+allocation measurement without changing direct-versus-safe equivalence.
+Tests now require seeds 1 and 37 to produce different digests and require
+repeated/interleaved evaluations to remain deterministic.
+
+R3a opens four growable contents once and performs no resume, header-update,
+or growth boundary. R3b freezes 20/67/513 drain resume boundaries for
+no/sparse/dense growth and 10/24/172 for early stop. Flat grouping opens four
+contents per segment; the selected hierarchy holds shared graph views plus
+marks/state in one outer scope and reopens only the two-member queue/log
+frontier. Its observed open formula is `2 + 2 * segments`, versus
+`4 * segments` for flat. The complete main suite now passes 286 tests and the
+inspection suite passes 22 tests. The automated inspection tests cover the
+already projected open-once and resume edge workers only: they exclude
+dictionaries, growable headers, plural bundles, projection/extend/reborrow
+calls, and generic fixed-vector access calls. They do not prove the whole
+resume boundary.
+
+A separate manual O2 dump closes the immediate comparator question and scopes
+the remaining Core work. Direct flat and nested controls compile to distinct
+recursive drivers (787 and 765 Core terms), with no per-segment `Maybe`
+shape dispatch. Pure Borrow flat and nested drivers are 1,559 and 1,457 terms
+respectively and each enters one shared resume SCC. The shared main resume
+worker is 188 terms versus 155 for the direct segment worker; its one
+specialized edge worker is 163 terms versus 145 for the direct edge worker.
+Together the safe main/edge workers contain the expected five unboxed reads,
+one boxed read, and one unboxed write, with no growable `Ref`, `GrowableVector`,
+`Aliases`, or `reborrowings` operation. Static boundary code has six
+`unsafeReadRef#` sites in the flat driver and four in the hierarchy because
+the latter keeps graph views open. Exact occurrence/allocation counts are
+manual evidence: inspection-testing 0.6.3 cannot express the required
+whole-boundary count, size, duplication, or arity obligations.
+
+The fresh-seed allocation harness measures the complete root: symmetric
+allocation/reset plus materialization of all seven direct and safe owners are
+inside the interval. It reports visits and resume counts separately. R3a's
+safe-minus-direct allocation is exactly 2,360 bytes for both drain and early
+stop (0.576 bytes per drain visit). For hierarchical R3b, safe-minus-direct
+whole-root excess is 8,296/5,592 bytes for no-growth drain/early,
+21,016/9,416 for sparse, and 140,888/49,672 for dense. Merely normalizing
+`excess - 2,360` by frozen resume count gives 270--323 bytes per resume; this
+is a descriptive comparison, not a proven decomposition. Dense-drain
+hierarchy allocates 78,160 fewer bytes than the safe flat root, while their
+direct controls differ by only 32 bytes.
+
+This is still a preliminary whole-root allocation gate: it has one graph size,
+two visit targets, no prebuilt-state kernel interval, and modes that couple
+initial capacity with batch size. It therefore cannot yet separate fixed
+setup, reopen, and growth slopes causally. `max_live_bytes` is process-lifetime
+high water including startup and the pre-measurement sample, not interval
+residency. Allocated/copied/time fields are interval deltas; the printed
+`bytes_per_resume` is total allocation per resume, not safe-minus-direct
+boundary excess.
+
+The selected runtime evidence uses the final O2 source and one executable:
+alternating fresh processes, two excluded warm-up pairs, 21 retained pairs,
+5% tasty-bench standard-deviation target, no outlier removal, seed
+`0x50b02026`, and 100,000 paired-log bootstrap samples. R3a drain is
+0.972877×/0.976004 one-sided 95% UCB. Hierarchical sparse drain is
+1.030250×/1.039778 and passes 1.05. Dense early stop is
+1.009929×/1.029168. Dense complete drain is
+1.075265×/1.097431: it narrowly passes the 1.10 engineering gate and misses
+1.05. A direct same-build comparison selects hierarchy over the safe flat
+root at 0.965671×/0.973470 UCB. The correlated dense signal motivates
+boundary attribution, but the coupled capacity/batch modes do not prove that
+reopening rather than growth is the cause.
+
+The checked-in provenance manifest for those selected rows is:
+
+- benchmark source SHA-256:
+  `550d242486026b519e0314e97506663f42e2efbcc29f326df467fd128a60f9f2`;
+- executable SHA-256:
+  `46268847f7640bfa17ce1fda1f7df011f2e96a3cadc606dab13502f4eaf4cd93`;
+- runner SHA-256:
+  `36acb2e185bbce19d5286744ff240fbdd85b8e34789b545fdab53a38fcedf352`;
+- GHC 9.12.4, `bench-suites` and benchmark executable both `-O2`, wall time,
+  `-N1`.
+
+| Selected case | Geomean | One-sided 95% UCB | Raw JSON SHA-256 |
+| --- | ---: | ---: | --- |
+| open-once drain, safe/direct | 0.972877 | 0.976004 | `39224628c12d0fcce006c433cb96eb99a224408c974580d7bd3b0ae8a916db38` |
+| sparse drain, hierarchical safe/direct | 1.030250 | 1.039778 | `9ed54525d9aa0fc2b881b1dc4a8e2912c61c6f8142f12417821ca9024ff0c8bc` |
+| dense drain, hierarchical safe/direct | 1.075265 | 1.097431 | `75443179439fa20e0ca54bcf16f5de52214773cbd6a6d20832ce5ea33d4f89d5` |
+| dense early, hierarchical safe/direct | 1.009929 | 1.029168 | `06d0ac74ceea51fa017093f91b25ba26a5fbe7610027fef98fcbc4f956a8f48b` |
+| dense drain, hierarchical/flat safe | 0.965671 | 0.973470 | `d00a7d51435b9e071b073690d4dac4a80bc7a04c14b45b23498f3a8855171a75` |
+
+The raw CSV/JSON paths remain ignored under
+`bench-results/worklist-resume/reviewed/`; the manifest retains their digests
+and the exact reproducibility boundary. Remaining no-growth/sparse-early
+final campaigns, the orthogonal capacity/batch controls, node-count/allocation
+sweep, automated whole-boundary Core extraction, and supported-GHC checks keep
+P2 active.
+`worklist-resume-allocation` and
+`bench/run-worklist-resume-paired.mjs` preserve the fresh-seed allocation and
+fresh-process paired protocols under benchmark-specific names.
 
 On the pinned GHC 9.12.4 O2 build, paired single-capability runs against the
 previous boxed element-owning roots measured:
@@ -1533,25 +1649,39 @@ The active priority order is:
    1.014222×/1.019416 UCB, passing both runtime margins. Direct and nested
    ownership shapes are timing-equivalent, so retain the simpler direct-record
    form.
-4. **P2 — resumable R3a/R3b (active).** Freeze the
-   application-independent worklist
-   trace, then test open-once and push/extend/reopen modes using the same
-   unrestricted content path. Measure visits and reopenings separately and
-   compare flat versus nested groups. This is the first gate that can
-   attribute enqueue/resume or growth-boundary cost beyond the compact R2
-   worker.
-5. **P3 — conditional surface changes.** Add an unchecked or bulk
-   transaction only if P1 or P2 identifies a general residual operation that
-   the current unrestricted fixed view cannot express. Keep every precondition
-   explicit and test checked-entry equivalence. Do not add such a surface only
-   to make the historical element-owning candidate match the unrestricted
-   one; genuinely linearly owned elements remain a separate workload.
-6. **P4 — conditional delimiter and `BO` work.** Revisit
-   result-producing/plural delimiter erasure or the `BO` representation only
-   if the same residual cost survives both R2 and R3 after container/backend
-   optimization. R1 convenience cleanup may proceed independently but is not
-   a blocker for the multi-store path.
-7. **P5 — documentation, promotion, and downstream validation.** Document the
+4. **P2 — resumable R3a/R3b (active, reviewed baseline in place).** The
+   deterministic worklist, open-once and reopen modes, flat/hierarchical
+   shapes, frozen modelled counts, semantic tests, edge-worker inspections,
+   manual whole-boundary Core, symmetric whole-root allocation, and selected
+   O2 paired campaigns now exist. Retain the hierarchical shape: same-build
+   dense timing and allocation both beat flat. Before causal optimization,
+   add a same-batch capacity sweep or same-capacity batch sweep, a node/visit
+   allocation sweep with setup outside the kernel, automated retained Core
+   extraction, the remaining no-growth/sparse-early campaigns, and
+   supported-GHC structural checks.
+5. **P4a — narrow plural-boundary attribution (ahead of P3, not yet an
+   optimization).** R3a and sparse R3b pass 1.05; dense drain narrowly passes
+   1.10 and misses 1.05. Whole-root allocation correlates with frozen resume
+   count, and hierarchical grouping is materially cheaper than flat, but
+   growth and reopen frequency remain coupled. After P2's orthogonal controls,
+   attribute `Aliases` reconstruction, result tuples, and
+   `reborrowings`/`After` allocation at the two-member frontier boundary.
+   Attempt a safe general optimization only if that attribution survives.
+   Preserve the current API and require the frozen vectors/digests, manual
+   Core shape, and early-stop cases to remain unchanged.
+6. **P3 — conditional surface changes (deferred).** R3 currently exposes no
+   missing data access, growth, or content-view operation: the public
+   unrestricted path expresses the entire workload safely. Add an unchecked
+   or bulk transaction only if P4a proves that the residual cannot be removed
+   at the general plural boundary. Keep every precondition explicit and test
+   checked-entry equivalence. Genuinely linearly owned elements remain a
+   separate workload.
+7. **P4b — broad delimiter or `BO` representation work (still
+   conditional).** Escalate beyond the plural boundary only if its measured
+   residual survives the narrow P4a attempt across R2 and R3. R1 convenience
+   cleanup may proceed independently but is not a blocker for the multi-store
+   path.
+8. **P5 — documentation, promotion, and downstream validation.** Document the
    validated safe transaction shape, run supported-GHC structural checks, add
    only measured batch operations, and deliberately promote the unrestricted
    growable family. Then rerun the corrected exact-checkpoint Herbrand
@@ -1589,6 +1719,25 @@ generic owner-reuse compile failure now resolve those blockers. Their
 P0b structural demands now also pass; their remaining performance findings
 through P1 now pass as well. Their remaining findings are represented in
 P2--P5 and the stop rules above.
+
+The three independent P2 reviews add this resolution:
+
+- Soundness found no lifetime, linearity, aliasing, or root-level unchecked
+  bounds violation. The exported unchecked edge workers are now explicitly
+  documented as benchmark-internal inspection anchors whose bounds are
+  established only by the roots.
+- Ownership found no unsafe import, overlapping owner, escaping content view,
+  growth-with-live-view, double reclaim, or mutable result escape. Its
+  freshness-coverage gap is closed by explicit seed sensitivity plus
+  repeated/interleaved determinism assertions.
+- Performance rejected the first allocation attribution and mixed-build
+  timing prose. Direct teardown now materializes all seven roots symmetrically;
+  flat and nested direct controls dispatch once into distinct recursive
+  drivers; the selected timings share one executable/runner hash; and the plan
+  distinguishes automated edge inspection, manual boundary Core, whole-root
+  allocation, process high-water residency, and still-pending causal sweeps.
+  It supports deferring P3 and investigating the plural boundary before broad
+  `BO` work, but does not yet approve a boundary optimization.
 
 ## Explicit non-goals
 

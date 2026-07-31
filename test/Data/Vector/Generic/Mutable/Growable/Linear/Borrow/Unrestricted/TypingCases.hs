@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE QualifiedDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -O0 #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
@@ -18,6 +19,7 @@ import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce (coerce)
 import Data.Vector qualified as V
 import Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted qualified as Growable
+import Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted qualified as Fixed
 import Data.Vector.Mutable.Growable.Linear.Borrow qualified as Owning
 import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
@@ -41,6 +43,61 @@ badOwnershipCoercion ::
   Growable.GrowableVector V.Vector Int %1 ->
   Owning.GrowableVector Int
 badOwnershipCoercion = Unsafe.toLinear coerce
+
+badGrowableToFixed ::
+  Growable.GrowableVector V.Vector Int %1 ->
+  Fixed.Vector V.Vector Int
+badGrowableToFixed = Unsafe.toLinear coerce
+
+badFixedToGrowable ::
+  Fixed.Vector V.Vector Int %1 ->
+  Growable.GrowableVector V.Vector Int
+badFixedToGrowable = Unsafe.toLinear coerce
+
+badGrowableToFixedUpcast ::
+  Growable.GrowableVector V.Vector Int %1 ->
+  Fixed.Vector V.Vector Int
+badGrowableToFixedUpcast = upcast
+
+badFixedToGrowableUpcast ::
+  Fixed.Vector V.Vector Int %1 ->
+  Growable.GrowableVector V.Vector Int
+badFixedToGrowableUpcast = upcast
+
+badLifetimeSwap ::
+  forall α β.
+  Mut α (Growable.GrowableVector V.Vector Int) %1 ->
+  Mut β (Growable.GrowableVector V.Vector Int)
+{-# NOINLINE badLifetimeSwap #-}
+badLifetimeSwap =
+  Unsafe.toLinear
+    ( coerce ::
+        Mut α (Growable.GrowableVector V.Vector Int) ->
+        Mut β (Growable.GrowableVector V.Vector Int)
+    )
+
+badLifetimeSwapCase :: Int
+badLifetimeSwapCase =
+  linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM (Growable.empty @V.Vector @Int ownerLinear)
+      let !() = consume (badLifetimeSwap vector)
+      pureAfter
+        ( case Growable.toVector (reclaim lend) of
+            Ur frozen -> V.length frozen
+        )
+
+badSplit ::
+  Mut α (Growable.GrowableVector V.Vector Int) %1 ->
+  Growable.GrowableVector V.Vector (Mut α Int)
+badSplit = split
+
+badOwnerToContentCoercion ::
+  Mut α (Growable.GrowableVector V.Vector Int) %1 ->
+  Mut α (Fixed.Vector V.Vector Int)
+badOwnerToContentCoercion = Unsafe.toLinear coerce
 
 badElementBorrow ::
   Mut α (Growable.GrowableVector V.Vector Int) %1 ->
@@ -142,3 +199,31 @@ badContentEscapeCase =
         ( case Growable.toVector (reclaim lend) of
             Ur frozen -> V.length frozen
         )
+
+badSharedContentEscapeCase :: Int
+badSharedContentEscapeCase =
+  linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM (Growable.empty @V.Vector @Int ownerLinear)
+      share vector & \(Ur sharedVector) -> Control.do
+        (escaped, sharedVector) <-
+          Growable.withContent sharedVector Control.pure
+        let
+          !() = consume escaped
+          !() = consume sharedVector
+        pureAfter
+          ( case Growable.toVector (reclaim lend) of
+              Ur frozen -> V.length frozen
+          )
+
+preserveMutContent ::
+  Mut α (Growable.GrowableVector V.Vector Int) %1 ->
+  Mut α (Fixed.Vector V.Vector Int)
+preserveMutContent = Growable.getContents
+
+preserveShareContent ::
+  Share α (Growable.GrowableVector V.Vector Int) %1 ->
+  Share α (Fixed.Vector V.Vector Int)
+preserveShareContent = Growable.getContents

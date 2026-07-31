@@ -311,10 +311,56 @@ directContentLength =
         borrowM
           (Growable.fromList @V.Vector [1, 2] ownerLinear)
       vector <- Growable.reserve 16 vector
-      case Fixed.size (Growable.getContents vector) of
+      case Fixed.size (preserveMutContent vector) of
         (Ur logicalSize, content) ->
           let !() = consume content
            in pureAfter (logicalSize, freezeBoxed (reclaim lend))
+
+sharedContentProjection :: (Int, [Int])
+sharedContentProjection =
+  linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM
+          (Growable.fromList @V.Vector [1, 2, 3] ownerLinear)
+      share vector & \(Ur shared) ->
+        move (preserveShareContent shared) & \(Ur content) -> Control.do
+          Ur observed <- Fixed.copyAt 1 content
+          pureAfter (observed, freezeBoxed (reclaim lend))
+
+withContentMutation :: [Int]
+withContentMutation =
+  linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM
+          (Growable.fromList @V.Vector [1, 2, 3] ownerLinear)
+      vector <-
+        Growable.withContent_ vector \content -> Control.do
+          content <- Fixed.write 1 20 content
+          Control.pure (consume content)
+      vector <- Growable.push 4 vector
+      let !() = consume vector
+      pureAfter (freezeBoxed (reclaim lend))
+
+explicitContentMutation :: [Int]
+explicitContentMutation =
+  linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM
+          (Growable.fromList @V.Vector [1, 2, 3] ownerLinear)
+      ((), vector) <-
+        reborrowing vector \short -> Control.do
+          content <- Control.pure (Growable.getContents short)
+          content <- Fixed.write 1 20 content
+          Control.pure (consume content)
+      vector <- Growable.push 4 vector
+      let !() = consume vector
+      pureAfter (freezeBoxed (reclaim lend))
 
 test_content :: TestTree
 test_content =
@@ -324,6 +370,12 @@ test_content =
         contentSplit @?= [11, 2, 3, 24, 5]
     , testCase "direct projection excludes spare capacity" do
         directContentLength @?= (2, [1, 2])
+    , testCase "getContents preserves mutable and shared kind and lifetime" do
+        directContentLength @?= (2, [1, 2])
+        sharedContentProjection @?= (2, [1, 2, 3])
+    , testCase "withContent matches explicit reborrowing and projection" do
+        withContentMutation @?= explicitContentMutation
+        withContentMutation @?= [1, 20, 3, 4]
     ]
 
 data Tracked = Tracked
@@ -521,6 +573,32 @@ test_typing =
         assertDeferredTypeError "Couldn't match type" badElementCoercionCase
     , testCase "element ownership cannot be coerced" do
         assertDeferredTypeError "representation" badOwnershipCoercionCase
+    , testCase "growable owner cannot be coerced to fixed content" do
+        assertDeferredTypeError
+          "Couldn't match representation of type"
+          badGrowableToFixed
+    , testCase "fixed content cannot be coerced to a growable owner" do
+        assertDeferredTypeError
+          "Couldn't match representation of type"
+          badFixedToGrowable
+    , testCase "growable owner cannot be upcast to fixed content" do
+        assertDeferredTypeError
+          "Couldn't match representation of type"
+          badGrowableToFixedUpcast
+    , testCase "fixed content cannot be upcast to a growable owner" do
+        assertDeferredTypeError
+          "Couldn't match representation of type"
+          badFixedToGrowableUpcast
+    , testCase "a growable borrow cannot swap lifetime indices" do
+        assertDeferredTypeError "Couldn't match type" badLifetimeSwapCase
+    , testCase "a growable owner has no generic split" do
+        assertDeferredTypeError
+          "DistributesAlias"
+          badSplit
+    , testCase "a growable borrow cannot be coerced to content" do
+        assertDeferredTypeError
+          "Couldn't match representation of type"
+          badOwnerToContentCoercion
     , testCase "get cannot manufacture an element borrow" do
         assertDeferredTypeError "Couldn't match" badElementBorrowCase
     , testCase "the mutable owner cannot be copied" do
@@ -531,4 +609,6 @@ test_typing =
         assertDeferredTypeError "Couldn't match" badGrowSharedCase
     , testCase "fixed content cannot escape its scope" do
         assertDeferredTypeError "Couldn't match" badContentEscapeCase
+    , testCase "shared fixed content cannot escape its scope" do
+        assertDeferredTypeError "Couldn't match" badSharedContentEscapeCase
     ]

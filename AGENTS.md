@@ -71,6 +71,12 @@ corresponding `*Spec.hs`, force each case to WHNF with `evaluate`, catch the exc
 another expected-failure wrapper: the test itself must pass only when it observes the
 intended deferred type error.
 
+Exception verified with GHC 9.12.4: linear multiplicity errors such as
+`Couldn't match type 'Many' with 'One'` are rejected while compiling the module even with
+`-fdefer-type-errors -Wno-deferred-type-errors`; they do not reach the runtime deferred-error
+path above. Put those cases in `test/typing-fail/` and validate their compile failure using
+the Cabal-selected compiler. Keep errors that GHC does defer in `TypingCases`.
+
 ### Benchmarks & profiling
 
 Benchmarks are `tasty-bench` executables; pass options through cabal, e.g.

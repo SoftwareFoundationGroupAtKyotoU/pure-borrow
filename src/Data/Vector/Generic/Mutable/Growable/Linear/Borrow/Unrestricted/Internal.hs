@@ -790,6 +790,16 @@ getContents ::
 {-# INLINE getContents #-}
 getContents =
   Unsafe.toLinear \(UnsafeAlias (GrowableVector ref)) ->
+    -- SAFETY: unsafeReadRef exposes the current header while returning the same
+    -- borrowed Ref handle. Discarding that returned handle does not free the
+    -- authoritative header retained by an enclosing lender. The input
+    -- growable occurrence is consumed by this projection and cannot be used
+    -- for reserve or growth. The result preserves its borrow kind and lifetime
+    -- and exposes exactly the initialized prefix, so mutable access cannot
+    -- coexist with growth and shared access remains read-only. The fixed safe
+    -- API can split this slice but cannot resize it, reveal spare capacity, or
+    -- consume/freeze the growable backing owner. Nominal backend and element
+    -- roles prevent selecting operations for a different representation.
     case Ref.unsafeReadRef ref of
       (Header logicalSize buffer, duplicateRef) ->
         pop (aff duplicateRef) `lseq`
@@ -813,6 +823,13 @@ withContent ::
 {-# INLINE withContent #-}
 withContent =
   Unsafe.toLinear2 \vector action ->
+    -- SAFETY: the coercion changes only the phantom lifetime of this one
+    -- retained borrow occurrence. unsafeSrunBO_ chooses a fresh rigid
+    -- sublifetime and invokes action exactly once. Linearity keeps vector
+    -- inaccessible until action has consumed every fixed slice and returned;
+    -- the result type cannot mention the fresh lifetime. Only then is the
+    -- original growable occurrence restored. This is a normal-return
+    -- guarantee; the module promises no owner recovery after an exception.
     unsafeSrunBO_ $
       action (getContents (Unsafe.coerce vector))
         Control.<&> \result -> (result, vector)

@@ -6,14 +6,34 @@ This document records both the remaining plan and the status of implemented
 prerequisites. It responds to
 `workspace/FEEDBACK-FOR-PURE-BORROW.md`, collected during the ongoing port of
 the [Herbrand CDCL SAT solver](https://github.com/konn/herbrand) on branch
-`konn/pure-borrow`. The feedback was produced against Pure Borrow revision
-`79a0d1878ccbce8895039c253cc9e462a788d3f3`; the moving downstream branch is
-context, not benchmark provenance.
+`konn/pure-borrow`. The original feedback was produced against Pure Borrow
+revision `79a0d1878ccbce8895039c253cc9e462a788d3f3`; the container follow-up was
+tested at `cdf6368178ee03a7e6db49c0bcd4a329b89598d5`. The moving downstream
+branch is context, not benchmark provenance.
 
-Most later composition and measurement work described below is still planned.
+The `cdf6368` downstream experiment materially changes the active priority.
+Herbrand proved that both whole-record reborrow/split and statically known
+`Muts`/`reborrowings` transactions recover every lender and reproduce the
+direct-control trace. No new multi-store combinator is required. The remaining
+measured gap was the ordinary element-owning fixed view returned by growable
+`getContents`: its copied reads and displaced-value writes kept the recursive
+worker above the frozen Core and runtime gates.
+
+The current branch goes one step beyond that experiment. Commit `4aabfae`
+implements
+`Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted`, whose
+`getContents` projects to the already implemented backend-generic unrestricted
+fixed vector. This is the first implementation of the downstream feedback's
+preferred completion. The highest-priority work is therefore to use that
+candidate safe surface in the six-root `MultiStoreScan`. P0a's dedicated
+ownership/typing gate is complete in the current worktree; P0b is now the next
+active priority. Preserve the older ordinary candidates as attribution
+controls and inspect the resulting whole root and recursive worker. Broad
+delimiter or `BO` redesign is no longer on the critical path.
+
 The earlier Tamagoh-driven work recorded in the previous version of this file
 is already present in the repository: direct inlinable `BO`/`After`/`Par`
-methods, `subShare`, and hot-loop API guidance. R1 now also has a provisional
+methods, `subShare`, and hot-loop API guidance. R1 also has a provisional
 direct `copyAtMut` fast path.
 
 The current worktree additionally contains boxed and unboxed fixed and
@@ -30,7 +50,7 @@ uninitialized storage, so `reserve` and `push` do not require element
 negative-typing, content-scope, and benchmark-equivalence coverage is in
 place.
 
-A fifth fixed-capacity family is now implemented at
+A fifth fixed-capacity family is implemented at
 `Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted`. Its public
 `Vector v a` keeps the owner and backing storage linear while binding
 elements nonlinearly as GC-owned values. The backend parameter remains public;
@@ -38,6 +58,23 @@ safe immutable construction copies, consuming freeze is O(1), live snapshots
 copy the backing, and no element capability class participates in ordinary
 container operations. The qsort and FFT APIs using this family remain backend
 polymorphic. Only their benchmark roots select the unboxed backend.
+
+The corresponding sixth, growable family is implemented at
+`Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted`. It retains
+the same unrestricted element policy and public backend parameter behind a
+stable header, supports reserve/push/extend, freezes the initialized prefix in
+O(1), and projects that prefix as the fixed unrestricted family. Semantic,
+backend-role, no-element-capability, negative-typing, and small specialization
+coverage exists. P0a now completes its growable/fixed coercion and subtype
+directions, lifetime-index, generic-split, borrow-to-content, mutable/shared
+escape, and kind/lifetime-preservation matrix. It also records the trusted
+header-peek/lifetime-shortening proof and adds a generic-family compile-failure
+fixture for growth while content is live. The focused 37-case suite, complete
+281-case main suite, and 20 doctests pass on GHC 9.12.4; the dedicated
+owner-reuse fixture is rejected with the expected multiplicity error. The
+heterogeneous `MultiStoreScan` worker-shape, allocation, and paired-runtime
+gates—not another container design spike—now control its performance
+promotion.
 
 The boxed and unboxed growable optimized-Core smoke checks show one header
 read outside each fixed-view worker and no header operation in those workers.
@@ -64,10 +101,20 @@ the public Pure Borrow roots include the required per-element `move`, while
 the direct controls merely freeze GC-owned `Int` storage. Semantic tests
 verify equal complete results at both evidence boundaries and the same final
 geometric-growth capacity.
-The direct six-root multi-store scan is also frozen under descriptive
+The upstream direct six-root multi-store scan is frozen under descriptive
 `MultiStoreScan` names. A separate evidence root observes operation counts at
 the actual access sites and matches the uninstrumented benchmark root's output
-and digest; its Pure Borrow candidate, full paired timing, R3, and
+and digest. Herbrand's retained downstream copy completed safe candidates at
+`cdf6368` covering both supported ownership shapes and the replacement of all
+three genuinely fixed roots with unrestricted views. All matched 4,096 visited
+indices, the 26,318-event ordered trace, and every frozen digest. The
+ordinary worker measured 196 Core lines/10,760 characters and about
+349--350 us; changing the three genuinely fixed roots to the unrestricted
+family reduced it to 167 lines/7,540 characters and about 197--199 us, but
+still failed the frozen 125-line/4,504-character generic gate. The current
+upstream benchmark still contains only the direct control. Its immediate next
+candidate must additionally use unrestricted growable owners so every
+projected content view has the unrestricted access surface. R3 and
 supported-GHC inspection remain pending.
 
 On the pinned GHC 9.12.4 O2 build, paired single-capability runs against the
@@ -156,12 +203,15 @@ elements.
 
 | Finding | Confidence | Planning consequence |
 | --- | --- | --- |
-| The former compositional `copyAtMut` expanded through `sharing`/`srunBO`/`askLinearly`, and optimized Core retained lifetime/dictionary machinery. | Confirmed by downstream Core inspection. The current provisional direct fast path avoids this expansion; R1 retains the former composition as a control. | Investigate making plain `sharing` erase to a representation-level scope; keep the direct copied-read fast path only while that composition remains materially slower. |
-| Opening the backing content once around a loop can remove repeated outer-header opening. | Structurally demonstrated for the boxed growable `getContents` benchmark root: optimized Core performs one header read before the worker, whose hot loop contains backing-array reads/writes but no `Ref` operation. This is a smoke check, not the full cross-version or runtime gate. | Retain `getContents` plus the trusted rank-2 `withContent` convenience as the general safe formulation; automate the one-open/no-per-cell-delimiter inspection and complete allocation and paired runtime gates before claiming a performance benefit. |
+| The former compositional `copyAtMut` expanded through `sharing`/`srunBO`/`askLinearly`, and optimized Core retained lifetime/dictionary machinery. | Confirmed by downstream Core inspection. The current provisional direct fast path avoids this expansion; R1 retains the former composition as a control. | Keep the direct path and R1 control. Revisit general `sharing` erasure as maintenance only after R2/R3, unless a new named root makes it a blocker again. |
+| Opening the backing content once around a loop can remove repeated outer-header opening. | Structurally demonstrated for the boxed growable `getContents` benchmark root: optimized Core performs one header read before the worker, whose hot loop contains backing-array reads/writes but no `Ref` operation. This is a smoke check, not the full cross-version or runtime gate. | Retain `getContents` plus the trusted rank-2 `withContent` convenience. After P0a, make the all-unrestricted R2 candidate the whole-worker proof rather than designing another scope API. |
 | Herbrand's former `Data.Set` conflict-analysis cost was a downstream algorithm gap. | Confirmed and already removed downstream. | Do not design a Pure Borrow change around this obsolete gap. |
-| Historical paired runs contain a 6–10× `3blocks` slowdown despite less total allocation and comparable search work. | A real signal, but the cited campaign lacked complete provenance and replacement exact-checkpoint results are pending. | Freeze a new exact downstream snapshot and do not use the historical ratio as an acceptance baseline. |
+| Historical paired runs contain a 6–10× `3blocks` slowdown despite less total allocation and comparable search work. | The historical campaign had incomplete provenance, but it has now been replaced by a corrected 294-pair exact-commit campaign: combined ratio 1.1589 with 1.1818 95% UCB, 10/14 per-case gates passing, and both `flat200` and `3blocks` failing. A standalone production root-chain control measured 12.4291× while the conflict-analysis/insertion control measured 0.3308×. | Use the corrected results as downstream evidence, not as an upstream microbenchmark gate. Preserve separate compact R2 and resumable R3 regressions so the propagation/control-path signal is not misattributed to `BO`. |
+| Pinning `cdf6368` and migrating `Alias` to `Borrow` may itself regress production. | Rejected by the corrected 448-pair API-adoption campaign: all results and per-case gates passed, combined geomean was 0.9912× with 1.0043× 95% UCB, and the six named hot/entry modules had byte-identical optimized Core. | Treat the dependency/API migration as complete and safe to retain. Do not attribute the separate experimental `MultiStoreScan` worker gap to that migration. |
 | The remaining slowdown is caused by `BO`, or entirely by the uninterrupted six-store watch scan. | Not established. The production path still crosses trail-literal and unit-enqueue/resume boundaries. | Keep separate generic linked-scan and resumable-worklist regressions; do not redesign `BO` from this evidence. |
-| Safe boxed and unboxed fixed and growable element-owning containers plus a backend-generic fixed GC-element container now exist in the worktree; the growable GC-element family and Pure Borrow multi-store composition remain absent. | The fixed GC-element family has boxed, unboxed, and primitive-backend semantic tests, O(1) consuming freeze, capability-callback absence tests, nominal-role boundaries, and primitive monomorphic qsort/FFT Core. Same-root decomposition attributes qsort's small allocation increase to unboxed storage and FFT's large improvement to that storage specialization. FFT retains one recursive primitive worker plus one bounded non-recursive entry iteration. | Complete the fixed-family final adversarial and supported-GHC gates, then extend the same ownership mode to generic growable storage. After both shapes exist, build the public Pure Borrow `MultiStoreScan` candidate before attempting broad `BO` or stable-header optimization. |
+| Boxed and unboxed fixed and growable element-owning containers plus backend-generic fixed and growable GC-element implementations now exist. | The fixed GC-element family has backend-generic semantic tests, O(1) consuming freeze, capability-callback absence tests, nominal-role boundaries, and primitive monomorphic qsort/FFT Core. The growable family has baseline semantic/typing coverage and small push-specialization inspections, but its full boundary matrix, trusted projection review, and heterogeneous whole-worker evidence remain open. | Complete P0a, then build the safe upstream `MultiStoreScan` candidate with unrestricted fixed and growable roots. Do not reopen the container representation or broad `BO` design before that exact gate is measured. |
+| Existing record reborrow/split and `Muts`/`reborrowings` composition may be insufficient for six heterogeneous stores. | Rejected by the `cdf6368` downstream experiment: both shapes recover every lender and reproduce the complete direct trace. Lifetime, record-splitting, `Muts`, and header operations are outside the recursive worker. | Treat composition as validated API usage. Keep both shapes as Core controls, but add no bundle-specific projection or Herbrand-shaped combinator. Focus on the projected growable content's element-access surface. |
+| Replacing only the three fixed roots with unrestricted fixed vectors may solve the multi-store gap. | It materially improved the candidate from about 349--350 us to 197--199 us and reduced Core from 196/10,760 to 167/7,540 lines/characters, but still missed the 125/4,504 structural gate. The current direct root's 56.4 us is an unmatched lower bound because GHC removes its local headers. | Complete the unrestricted policy across growable projections, retain candidate-to-candidate attribution, and create a header-matched direct control before treating a direct runtime ratio as an acceptance gate. |
 
 The plan targets a confirmed granularity problem and a missing safe
 abstraction. It does not promise that the new API will remove the full Herbrand
@@ -215,23 +265,23 @@ Element ownership is an independent container-design axis:
   may infer one axis from another.
 
 The fixed and growable boxed and unboxed representation-specific Pure Borrow
-vectors implemented in this plan are element-owning. The fixed
-non-element-owning family is a distinct public type in an `Unrestricted`
-module, so its nonlinear element binding and O(1) freeze contract cannot be
-confused with those owners. Its addition does not weaken the existing owners'
-materialization boundary or their `Movable` tests.
+vectors implemented in this plan are element-owning. The fixed and growable
+non-element-owning families are distinct public types in `Unrestricted`
+modules, so their nonlinear element binding and O(1) freeze contract cannot be
+confused with those owners. Their addition does not weaken the existing
+owners' materialization boundary or their `Movable` tests.
 
 Avoid multiplying the storage implementation across this matrix. Expose the
 new GC-element family from
 `Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted`, with the
 public type
 `Vector v a = Vector (Mutable v RealWorld a)` parameterized by the immutable
-`vector` backend `v`. The constructor remains hidden. A later growable module
-will expose `GrowableVector v a` analogously. An `MVector mv a` constraint
-alone supplies mutable operations but no immutable-vector operation or result
-in the API; parameterizing by immutable `v` supplies both its associated
-`Mutable v` representation and the correct generic freeze result without
-inverse-family or equality plumbing.
+`vector` backend `v`. The constructor remains hidden. The implemented
+growable module exposes `GrowableVector v a` analogously. An `MVector mv a`
+constraint alone supplies mutable operations but no immutable-vector operation
+or result in the API; parameterizing by immutable `v` supplies both its
+associated `Mutable v` representation and the correct generic freeze result
+without inverse-family or equality plumbing.
 
 The public backend parameter is an extensibility and trust boundary. Safe
 operations rely on the standard `Data.Vector.Generic.Vector` and `MVector`
@@ -251,6 +301,19 @@ backend and provide the monomorphic boundary at which optimized Core must
 erase generic backend and element-representation dispatch. Specialization is
 a benchmark-side performance requirement, not a soundness premise or a reason
 to close the public API.
+
+The experimental multiplicity-polymorphic generic vector is not a shortcut
+between these policies and is outside this performance track. Its `One` mode
+currently routes linear elements through ordinary generic-vector operations,
+while the public `Data.Vector.Generic.Vector`/`MVector` contracts do not state
+the multiplicity-preservation laws needed to justify that transport for every
+custom backend. Before it can share implementation with a growable family or
+serve as promotion evidence, give it an independent backend-by-backend
+linearity proof/audit, reject `One`/`Many` coercion explicitly, and show that
+construction, reads, writes, freeze, list conversion, cloning, and splitting
+consume each linearly owned element exactly once. Until then it remains
+experimental and quarantined from R2/R3; this plan neither treats it as a
+soundness counterexample nor relies on it.
 
 The two ownership modes have deliberately different surfaces:
 
@@ -356,6 +419,19 @@ All proposed APIs must preserve these invariants:
   package composition but Haddock-hidden; safe algorithm modules import only
   no-suffix or explicitly experimental APIs.
 
+Before the unrestricted growable family enters R2, review its trusted
+`getContents`/`withContent` implementation as a proof obligation, not merely a
+test target. Record why the `unsafeReadRef` peek and discarded duplicate
+header handle consume the input occurrence exactly once while leaving the
+authoritative header dormant in its lender; why the lifetime coercion changes
+only the phantom lifetime; why the callback executes exactly once; and why
+the retained growable capability is inaccessible until all fixed pieces end.
+Audit the complete fixed unrestricted surface to confirm that `Mut` cannot
+coexist with reserve/growth, `Share` cannot mutate, the slice is exactly
+`[0, logicalLength)`, and no safe operation can resize, consume/freeze the
+backing, or expose capacity. Nominal backend/element roles must prevent
+selecting incompatible backing operations.
+
 Linear record splitting proves that field capabilities are each consumed once.
 Non-aliasing also relies on each owner having been built by safe constructors;
 the plan therefore says that splitting *linearly separates independently
@@ -385,30 +461,36 @@ used as a reproducible identity.
 ### Three progressively available regressions
 
 The regression suite was staged around progressively available container
-support. The fixed and growable boxed and unboxed owners now exist, and the
-direct `MultiStoreScan` control is frozen; its Pure Borrow candidate and R3
-remain pending.
+support. All fixed and growable, element-owning and unrestricted families now
+exist. The upstream `MultiStoreScan` direct control is frozen; downstream
+ordinary and fixed-unrestricted candidates are complete, while the upstream
+all-unrestricted candidate and R3 remain pending.
 
 **R1 — Existing boxed-vector copied-read loop.** This is immediately buildable.
 It compares the current public `copyAtMut` loop with an equivalent direct boxed
 mutable-vector control. It freezes semantics, bounds behaviour, optimized Core,
 and allocation before changing `copyAtMut`.
 
-**MultiStoreScan — six-root heterogeneous linked scan.** Enable the Pure Borrow candidate
-only after the fixed and growable MVPs exist. It contains three fixed unboxed
-roots, one growable boxed root, and two growable unboxed roots; linearly
-separates the six independently constructed owners; opens each growable
-content once; performs a deterministic 4,096-node linked scan; reads all
-roots; conditionally writes two roots; closes the content scopes; and reclaims
-all owners.
+**R2 / MultiStoreScan — six-root heterogeneous linked scan.** The immediate
+upstream candidate contains three fixed unrestricted unboxed roots, one
+growable unrestricted boxed root, and two growable unrestricted unboxed roots.
+It linearly separates the six independently constructed owners, opens each
+growable content once, performs a deterministic 4,096-node linked scan, reads
+all roots, conditionally writes two roots, closes the content scopes, and
+reclaims all owners. Keep the all-ordinary and fixed-unrestricted-only
+downstream shapes as exact attribution controls rather than replacing them.
 
 `MultiStoreScan` is a general container/code-generation stress test. Its shape is motivated
 by the feedback, but its specification is independent of SAT semantics.
 
-Its direct control is now frozen as `MultiStoreScan`: 4,096 visited nodes,
-24,576 element reads, 1,742 element writes, three header reads, and final
-digest `7192365686207673759`. Code and benchmark names describe the workload;
-they do not use a context-dependent round number.
+Its direct control is frozen as `MultiStoreScan`: 4,096 visited nodes, 24,576
+element reads, 1,742 element writes, three header reads, and final digest
+`7192365686207673759`. The completed downstream candidates additionally
+freeze the 26,318-event ordered trace, mark digest
+`-5655863917889937928`, score digest `-1217547283655932101`, and complete
+trace digest `-6999049615496738955`. Import those validators rather than
+inventing a weaker upstream equality check. Code and benchmark names describe
+the workload; they do not use a context-dependent round number.
 
 **R3 — Resumable heterogeneous worklist traversal.** Specify this independently
 as a deterministic graph/worklist workload. Fixed roots hold offsets, marks,
@@ -764,6 +846,29 @@ For both backends:
 - batch move from a linearly owned source is deferred with arbitrary linear
   element support.
 
+The later backend-generic unrestricted growable family is also implemented.
+Its entries are GC-owned and bind nonlinearly, so ordinary reads, displaced
+values, growth, retirement, and O(1) consuming freeze invoke no element
+capability. Its `getContents` preserves both the backend parameter and
+unrestricted ownership mode:
+
+```haskell
+import Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted qualified as Unrestricted
+
+getContents ::
+  Borrow bk α (GrowableVector v a) %1 ->
+  Borrow bk α (Unrestricted.Vector v a)
+```
+
+This is not an alternative representation experiment anymore; it is the
+current candidate answer to the downstream request for unrestricted growable
+content. First complete its ownership/typing matrix and review the trusted
+projection/restoration proof. The subsequent work is to prove the complete
+mixed boxed/unboxed transaction's Core, allocation, and runtime shape. The
+element-owning families remain necessary for genuinely linear entries and are
+retained as controls, but they are not the preferred Herbrand-shaped candidate
+merely because they landed first.
+
 #### Fixed-content scope
 
 Make the primitive operation a same-lifetime linear projection:
@@ -902,6 +1007,14 @@ unless a later typed transaction enforces it.
 
 ### Phase 4 — Compact multi-store composition
 
+Herbrand's `cdf6368` experiment closes the API-design question for the
+no-growth transaction: both whole-record reborrow/split and a statically known
+`Muts` subgroup are sound, recover every original owner, and produce the exact
+direct trace. Phase 4 is therefore an upstream regression and code-generation
+phase, not a search for another composition abstraction. Implement both
+validated shapes in `MultiStoreScan`, select the smaller/faster safe shape
+from measured whole-root evidence, and retain the other as a control.
+
 Use the revised heterogeneous formulation in
 `Control.Monad.Borrow.Pure.Experimental.Borrows`. `Aliases k xs` is the
 representation, while `Muts α xs`, `Shares α xs`, and
@@ -1015,25 +1128,30 @@ not a substitute because it merely moves a client's trusted boundary upstream.
 
 ### Phase 5 — General Pure Borrow optimization loop
 
-Use R1, R2, and R3 to optimize Pure Borrow itself in increasing scope:
+Use R1, R2, and R3 to optimize Pure Borrow itself in evidence order:
 
-1. **Convenience-operation fast paths.** Fuse copied reads and similar
-   one-operation container methods so they do not open an avoidable ephemeral
-   lifetime, while preserving their public types, bounds behaviour, and
-   ownership proofs.
-2. **Scope opening.** Inline content-borrow construction/elimination and
-   growable-header opening so each occurs once per no-growth segment and no
-   wrapper, tuple, dictionary, or header access remains in the recursive hot
-   SCC.
-3. **Backend operations.** Specialize checked/unchecked content reads, writes,
-   and owner-level `push`/`extend` calls to their boxed/unboxed backends. Keep checks outside
-   inner unchecked workers after a checked scope entry when the loop invariant
-   proves bounds.
-4. **Worker shape.** Tune strictness, argument grouping, worker/wrapper
-   boundaries, and specialization only from measured Core. Prefer separate
-   scalar content-borrow arguments or an unboxed representation when a boxed
-   aggregate survives per iteration; prevent duplication of a large recursive
-   body.
+1. **Complete the unrestricted R2 transaction.** First express the six-root
+   worker entirely through the current public unrestricted fixed and growable
+   APIs. This is an integration step, not authorization for a new unsafe
+   primitive. Compare the whole-record and `Muts` shapes and preserve the two
+   older downstream candidates as attribution controls.
+2. **Backend operations and worker shape.** If the all-unrestricted candidate
+   still misses the frozen structural gate, specialize its checked/unchecked
+   reads and writes to the boxed/unboxed backends, keep checks outside an inner
+   unchecked worker where a checked transaction invariant proves bounds, and
+   tune strictness, argument grouping, worker/wrapper boundaries, and
+   specialization from measured Core. Prevent duplicate recursive bodies and
+   per-visit boxed aggregate reconstruction.
+3. **Resumable control.** Implement R3a and R3b after R2 is attributable.
+   Keep enqueue/resume or push/reopen control inside the logical transaction
+   and measure cost against both visits and reopenings. If R2 passes but R3
+   fails, investigate the wider control path before changing any lifetime
+   representation.
+4. **Convenience and delimiter follow-up.** Revisit R1 copied-read fusion and
+   runtime-erased result-producing/plural scopes only when their named roots
+   still retain measurable machinery. Herbrand already places lifetime,
+   record-splitting, `Muts`, and header operations outside its recursive
+   worker, so these changes are no longer prerequisites for R2.
 5. **Allocation and retention.** Remove allocation proportional to visits,
    then compare residency, bytes copied, and mutator time so a lower allocation
    count is not mistaken for complete performance parity.
@@ -1121,13 +1239,26 @@ container package.
   element/backend coercion, duplication/consumption, generic splitting, and
   growth while a content
   borrow is live. Keep direct linear-owner reuse in a separate compile-failure
-  fixture because GHC does not defer multiplicity errors; validate that fixture
-  through the Cabal-selected compiler rather than adding it to the ordinary
-  test component.
+  fixture: GHC 9.12.4 was verified to reject the resulting `Many`/`One`
+  multiplicity mismatch while compiling the module even with
+  `-fdefer-type-errors -Wno-deferred-type-errors`. Validate that fixture through
+  the Cabal-selected compiler rather than adding it to the ordinary test
+  component.
 - Role/constructor tests cover fixed and growable boxed/unboxed owners as well
   as the fixed-content view. Element/backend roles must be nominal wherever a
   coercion could select different backing operations, and safe code must not
   construct a view over spare capacity.
+- Before the generic unrestricted growable family enters R2, complete its
+  typing matrix: reject growable/fixed coercion, both subtype/upcast
+  directions, lifetime-index swapping, generic splitting, owner/content
+  coercion, shared-content escape, and reuse or growth of the original
+  mutable growable occurrence while a content borrow is live. Multiplicity
+  reuse requires a separate Cabal-selected compile-failure fixture on GHC
+  9.12.4 because its `Many`/`One` mismatch is not deferred even with
+  `-fdefer-type-errors -Wno-deferred-type-errors`. Add positive tests that
+  `getContents` preserves borrow kind and lifetime for both `Mut` and `Share`,
+  and that `reborrowing`/`getContents` is observationally equivalent to
+  `withContent`.
 - Alias-provenance audit/tests construct every R2/R3 root independently before
   linear separation and reclaim every owner.
 - R2/R3 direct and Pure Borrow variants must match expected logical hot-path
@@ -1161,6 +1292,26 @@ no header write, and no lifetime delimiter of its own. After inlining, the
 convenience boundary must add no runtime lifetime delimiter, and multi-root
 boundaries must add only the already-budgeted `reborrowings` boundary. No
 projection or `Aliases` bundle machinery may remain in the per-entry worker.
+
+For the GHC 9.12.4 R2 evidence root, freeze these exact structural gates before
+timing:
+
+- the whole root performs exactly three growable-header reads and zero header
+  writes;
+- transaction opening, record splitting, `Muts`, `reborrowings`, and all three
+  `getContents` projections remain outside the hot recursive SCC;
+- the SCC contains one recursive body with five unboxed primitive reads, one
+  boxed primitive read, and two unboxed primitive writes per logical
+  iteration;
+- the SCC contains no bounds-check branch, displaced-value/exchange read,
+  generic-vector selector, type-class dictionary, `Ref`/header operation,
+  lifetime delimiter, `Aliases` constructor, `reborrowings`, or `getContents`
+  machinery; and
+- the downstream 125-line/4,504-character worker ceiling applies only when
+  using the same extraction and normalization command. Record worker arity,
+  duplicate specializations, object text, simplifier ticks, and compile time;
+  reject a second recursive specialization. Do not transfer a whole-object
+  ceiling to a module containing several attribution controls.
 
 For every declared mixed-bundle and nested-group shape, record the number and
 Core size of specialized opener bindings, the size of the single recursive
@@ -1230,8 +1381,20 @@ Report geometric mean and confidence interval for each predeclared
 workload/outcome case as well as any aggregate, so an aggregate cannot hide a
 `3blocks`-style outlier.
 
+- For R2 attribution, first compare the all-unrestricted candidate with the
+  same-build ordinary and fixed-unrestricted-only candidates. The downstream
+  349--350 us and 197--199 us observations are historical baselines, not gates
+  for a new build.
+- Do not gate the current candidate against the 56.4 us direct root: GHC
+  eliminates that root's locally created `IORef` headers while every Pure
+  Borrow candidate performs three real header reads. Add a header-matched
+  direct control or report the existing direct result only as a lower bound.
+- Retain the frozen 125-line/4,504-character generic-worker gate. If the
+  all-unrestricted worker misses it, record which checked operation,
+  dictionary, coercion, or displaced-value path remains before proposing a
+  new API.
 - Initial engineering margin: upper confidence bound no more than 1.10 versus
-  the direct control.
+  a header-matched direct control.
 - Desired release target: consider 1.05 only after the variance study shows
   that a small-single-digit gate is stable.
 - Do not use wall-clock thresholds in ordinary shared CI. Structural Core and
@@ -1245,6 +1408,25 @@ general worklist/control path. If local regressions pass but Herbrand does not,
 reduce a new difference from the exact production snapshot before expanding
 upstream APIs.
 
+The stop/rollback rules are:
+
+- if deterministic R2 semantics or lender recovery fails, stop before Core
+  work and fix the safe ownership formulation;
+- if R2 misses its Core gates, skip the paired campaign and fix
+  specialization/inlining first; add neither a new bulk primitive nor a `BO`
+  change;
+- if Core passes but runtime fails, audit machine-code layout, arity,
+  strictness, and comparator matching before changing the API;
+- if R2 passes but R3 fails, attribute the next investigation to resumption,
+  reopen, or wider control flow;
+- if R2 and R3 pass but Herbrand still fails, reduce an exact downstream
+  difference before expanding upstream;
+- if whole-record and nested-`Muts` timing is inconclusive, retain
+  whole-record reborrow/split as the simpler default; and
+- a performance failure blocks performance promotion and downstream store
+  migration, not retention of the generic family once its independent safety
+  gate remains green.
+
 ### Repository validation for a later implementation
 
 - Format Haskell with Fourmolu and package/project files with cabal-gild.
@@ -1257,79 +1439,108 @@ upstream APIs.
 
 ## Delivery order and decision gates
 
-1. **Freeze now-buildable evidence:** R1 plus R2/R3 specifications, direct
-   controls, expected traces/digests, provenance schema, revised-API typing
-   coverage, and the `assocBorrowEq` correction.
-2. **Narrow R1 optimization:** prove the single-state-thread primitive and
-   apply it only to scalar result-discarding scope paths; retain a direct
-   `copyAtMut` implementation only if composition still leaves measured
-   overhead.
-3. **Boxed fixed-storage prerequisite:** move the existing fixed boxed
-   representation behind its safe/`.Internal` boundary and establish the
-   trusted constant-time slice constructor without changing the safe API.
-4. **Minimal growable boxed MVP:** settle its stable header and land boxed
-   `getContents`/`withContent` with the one-read/no-write/slice gates, while
-   supporting arbitrary linearly owned payloads in `reserve` and `push`
-   through destructive relocation. Do not impose element capability classes
-   on nonlinearly bound immutable sources. Keep `Copyable` for copied
-   extraction from live borrows and `Consumable` for final linear-owner
-   retirement.
-5. **Fixed unboxed MVP:** establish direct fixed-owner mutation on one new
-   backend with the same safe/`.Internal` split.
-6. **Growable unboxed MVP:** settle stable header and logical-length
-   publication, establish `getContents`, then derive the short-sublifetime
-   `withContent` convenience.
-7. **Fixed GC-element specialization proof:** expose
-   `Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted.Vector v a`
-   with a hidden constructor and nominal backend/element roles, leaving the
-   current element-owning types and implementations unchanged. Freeze must be
-   O(1) with no element capability callback; safe construction from an
-   immutable vector copies, explicitly unsafe adoption may reuse storage, and
-   a snapshot of a live borrow copies. Verify callback absence,
-   cross-mode/backend coercion rejection, and monomorphic Core with no generic
-   operation selectors for boxed, unboxed, and another supported
-   generic-vector backend. Require dictionary-free FFT combine Core; permit
-   qsort to retain only concrete `Vector` and `Ord` dictionaries when its
-   local root contains no listed generic operations.
-   Keep the qsort/FFT public algorithms backend polymorphic; make only their
-   benchmark roots monomorphic, choosing the backend supported by measured
-   results. Move only the qsort and FFT benchmark roots to this family,
-   compile their benchmark library at `-O2`, then record whole-root
-   runtime/allocation, worker shape, code size, and compile/simplifier cost.
-   Reject the abstraction if generic operation selectors survive the
-   monomorphic roots, specialization leaves multiple recursive hot workers,
-   size growth is not justified by measured runtime/allocation gain, or
-   compile cost regresses materially. A bounded non-recursive specialization
-   entry is acceptable only when exactly one primitive recursive SCC remains
-   in the supported-GHC diagnostic inspection.
-8. **Growable GC-element family:** extend the proven generic storage mechanics
-   to a growable core and nominal boxed/unboxed wrappers. Reuse the fixed
-   GC-element family for `getContents`, preserve ownership/backend indices,
-   and establish O(1) freeze plus one-open/no-header-in-worker evidence before
-   using it in later multi-store workloads.
-9. **R2 and R3 composition:** validate constructive `reborrowings` over
-   statically known `Muts` groups, direct per-member `getContents`, and nested
-   reopenable groups. Land compiling exact-list, backend-qualified shape
-   fixtures—including linear recovery, only-needed spine reconstruction,
-   push-or-extend/reopen, and explicit meet reassociation—before implementing or
-   timing R3b.
-10. **Evidence-directed delimiter and PB optimization:** only now consider
-   runtime-erasing plural/result-producing combinators, then apply
-   representation/inlining/worker changes justified across R1–R3; consider
-   `BO` changes only at the stated evidence gate.
-11. **Bulk operations and promotion:** add measured batch operations, finalize
-   docs, and promote both ownership modes deliberately.
-12. **Downstream campaign:** rerun the corrected exact-checkpoint Herbrand
-   comparison as external validation, and decide from new evidence whether
-   residual work belongs in general containers, GHC code generation, or the
-   downstream application.
+The prerequisite ledger is no longer the active queue. Fixed and growable
+element-owning vectors, the generic unrestricted fixed vector, the generic
+unrestricted growable vector, stable-header projection, the revised
+`Aliases`/`Muts` API, the R1 direct copied-read path, and the direct R2 fixture
+already exist. Herbrand has additionally validated the two intended
+multi-owner transaction shapes. Preserve those results, but do not schedule
+their design work again.
 
-Each phase has a focused gate; the full provenance campaign is not repeated
-before its required containers exist.
+The active priority order is:
+
+1. **P0a — unrestricted growable soundness gate (complete in the current
+   worktree).** The generic unrestricted growable ownership/typing matrix,
+   trusted `getContents`/`withContent` proof review, and generic owner-reuse
+   compile-failure fixture now pass the gates above. `4aabfae` still postdates
+   the downstream `cdf6368` experiment and is not itself
+   downstream-validated; this completion is the upstream proof/test gate, not
+   a performance claim.
+2. **P0b — upstream all-unrestricted R2 integration.** Port the complete
+   downstream validators into `MultiStoreScan`, then implement the six-root
+   candidate with three fixed unrestricted roots and three unrestricted
+   growable roots whose `getContents` results use the same fixed family.
+   Implement both validated ownership shapes with safe public APIs, recover
+   every original owner, and require the complete trace/digest equality before
+   inspecting performance. Client benchmark code may use public
+   `unsafeGet`/`unsafeWrite` only under the frozen in-bounds worker invariant;
+   it imports neither `BO.Unsafe` nor a container `.Internal` module. Every
+   short fixed view is consumed and every independently constructed original
+   owner is recovered exactly once. Add named whole-root, projection, and
+   hot-worker inspection anchors; the current generic-growable inspection of
+   `push` alone is not sufficient.
+3. **P1 — attributable R2 optimization.** Compare the all-ordinary,
+   fixed-unrestricted-only, and all-unrestricted candidates in the same build.
+   Inspect the whole root and recursive SCC, allocation slope, code size,
+   specialization count, and paired runtime. Use a header-matched direct
+   control for a parity gate. If the current safe API passes, stop and do not
+   add another access surface. If it fails, first adjust backend
+   specialization, checked-scope/unchecked-worker placement, strictness, and
+   worker shape. Record the exact residual operation before changing an API.
+4. **P2 — resumable R3a/R3b.** Freeze the application-independent worklist
+   trace, then test open-once and push/extend/reopen modes using the same
+   unrestricted content path. Measure visits and reopenings separately and
+   compare flat versus nested groups. This is the first gate that can
+   attribute enqueue/resume or growth-boundary cost beyond the compact R2
+   worker.
+5. **P3 — conditional surface changes.** Add an unchecked or bulk
+   transaction only if P1 or P2 identifies a general residual operation that
+   the current unrestricted fixed view cannot express. Keep every precondition
+   explicit and test checked-entry equivalence. Do not add such a surface only
+   to make the historical element-owning candidate match the unrestricted
+   one; genuinely linearly owned elements remain a separate workload.
+6. **P4 — conditional delimiter and `BO` work.** Revisit
+   result-producing/plural delimiter erasure or the `BO` representation only
+   if the same residual cost survives both R2 and R3 after container/backend
+   optimization. R1 convenience cleanup may proceed independently but is not
+   a blocker for the multi-store path.
+7. **P5 — documentation, promotion, and downstream validation.** Document the
+   validated safe transaction shape, run supported-GHC structural checks, add
+   only measured batch operations, and deliberately promote the unrestricted
+   growable family. Then rerun the corrected exact-checkpoint Herbrand
+   campaign to decide whether any remaining issue belongs upstream, in GHC
+   code generation, or in the application.
+
+Each priority has its focused gate. Do not repeat the full downstream
+provenance campaign before P0b--P2 establish which upstream candidate is being
+validated.
+
+### Adversarial review resolution — 2026-07-31
+
+Three independent reviews challenged this reorder:
+
+- The soundness review rejected combining proof completion with R2
+  implementation. P0a is now a separate blocking gate, the new generic family
+  is described as a candidate rather than downstream-validated, and its
+  trusted header peek/lifetime shortening requires an explicit proof review.
+  The review found an evidence gap, not a concrete exploit.
+- The ownership review found the unrestricted growable normal-return paths
+  consistent with GC-owned elements, last-published logical length, nominal
+  roles, and initialized-prefix projection. It required the expanded negative
+  typing matrix and quarantined the experimental multiplicity-polymorphic
+  vector from this track because arbitrary generic backends lack a stated
+  linear-element transport contract.
+- The performance review moved the all-unrestricted R2 worker and its Core
+  gates ahead of timing, R3 immediately after attributable R2, and all
+  delimiter/`BO` work to conditional follow-up. It also rejected the current
+  direct runtime root as a fair parity comparator until its three headers are
+  matched.
+
+No reviewer approved proceeding to P0b before P0a passed. The completed
+typing matrix, trusted-code proof record, positive equivalence tests, and
+generic owner-reuse compile failure now resolve those blockers. Their
+remaining performance findings are represented in P0b--P5 and the stop rules
+above.
 
 ## Explicit non-goals
 
 - Replacing `BO` based only on the current feedback.
+- Designing a new multi-owner combinator after both existing safe shapes have
+  already recovered every lender and matched the complete downstream trace.
+- Treating the 56.4 us direct `MultiStoreScan` root as a fair parity comparator
+  while its local headers are optimized away.
+- Prioritizing delimiter erasure ahead of the all-unrestricted growable-content
+  integration without new whole-root evidence.
 - Adding solver-specific types, propagation operations, or a Herbrand
   dependency.
 - Moving the whole solver kernel into an upstream unsafe primitive.

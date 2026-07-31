@@ -36,7 +36,7 @@ test_multiStoreScanDirectEvidence =
 
 test_multiStoreScanPureBorrowEvidence :: TestTree
 test_multiStoreScanPureBorrowEvidence =
-  testCase "all-unrestricted Pure Borrow shapes preserve the exact trajectory" do
+  testCase "all attribution and ownership shapes preserve the frozen output" do
     let direct = multiStoreScanDirectRoot multiStoreScanDirectInput
         directOutput =
           multiStoreScanDirectBenchmarkRoot multiStoreScanDirectInput
@@ -44,6 +44,12 @@ test_multiStoreScanPureBorrowEvidence =
       @?= direct
     multiStoreScanPureBorrowNestedRoot multiStoreScanDirectInput
       @?= direct
+    multiStoreScanDirectHeaderMatchedBenchmarkRoot multiStoreScanDirectInput
+      @?= directOutput
+    multiStoreScanPureBorrowOwningBenchmarkRoot multiStoreScanDirectInput
+      @?= directOutput
+    multiStoreScanPureBorrowFixedUnrestrictedBenchmarkRoot multiStoreScanDirectInput
+      @?= directOutput
     multiStoreScanPureBorrowDirectBenchmarkRoot multiStoreScanDirectInput
       @?= directOutput
     multiStoreScanPureBorrowNestedBenchmarkRoot multiStoreScanDirectInput

@@ -25,12 +25,12 @@ implements
 `getContents` projects to the already implemented backend-generic unrestricted
 fixed vector. This is the first implementation of the downstream feedback's
 preferred completion. Signed commit `40b458a` completes P0a's dedicated
-ownership/typing gate. The current worktree also completes the P0b six-root
-`MultiStoreScan` integration and its GHC 9.12.4 structural gate. P1 is
-therefore the next active priority: preserve the older ordinary candidates as
-attribution controls, add a header-matched direct control, and measure the
-already compact all-unrestricted candidate. Broad delimiter or `BO` redesign
-is not on the critical path.
+ownership/typing gate, and signed commit `8db6d4a` completes the P0b six-root
+`MultiStoreScan` integration and its GHC 9.12.4 structural gate. The current
+worktree completes P1 attribution, the header-matched comparator, allocation
+measurement, and the paired runtime gate. P2's resumable R3a/R3b workload is
+therefore the next active priority. Broad delimiter or `BO` redesign is not
+on the critical path.
 
 The earlier Tamagoh-driven work recorded in the previous version of this file
 is already present in the repository: direct inlinable `BO`/`After`/`Par`
@@ -73,9 +73,9 @@ header-peek/lifetime-shortening proof and adds a generic-family compile-failure
 fixture for growth while content is live. The focused 37-case suite, complete
 281-case main suite, and 20 doctests pass on GHC 9.12.4; the dedicated
 owner-reuse fixture is rejected with the expected multiplicity error. The
-heterogeneous `MultiStoreScan` worker-shape gate now passes. Attribution,
-allocation, a fair direct comparator, and paired runtime—not another container
-design spike—now control its performance promotion.
+heterogeneous `MultiStoreScan` worker-shape, attribution, allocation, fair
+direct-comparator, and paired-runtime gates now pass on GHC 9.12.4. R3—not
+another container design spike—now controls its next performance promotion.
 
 The boxed and unboxed growable optimized-Core smoke checks show one header
 read outside each fixed-view worker and no header operation in those workers.
@@ -127,8 +127,46 @@ reborrow scaffolding. Each whole root contains exactly three
 is 250,632 bytes. The main suite passes 283 tests, the inspection suite passes
 16 tests including six new stable negative-Core checks, and all 20 doctests
 pass. This is a semantic and structural success, not a runtime claim.
-Same-build attribution, a header-matched direct control, paired runtime,
-supported-GHC inspection, and R3 remain pending.
+Signed commit `8db6d4a` records that P0b boundary.
+
+P1 retains the all-owning and fixed-unrestricted-only candidates in the same
+module and adds a direct control whose three locally allocated headers cannot
+be optimized away. Their GHC 9.12.4 O2 recursive workers measure
+191 lines/10,141 characters, 161/6,898, and 120/3,989 for all-owning,
+fixed-only-unrestricted, and all-unrestricted respectively, versus
+101/3,629 for direct. The all-unrestricted worker remains one recursive SCC
+with the same five `readIntArray#`, one `readArray#`, and two
+`writeIntArray#` operations. Its explicit local `Int64#` loop keeps the digest
+unboxed until the ownership boundary; it adds no unsafe ownership operation or
+public API. The benchmark module, now including all attribution controls, has a
+332,840-byte object; a separate allocation harness measures fresh,
+independently prepared traversals.
+
+Before that worker-shape correction, the same-build pilot measured 354 μs
+all-owning, 199 μs fixed-only-unrestricted, 67.4/67.0 μs for the two
+all-unrestricted shapes, and 58.9 μs for both direct controls. The predeclared
+21-pair direct-shape campaign failed with a 1.147362× geometric mean and
+1.154867 one-sided 95% paired-log bootstrap UCB. Core and allocation then
+identified one boxed `Int64` accumulator per recursive call. After the
+explicit unboxed loop, 1,000 independent traversals allocate 197,201 bytes
+each for both direct controls, 1,542,225 all-owning, 952,449
+fixed-only-unrestricted, 199,113 all-unrestricted direct-shape, and 199,353
+all-unrestricted nested-shape. The selected safe shape is therefore within
+1,912 bytes per traversal, or 0.467 bytes per visit, of the header-matched
+direct control.
+
+The final 21 alternating fresh-process pairs, after two excluded warm-up pairs,
+produce a 1.014222× geometric mean and 1.019416 one-sided 95% paired-log
+bootstrap UCB with seed `0x50b02026`, 100,000 bootstrap samples, and no outlier
+removal. This passes both the initial 1.10 engineering margin and the desired
+1.05 target on this machine. A separate nine-pair pilot measured nested over
+direct composition at 0.996514× with a 1.000709 UCB; the difference is not a
+reason to prefer the more elaborate nested form, so the direct-record shape
+remains the default. `bench/run-multi-store-scan-paired.mjs` preserves the
+fresh-process pairing/bootstrap protocol, while the
+`multi-store-scan-allocation` benchmark component preserves the
+prebuilt-input, GC-flushed allocation measurement. Supported-GHC inspection
+and R3 remain pending.
 
 On the pinned GHC 9.12.4 O2 build, paired single-capability runs against the
 previous boxed element-owning roots measured:
@@ -217,14 +255,14 @@ elements.
 | Finding | Confidence | Planning consequence |
 | --- | --- | --- |
 | The former compositional `copyAtMut` expanded through `sharing`/`srunBO`/`askLinearly`, and optimized Core retained lifetime/dictionary machinery. | Confirmed by downstream Core inspection. The current provisional direct fast path avoids this expansion; R1 retains the former composition as a control. | Keep the direct path and R1 control. Revisit general `sharing` erasure as maintenance only after R2/R3, unless a new named root makes it a blocker again. |
-| Opening the backing content once around a loop can remove repeated outer-header opening. | Confirmed in the complete six-root all-unrestricted R2 candidate on GHC 9.12.4: each whole root performs three header reads and no header write, while the single 124-line/4,192-character worker contains only the expected primitive backing-array operations. | Retain `getContents` plus the trusted rank-2 `withContent` convenience. Carry the structural checks across supported GHCs and measure the existing candidate; do not design another scope API without a newly identified residual operation. |
+| Opening the backing content once around a loop can remove repeated outer-header opening. | Confirmed in the complete six-root all-unrestricted R2 candidate on GHC 9.12.4: each whole root performs three header reads and no header write, while the selected 120-line/3,989-character worker contains only the expected primitive backing-array operations and an unboxed digest accumulator. Final paired runtime is 1.014222× with 1.019416 one-sided 95% UCB against the header-matched direct control. | Retain `getContents` plus the trusted rank-2 `withContent` convenience. Carry the structural checks across supported GHCs and reuse the same path in R3; do not design another scope API without a newly identified residual operation. |
 | Herbrand's former `Data.Set` conflict-analysis cost was a downstream algorithm gap. | Confirmed and already removed downstream. | Do not design a Pure Borrow change around this obsolete gap. |
 | Historical paired runs contain a 6–10× `3blocks` slowdown despite less total allocation and comparable search work. | The historical campaign had incomplete provenance, but it has now been replaced by a corrected 294-pair exact-commit campaign: combined ratio 1.1589 with 1.1818 95% UCB, 10/14 per-case gates passing, and both `flat200` and `3blocks` failing. A standalone production root-chain control measured 12.4291× while the conflict-analysis/insertion control measured 0.3308×. | Use the corrected results as downstream evidence, not as an upstream microbenchmark gate. Preserve separate compact R2 and resumable R3 regressions so the propagation/control-path signal is not misattributed to `BO`. |
 | Pinning `cdf6368` and migrating `Alias` to `Borrow` may itself regress production. | Rejected by the corrected 448-pair API-adoption campaign: all results and per-case gates passed, combined geomean was 0.9912× with 1.0043× 95% UCB, and the six named hot/entry modules had byte-identical optimized Core. | Treat the dependency/API migration as complete and safe to retain. Do not attribute the separate experimental `MultiStoreScan` worker gap to that migration. |
 | The remaining slowdown is caused by `BO`, or entirely by the uninterrupted six-store watch scan. | Not established. The production path still crosses trail-literal and unit-enqueue/resume boundaries. | Keep separate generic linked-scan and resumable-worklist regressions; do not redesign `BO` from this evidence. |
-| Boxed and unboxed fixed and growable element-owning containers plus backend-generic fixed and growable GC-element implementations now exist. | The fixed GC-element family has backend-generic semantic tests, O(1) consuming freeze, capability-callback absence tests, nominal-role boundaries, and primitive monomorphic qsort/FFT Core. P0a completes the growable boundary and trusted-projection matrix; P0b completes heterogeneous whole-worker evidence for three fixed and three projected growable unrestricted roots. | Treat the container and current access surface as sufficient for R2. Measure and attribute the existing candidate before reopening representation or broad `BO` design. |
+| Boxed and unboxed fixed and growable element-owning containers plus backend-generic fixed and growable GC-element implementations now exist. | The fixed GC-element family has backend-generic semantic tests, O(1) consuming freeze, capability-callback absence tests, nominal-role boundaries, and primitive monomorphic qsort/FFT Core. P0a completes the growable boundary and trusted-projection matrix; P0b completes heterogeneous whole-worker evidence; P1 passes attribution, allocation, and paired-runtime gates without another public surface. | Treat the container and current access surface as sufficient for R2 and carry it unchanged into R3. Do not reopen representation or broad `BO` design without a new residual operation. |
 | Existing record reborrow/split and `Muts`/`reborrowings` composition may be insufficient for six heterogeneous stores. | Rejected by the `cdf6368` downstream experiment: both shapes recover every lender and reproduce the complete direct trace. Lifetime, record-splitting, `Muts`, and header operations are outside the recursive worker. | Treat composition as validated API usage. Keep both shapes as Core controls, but add no bundle-specific projection or Herbrand-shaped combinator. Focus on the projected growable content's element-access surface. |
-| Replacing only the three fixed roots with unrestricted fixed vectors may solve the multi-store gap. | It materially improved the downstream candidate from about 349--350 us to 197--199 us and reduced Core from 196/10,760 to 167/7,540 lines/characters, but still missed the frozen structural gate. Completing the unrestricted policy across growable projections now produces a 124-line/4,192-character upstream worker that passes the gate. The current direct root's 56.4 us remains an unmatched lower bound because GHC removes its local headers. | Retain all three historical/current shapes for same-build attribution and create a header-matched direct control before treating a direct runtime ratio as an acceptance gate. |
+| Replacing only the three fixed roots with unrestricted fixed vectors may solve the multi-store gap. | It materially improved the downstream candidate from about 349--350 us to 197--199 us and reduced Core from 196/10,760 to 167/7,540 lines/characters, but still missed the frozen structural gate. Same-build P1 reproduces the attribution at 354 μs all-owning and 199 μs fixed-only-unrestricted, then reaches 120/3,989 Core and runtime parity only after all six views are unrestricted and the recursive digest is explicitly unboxed. | Retain all three shapes as permanent attribution controls. The completed evidence selects the all-unrestricted direct-record shape; no new access API is justified. |
 
 The plan targets a confirmed granularity problem and a missing safe
 abstraction. It does not promise that the new API will remove the full Herbrand
@@ -477,7 +515,8 @@ The regression suite was staged around progressively available container
 support. All fixed and growable, element-owning and unrestricted families now
 exist. The upstream `MultiStoreScan` direct control and all-unrestricted
 candidate are frozen; downstream ordinary and fixed-unrestricted candidates
-remain the attribution controls. P1 measurement and R3 remain pending.
+are now upstream attribution controls as well. P1 passes on GHC 9.12.4; R3
+remains pending.
 
 **R1 — Existing boxed-vector copied-read loop.** This is immediately buildable.
 It compares the current public `copyAtMut` loop with an equivalent direct boxed
@@ -1025,9 +1064,10 @@ Herbrand's `cdf6368` experiment closes the API-design question for the
 no-growth transaction: both whole-record reborrow/split and a statically known
 `Muts` subgroup are sound, recover every original owner, and produce the exact
 direct trace. Phase 4 is therefore an upstream regression and code-generation
-phase, not a search for another composition abstraction. Implement both
-validated shapes in `MultiStoreScan`, select the smaller/faster safe shape
-from measured whole-root evidence, and retain the other as a control.
+phase, not a search for another composition abstraction. P1 selects
+whole-record reborrow/split as the simpler default after the two implemented
+shapes measure equivalently; retain the nested `Muts` form as a control and as
+the documented pattern for clients that already hold a heterogeneous bundle.
 
 Use the revised heterogeneous formulation in
 `Control.Monad.Borrow.Pure.Experimental.Borrows`. `Aliases k xs` is the
@@ -1395,22 +1435,23 @@ Report geometric mean and confidence interval for each predeclared
 workload/outcome case as well as any aggregate, so an aggregate cannot hide a
 `3blocks`-style outlier.
 
-- For R2 attribution, first compare the all-unrestricted candidate with the
-  same-build ordinary and fixed-unrestricted-only candidates. The downstream
-  349--350 us and 197--199 us observations are historical baselines, not gates
-  for a new build.
+- R2 attribution compares the all-unrestricted candidate with the same-build
+  ordinary and fixed-unrestricted-only candidates. The downstream
+  349--350 us and 197--199 us observations remain historical baselines, not
+  gates for a new build.
 - Do not gate the current candidate against the 56.4 us direct root: GHC
   eliminates that root's locally created `IORef` headers while every Pure
-  Borrow candidate performs three real header reads. Add a header-matched
-  direct control or report the existing direct result only as a lower bound.
+  Borrow candidate performs three real header reads. Use the retained
+  `direct/header-matched` control; report `direct` only as a lower bound.
 - Retain the frozen 125-line/4,504-character generic-worker gate. If the
   all-unrestricted worker misses it, record which checked operation,
   dictionary, coercion, or displaced-value path remains before proposing a
   new API.
 - Initial engineering margin: upper confidence bound no more than 1.10 versus
   a header-matched direct control.
-- Desired release target: consider 1.05 only after the variance study shows
-  that a small-single-digit gate is stable.
+- Desired release target: 1.05 after a variance study shows that a
+  small-single-digit gate is stable. P1 meets this locally at 1.019416 UCB;
+  R3 and supported-GHC validation remain separate gates.
 - Do not use wall-clock thresholds in ordinary shared CI. Structural Core and
   allocation-slope checks are the portable CI gates; paired timing belongs in
   a controlled performance job.
@@ -1470,8 +1511,8 @@ The active priority order is:
    the downstream `cdf6368` experiment and is not itself
    downstream-validated; this completion is the upstream proof/test gate, not
    a performance claim.
-2. **P0b — upstream all-unrestricted R2 integration (complete in the current
-   worktree).** The ported validators and both validated ownership shapes match
+2. **P0b — upstream all-unrestricted R2 integration (complete in signed commit
+   `8db6d4a`).** The ported validators and both validated ownership shapes match
    the complete 4,096-index/26,318-event trajectory and every digest. Each uses
    safe public ownership APIs plus public `unsafeGet`/`unsafeWrite` under the
    frozen in-bounds worker invariant; neither imports `BO.Unsafe` nor a
@@ -1481,15 +1522,19 @@ The active priority order is:
    at 124 lines/4,192 characters, and the stable inspection anchors exclude
    dictionaries, growable headers, plural aliases, generic accessors, and
    projection calls from the hot worker.
-3. **P1 — attributable R2 optimization (active).** Compare the all-ordinary,
-   fixed-unrestricted-only, and all-unrestricted candidates in the same build.
-   Inspect the whole root and recursive SCC, allocation slope, code size,
-   specialization count, and paired runtime. Use a header-matched direct
-   control for a parity gate. If the current safe API passes, stop and do not
-   add another access surface. If it fails, first adjust backend
-   specialization, checked-scope/unchecked-worker placement, strictness, and
-   worker shape. Record the exact residual operation before changing an API.
-4. **P2 — resumable R3a/R3b.** Freeze the application-independent worklist
+3. **P1 — attributable R2 optimization (complete in the current worktree).**
+   Same-build all-owning, fixed-only-unrestricted, and all-unrestricted
+   controls reproduce the historical attribution. The header-matched direct
+   control retains three real reads. A first 21-pair campaign failed at
+   1.147362×/1.154867 UCB; allocation and Core isolated one boxed digest per
+   visit. An explicit local `Int64#` loop removes that allocation without a new
+   API or unsafe ownership operation. The final candidate measures
+   120 Core lines/3,989 characters, 0.467 excess bytes per visit, and
+   1.014222×/1.019416 UCB, passing both runtime margins. Direct and nested
+   ownership shapes are timing-equivalent, so retain the simpler direct-record
+   form.
+4. **P2 — resumable R3a/R3b (active).** Freeze the
+   application-independent worklist
    trace, then test open-once and push/extend/reopen modes using the same
    unrestricted content path. Measure visits and reopenings separately and
    compare flat versus nested groups. This is the first gate that can
@@ -1542,7 +1587,8 @@ No reviewer approved proceeding to P0b before P0a passed. The completed
 typing matrix, trusted-code proof record, positive equivalence tests, and
 generic owner-reuse compile failure now resolve those blockers. Their
 P0b structural demands now also pass; their remaining performance findings
-are represented in P1--P5 and the stop rules above.
+through P1 now pass as well. Their remaining findings are represented in
+P2--P5 and the stop rules above.
 
 ## Explicit non-goals
 

@@ -110,6 +110,7 @@ cabal.project.local~
 .ghc.environment.*
 *.eventlog
 /bench-results
+/bench/*.mjs
 *.png
 *.local.json
 haddocks

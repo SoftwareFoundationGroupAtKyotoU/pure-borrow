@@ -35,11 +35,11 @@ cabal build pure-borrow               # just the library
 
 cabal test                            # run all test suites
 cabal test pure-borrow-test           # main tasty suite only
-cabal test pure-borrow-inspection     # optimized-Core inspection tests
 cabal test pure-borrow-doctests       # doctests (needs GHC >= 9.12.3)
 
 cabal bench qsort-bench               # parallel quicksort benchmark (tasty-bench)
 cabal bench fft-bench                 # parallel FFT benchmark (tasty-bench)
+cabal bench pure-borrow-bench         # all single-threaded micro-benchmarks (needs -j1)
 
 cabal run qsort -- --help             # quicksort demo executable (needs +examples)
 cabal run fft   -- --help             # FFT demo executable (needs +examples)
@@ -95,7 +95,21 @@ Keep errors that GHC does defer in `TypingCases`.
 
 ### Benchmarks & profiling
 
-Benchmarks are `tasty-bench` executables; pass options through cabal, e.g. `cabal bench qsort-bench --benchmark-options='--csv bench-results/qsort.csv -j1 --time-mode=wall +RTS -N -s'`.
+There are exactly three benchmark suites, all `tasty-bench` executables:
+
+- **`qsort-bench`** (`bench/qsort.hs`) and **`fft-bench`** (`bench/fft.hs`) — the two parallel whole-algorithm suites from the paper.
+  Each is a single self-contained `main` module with no `other-modules`; they run under `-N` and take a tasty `--size` option, so they stay separate.
+- **`pure-borrow-bench`** (`bench/suite/`) — every single-threaded micro-benchmark (`copy-at`, `growable`, `unboxed`, `multi-store-scan`, `worklist-*`), merged into one `-N1 -T` executable.
+  Select a subset with tasty's `-p`; `-j1` is mandatory.
+
+`bench/suite/Main.hs` is only the `tasty-discover` driver; each sub-suite is a module under `bench/suite/PureBorrow/Bench/` exporting a single `test_… :: [Benchmark]`.
+Kernels that `pure-borrow-test` or `pure-borrow-inspection` also exercise stay in the `test-bench-common` internal library and are re-exported by a thin module here; kernels used only by the benchmark live under `bench/suite/` directly.
+Do **not** add a per-benchmark internal library — that pattern was removed deliberately, and a library is warranted only when a kernel needs a consumer outside its own benchmark.
+
+The driver's `--ingredient` flags rebuild `Test.Tasty.Bench.benchIngredients` (which `tasty-discover` cannot use directly) out of `listingTests` and `PureBorrow.Bench.Ingredients.benchReporter`; the reporters must stay composed or `--csv`/`--svg` become unreachable.
+`tasty-discover` imports only modules that export a discovered binding, so `Ingredients` needs no `--ignores`.
+
+Pass options through cabal, e.g. `cabal bench qsort-bench --benchmark-options='--csv bench-results/qsort.csv -j1 --time-mode=wall +RTS -N -s'`.
 For profiled runs use the dedicated project file: `cabal --project-file=cabal-bench.project ...` (enables `-fprof-late`/`-fprof-auto` profiling).
 CSV/plots land in `bench-results/`.
 

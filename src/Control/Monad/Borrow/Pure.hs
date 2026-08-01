@@ -53,6 +53,10 @@ module Control.Monad.Borrow.Pure (
 
   -- * Parallel computation
   parBO,
+  Par (..),
+  runPar,
+  mapConcurrentlyOf,
+  forConcurrentlyOf,
 
   -- * Borrowing
   -- $borrow
@@ -97,6 +101,7 @@ module Control.Monad.Borrow.Pure (
   -- ** Utility function to manipulate borrows
   joinMut,
   joinLend,
+  subShare,
   coerceShare,
 
   -- ** Copying and Cloning
@@ -126,7 +131,10 @@ module Control.Monad.Borrow.Pure (
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.Clone
 import Control.Monad.Borrow.Pure.Copyable
+import Control.Optics.Linear (Traversal, traverseOf)
 import Data.Unrestricted.Linear (Consumable (..), Dupable (..), Movable (..), Ur (..), dup, dup3)
+import Prelude.Linear ((.))
+import Prelude.Linear qualified as PL
 
 {- $setup
 >>> :set -XBlockArguments -XLinearTypes -XNoImplicitPrelude -XImpredicativeTypes -XQualifiedDo
@@ -402,6 +410,25 @@ Hence, if you see @'Borrow' bk α a@ in a function, it can be either 'Mut' or 'S
     * Use 'sharing' or 'sharing_' to share temporarily and then regain the original 'Mut'.
     * Use 'reborrowing' or 'reborrowing_' to create a shorter-lived 'Mut' and then regain the original 'Mut'.
     * Use 'reclaim' or 'reclaim'' to recover the original resource from a 'Lend' after the lifetime ends.
+
+== Performance-sensitive loops
+
+Choose the loop structure that performs the least algorithmic work first. With
+the surrounding functions properly inlined, one 'sharing' or 'reborrowing' per
+iteration is normally cheap. For an otherwise read-only loop, however, prefer
+sharing once outside the loop and shortening that shared borrow inside each
+iteration with 'subShare':
+
+@
+'share' resource \& \('Ur' shared) ->
+  ... 'subShare' shared ...
+@
+
+This avoids opening and reclaiming a sublifetime merely to read the same
+resource. Functions containing hot loops over operations that return
+@(Ur a, container)@ should themselves be @INLINE@, @INLINABLE@, or specialised.
+That lets GHC eliminate the transient tuple and 'Ur' constructors; without
+cross-module inlining those constructors can allocate on every read.
 -}
 
 {- $copy-and-clone
@@ -435,6 +462,11 @@ For possibly mutable types, you can still 'clone' them out of borrows linearly i
 
 This includes, for example, 'Data.Ref.Linear.Ref' or 'Data.Vector.Mutable.Linear.Borrow.Vector'.
 The fact that the 'clone'd value is only accessible inside 'BO' ensures that we cannot leak mutable states inside @a@ into /unrestricted/ contexts -- otherwise, we can introduce mutable values into unrestricted context via @'move' :: 'Share' α a -> 'Ur' ('Share' α a)@.
+
+In performance-sensitive loops, moving a whole structured value can be a sign
+of an avoidable deep copy, particularly for generically derived 'Movable'
+instances. Prefer operating through the borrow or returning only the required
+unrestricted fields in 'Ur' rather than moving the enclosing structure.
 -}
 
 {- $splitting
@@ -451,3 +483,17 @@ It is morally an instance method of the 'DistributesAlias' class, and you can de
 
 We also provide experimental splitting on record types in "Data.Record.Linear.Borrow.Experimental.PatternMatch" and "Data.Record.Linear.Borrow.Experimental.Split".
 -}
+
+mapConcurrentlyOf ::
+  Traversal s t a b ->
+  (a %1 -> BO α b) ->
+  s %1 ->
+  BO α t
+mapConcurrentlyOf l f = runPar . traverseOf l (Par . f)
+
+forConcurrentlyOf ::
+  Traversal s t a b ->
+  s %1 ->
+  (a %1 -> BO α b) ->
+  BO α t
+forConcurrentlyOf l = PL.flip (mapConcurrentlyOf l)

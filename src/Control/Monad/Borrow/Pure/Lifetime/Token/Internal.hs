@@ -106,16 +106,22 @@ instance Data.Applicative (After α) where
   {-# INLINE pure #-}
   After f <*> After r = After (f r)
   {-# INLINE (<*>) #-}
+  liftA2 f (After a) (After b) = After (f a b)
+  {-# INLINE liftA2 #-}
 
 instance Control.Applicative (After α) where
   pure a = After a
   {-# INLINE pure #-}
   After f <*> After r = After (f r)
   {-# INLINE (<*>) #-}
+  liftA2 f (After a) (After b) = After (f a b)
+  {-# INLINE liftA2 #-}
 
 instance Control.Monad (After α) where
   After r >>= k = After (unAfter (k r))
   {-# INLINE (>>=) #-}
+  After r >> After a = After (r `lseq` a)
+  {-# INLINE (>>) #-}
 
 -- | Witness that the current computation is in a linear context.
 data Linearly = UnsafeLinearly

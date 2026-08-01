@@ -229,7 +229,7 @@ class Copyable1 f where
 
 type GenericCopyable1 f = (Copyable1 (Rep1 @Type f), Generic1 f)
 
-genericLiftCopy :: forall f bk a b α. (GenericCopyable1 f) => (Borrow bk α a %1 -> b) -> Borrow bk α (f a) %1 -> f b
+genericLiftCopy :: forall f bk α a b. (GenericCopyable1 f) => (Borrow bk α a %1 -> b) -> Borrow bk α (f a) %1 -> f b
 {-# INLINE genericLiftCopy #-}
 genericLiftCopy f (UnsafeAlias x) = to1 $ liftCopy f (UnsafeAlias $ from1 x)
 

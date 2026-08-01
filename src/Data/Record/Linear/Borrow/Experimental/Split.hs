@@ -45,8 +45,8 @@ module Data.Record.Linear.Borrow.Experimental.Split (
   (!#),
 ) where
 
+import Control.Monad.Borrow.Pure.BO (Lifetime)
 import Control.Monad.Borrow.Pure.BO.Internal
-import Control.Monad.Borrow.Pure.Lifetime
 import Data.Kind (Constraint)
 import GHC.Base (Multiplicity (..), TYPE, Type)
 import GHC.OverloadedLabels (IsLabel (..))
@@ -95,10 +95,10 @@ In above example, we annotate type of the divided field borows for clarity, but 
 For more complex, partial splitting of a record, see [Splitting a record borrow into pieces](#split) for more detail.
 -}
 (.#) ::
-  forall field r a k α.
-  Borrow k α r %1 ->
+  forall field r a bk α.
+  Borrow bk α r %1 ->
   RecordLabel r field a ->
-  Borrow k α a
+  Borrow bk α a
 UnsafeAlias !r .# RecLab = UnsafeAlias $! Unsafe.toLinear (getField @field @r @a) r
 
 infixl 9 .#

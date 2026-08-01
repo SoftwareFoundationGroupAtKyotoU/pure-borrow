@@ -6,6 +6,17 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE NoImplicitPrelude #-}
+-- The set inspection-testing's own "Help, I am drowning in Core!" recommends.
+-- A failing obligation prints the Core the way GHC would, and without these a
+-- single 'BO' term is mostly coercions, uniques and IdInfo.
+-- These stay here rather than in the component's @ghc-options@: `cabal check`
+-- rejects `-d*` flags in a distributed package.
+{-# OPTIONS_GHC -dsuppress-coercions #-}
+{-# OPTIONS_GHC -dsuppress-idinfo #-}
+{-# OPTIONS_GHC -dsuppress-module-prefixes #-}
+{-# OPTIONS_GHC -dsuppress-type-applications #-}
+{-# OPTIONS_GHC -dsuppress-type-signatures #-}
+{-# OPTIONS_GHC -dsuppress-uniques #-}
 
 {- |
 Core-level obligations for the statically erased sublifetime delimiters.

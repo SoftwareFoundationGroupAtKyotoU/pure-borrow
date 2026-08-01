@@ -242,18 +242,11 @@ test-suite pure-borrow-inspection
     PureBorrow.Inspection.Sublifetime
     PureBorrow.Inspection.Worklist.Resume
 
-  -- The -dsuppress-* set is the one inspection-testing's own "Help, I am
-  -- drowning in Core!" recommends: a failing obligation prints the Core the
-  -- same way GHC would, and without these a single BO term is mostly
-  -- coercions, uniques and IdInfo.
+  -- The -dsuppress-* set that makes a failing obligation readable belongs in
+  -- OPTIONS_GHC on the module that states the obligation, not here: `cabal
+  -- check` rejects `ghc-options: -d*` in a distributed package.
   ghc-options:
     -O2
-    -dsuppress-coercions
-    -dsuppress-idinfo
-    -dsuppress-module-prefixes
-    -dsuppress-type-applications
-    -dsuppress-type-signatures
-    -dsuppress-uniques
     -fplugin=Test.Tasty.Inspection.Plugin
 
   build-depends:

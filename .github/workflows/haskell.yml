@@ -31,19 +31,28 @@ jobs:
             await script({github, context, core, glob, io, require})
 
   build:
-    name: Build and Test (${{matrix.plan.name}})
+    name: Build and Test (${{matrix.plan.name}}${{matrix.flags == '+slow' && ', slow' || ''}})
     needs: [ci-enumerate]
     continue-on-error: true
     strategy:
       matrix:
         plan: ${{fromJSON(needs.ci-enumerate.outputs.plan)}}
+        flags: ["-slow"]
+        # Also exercise the sublifetime-allocating implementations behind
+        # `+slow`. Only on the pinned GHC: the flag swaps two function bodies,
+        # nothing version-dependent, so a full GHC x flag matrix would just
+        # double CI for no extra coverage.
+        include:
+          - plan: ${{fromJSON(needs.ci-enumerate.outputs.plan)[1]}}
+            flags: "+slow"
       fail-fast: false
     env:
       cabal: "cabal --project-file=${{matrix.plan.path}}"
+      flags: ${{matrix.flags}}
       ghc: ${{matrix.plan.ghc}}
       project-file: ${{matrix.plan.path}}
-      plan: ${{matrix.plan.name}}
-      artifact-name: "artifact-${{matrix.plan.name}}"
+      plan: "${{matrix.plan.name}}${{matrix.flags == '+slow' && '-slow' || ''}}"
+      artifact-name: "artifact-${{matrix.plan.name}}${{matrix.flags == '+slow' && '-slow' || ''}}"
     runs-on: ubuntu-latest
     outputs:
       benchmarks: ${{steps.list-bins.outputs.benchs}}
@@ -81,7 +90,7 @@ jobs:
           restore-keys: ${{steps.cache-keys.outputs.dist-restore}}
       - name: cabal configure
         run: |
-          ${{env.cabal}} v2-configure --enable-tests --enable-benchmarks --enable-optimisation=2 --test-show-details=always --write-ghc-environment-files=always
+          ${{env.cabal}} v2-configure --enable-tests --enable-benchmarks --enable-optimisation=2 --test-show-details=always --write-ghc-environment-files=always --flags='${{env.flags}}'
           ${{env.cabal}} update
       - name: Build Dependencies
         run: |

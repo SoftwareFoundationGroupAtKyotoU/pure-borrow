@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LinearTypes #-}
 {-# LANGUAGE NoImplicitPrelude #-}
@@ -9,11 +10,18 @@ module Control.Monad.Borrow.Pure.BOSpec (
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
+import Control.Monad.Borrow.Pure.BO qualified as BO
 import Data.Functor.Linear qualified as Data
+import Data.Type.Equality ((:~:))
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))
 import Unsafe.Linear qualified as Unsafe
 import Prelude (Int, ($), (+))
+
+assocBorrowEqTypingCase ::
+  forall (bk :: BO.BorrowKind) α β γ a.
+  BO.Borrow bk ((α /\ β) /\ γ) a :~: BO.Borrow bk (α /\ (β /\ γ)) a
+assocBorrowEqTypingCase = BO.assocBorrowEq @bk @α @β @γ @a
 
 shortenShare :: (α >= β) => Share α a -> Share β a
 shortenShare = subShare

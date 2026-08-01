@@ -33,6 +33,18 @@ flag examples
   default: False
   manual: True
 
+flag slow
+  description:
+    Restore the previous, sublifetime-allocating implementations of the
+    result-discarding borrow scopes (`sharing_`, `reborrowing_`) and of
+    `copyAtMut`. These open a real sublifetime with a runtime token and a
+    lender, which the default implementations statically erase. Enable to
+    A/B the two against each other, or to check whether a suspected
+    miscompilation or unsoundness is attributable to the erased scopes.
+
+  default: False
+  manual: True
+
 common defaults
   default-language: GHC2021
   default-extensions: LinearTypes
@@ -72,6 +84,9 @@ common examples
 
 library
   import: defaults
+
+  if flag(slow)
+    cpp-options: -DPURE_BORROW_SLOW_SCOPES
   build-depends:
     array,
     atomic-primops,
@@ -205,6 +220,34 @@ library bench-suites
     tasty-bench,
     vector,
     vector-algorithms,
+
+  default-language: GHC2021
+
+benchmark pure-borrow-bench
+  import: defaults
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: bench/suite
+  -- cabal-gild: discover bench/suite --exclude=bench/suite/Main.hs
+  other-modules:
+    PureBorrow.Bench.CopyAt
+    PureBorrow.Bench.Ingredients
+
+  ghc-options:
+    -threaded
+    -rtsopts
+    -O2
+    "-with-rtsopts=-N1 -T"
+
+  build-tool-depends:
+    tasty-discover:tasty-discover >=5.0.1
+
+  build-depends:
+    base >=4.7 && <5,
+    pure-borrow,
+    tasty,
+    tasty-bench,
+    vector,
 
   default-language: GHC2021
 

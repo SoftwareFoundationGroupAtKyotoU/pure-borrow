@@ -106,3 +106,9 @@ instance (GenericSubtype a b) => a <: Generically b where
 
 genericUpcast :: (GenericSubtype a b) => a %1 -> b
 genericUpcast = to . gupcast . from
+
+instance '[] <: ('[] :: [k]) where
+  subtype = UnsafeSubtype
+
+instance (a <: b, as <: bs) => (a ': as) <: (b ': bs) where
+  subtype = UnsafeSubtype

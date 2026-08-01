@@ -29,7 +29,6 @@ the iteration. Keep the loop worker @INLINE@ or @INLINABLE@ so 'Ur'-boxed reads
 can be eliminated by the optimiser.
 -}
 module Control.Monad.Borrow.Pure.Experimental.Loop (
-  Borrows (..),
   forReborrowing,
   forReborrowingOf_,
   forReborrowing_,
@@ -55,7 +54,6 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.BO.Unsafe
-import Control.Monad.Borrow.Pure.Experimental.Borrows
 import Control.Monad.Borrow.Pure.Experimental.Reborrowable
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Bifunctor.Linear qualified as Bi
@@ -76,14 +74,14 @@ inside the delimited sublifetime, reborrowing the 'Borrows' in @bors@ for that s
 -}
 forReborrowing ::
   (Data.Traversable t, Reborrowable bor) =>
-  bor α xs %1 ->
+  bor xs %1 ->
   t b %1 ->
   ( forall β.
-    bor (β /\ α) xs %1 ->
+    WithLifetime bor (β /\ LifetimeOf bor) xs %1 ->
     b %1 ->
     BO (β /\ α) c
   ) ->
-  BO α (t c, bor α xs)
+  BO α (t c, bor xs)
 {-# INLINE forReborrowing #-}
 forReborrowing bors tb k =
   flip Control.runStateT bors $
@@ -152,14 +150,14 @@ unAp (Ap m) = m
 forReborrowingOf_ ::
   (Reborrowable bor) =>
   Fold s a %1 ->
-  bor α xs %1 ->
+  bor xs %1 ->
   s %1 ->
   ( forall β.
-    bor (β /\ α) xs %1 ->
+    WithLifetime bor (β /\ LifetimeOf bor) xs %1 ->
     a %1 ->
     BO (β /\ α) ()
   ) ->
-  BO α (bor α xs)
+  BO α (bor xs)
 {-# INLINE forReborrowingOf_ #-}
 forReborrowingOf_ fld bors s k =
   flip Control.execStateT bors $
@@ -169,29 +167,29 @@ forReborrowingOf_ fld bors s k =
 
 forReborrowing_ ::
   (Foldable t, Reborrowable bor) =>
-  bor α xs %1 ->
+  bor xs %1 ->
   t a %1 ->
   ( forall β.
-    bor (β /\ α) xs %1 ->
+    WithLifetime bor (β /\ LifetimeOf bor) xs %1 ->
     a %1 ->
     BO (β /\ α) ()
   ) ->
-  BO α (bor α xs)
+  BO α (bor xs)
 {-# INLINE forReborrowing_ #-}
 forReborrowing_ = forReborrowingOf_ foldMap
 
 iforReborrowingOf_ ::
   (Reborrowable bor) =>
   IndexedFold i s a %1 ->
-  bor α xs %1 ->
+  bor xs %1 ->
   s %1 ->
   ( forall β.
-    bor (β /\ α) xs %1 ->
+    WithLifetime bor (β /\ LifetimeOf bor) xs %1 ->
     i %1 ->
     a %1 ->
     BO (β /\ α) ()
   ) ->
-  BO α (bor α xs)
+  BO α (bor xs)
 {-# INLINE iforReborrowingOf_ #-}
 iforReborrowingOf_ fld bors s k =
   flip Control.execStateT bors $
@@ -201,15 +199,15 @@ iforReborrowingOf_ fld bors s k =
 
 iforReborrowing_ ::
   (FoldableWithIndex i t, Reborrowable bor) =>
-  bor α xs %1 ->
+  bor xs %1 ->
   t a %1 ->
   ( forall β.
-    bor (β /\ α) xs %1 ->
+    WithLifetime bor (β /\ LifetimeOf bor) xs %1 ->
     i %1 ->
     a %1 ->
     BO (β /\ α) ()
   ) ->
-  BO α (bor α xs)
+  BO α (bor xs)
 {-# INLINE iforReborrowing_ #-}
 iforReborrowing_ = iforReborrowingOf_ ifoldMap
 
@@ -326,18 +324,18 @@ iterReborrowing_ ::
   forall bor α xs.
   (Reborrowable bor) =>
   Int ->
-  bor α xs %1 ->
+  bor xs %1 ->
   ( forall β.
     Int ->
-    bor (β /\ α) xs %1 ->
+    WithLifetime bor (β /\ LifetimeOf bor) xs %1 ->
     BO (β /\ α) ()
   ) ->
-  BO α (bor α xs)
+  BO α (bor xs)
 {-# INLINE iterReborrowing_ #-}
 iterReborrowing_ n bor k = go bor 0
   where
     {-# INLINE go #-}
-    go :: bor α xs %1 -> Int -> BO α (bor α xs)
+    go :: bor xs %1 -> Int -> BO α (bor xs)
     go !bor !i
       | i < n = Control.do
           bor <- locally_ bor \bor -> k i bor

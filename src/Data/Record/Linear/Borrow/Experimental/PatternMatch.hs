@@ -54,7 +54,7 @@ import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Affine (Affine (..), AsAffine (..))
 import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
 import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe (unsafeMapAlias)
+import Control.Monad.Borrow.Pure.BO.Internal
 import Data.Kind (Constraint)
 import GHC.Base (TYPE, Type, proxy#)
 import GHC.OverloadedLabels (IsLabel (..))
@@ -299,7 +299,11 @@ instance
   where
   type
     SplitBorrow (l1, l2, l3, l4) bk α a =
-      (Borrow bk α (ValueOf l1), Borrow bk α (ValueOf l2), Borrow bk α (ValueOf l3), Borrow bk α (ValueOf l4))
+      ( Borrow bk α (ValueOf l1)
+      , Borrow bk α (ValueOf l2)
+      , Borrow bk α (ValueOf l3)
+      , Borrow bk α (ValueOf l4)
+      )
   splitRecord (RecLab, RecLab, RecLab, RecLab) = Unsafe.toLinear \r ->
     ( unsafeMapAlias (Unsafe.toLinear (getField @f1)) r
     , unsafeMapAlias (Unsafe.toLinear (getField @f2)) r

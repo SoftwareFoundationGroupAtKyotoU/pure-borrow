@@ -133,7 +133,7 @@ import Control.Monad.Borrow.Pure.Clone
 import Control.Monad.Borrow.Pure.Copyable
 import Control.Optics.Linear (Traversal, traverseOf)
 import Data.Unrestricted.Linear (Consumable (..), Dupable (..), Movable (..), Ur (..), dup, dup3)
-import Prelude.Linear (($), (.))
+import Prelude.Linear ((.))
 import Prelude.Linear qualified as PL
 
 {- $setup

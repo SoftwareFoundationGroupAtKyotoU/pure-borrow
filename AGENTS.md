@@ -153,8 +153,17 @@ parallel `qsort` (budgeted `parBO`; the heavier version is `qsortDC` above).
 - **Strict warnings** (`common defaults` in `pure-borrow.cabal`): `-Wall -Wcompat
   -Wunused-packages …`. `-Wunused-packages` means a now-unused `build-depends` entry breaks
   the build — drop deps you stop using.
-- **Flags:** `examples` (demo executables + `demo-impl` lib) is the only flag; it is
-  `manual`, default `False`, and enabled locally via `cabal.project`.
+- **Flags:** both are `manual` and default `False`.
+  - `examples` — demo executables + `demo-impl` lib; enabled locally via `cabal.project`.
+  - `slow` — restores the previous, sublifetime-allocating implementations of
+    `sharing_`, `reborrowing_` and `copyAtMut`, behind
+    `-DPURE_BORROW_SLOW_SCOPES`. The two variants must stay observationally
+    equivalent: the same test suites run under both, and CI builds `+slow` on
+    the pinned GHC. Use it to A/B the erased scopes, or to check whether a
+    suspected miscompilation is attributable to them.
+    ```bash
+    cabal build all --flags=+slow && cabal test --flags=+slow
+    ```
 - CI (`.github/workflows/haskell.yml`) runs a GHC matrix (9.10.3/9.12.4/9.14.1 via
   `ci/configs/*.project`): build, all test suites, `cabal check`, Haddock-for-Hackage, and a
   fourmolu check.

@@ -56,7 +56,7 @@ import Data.Tuple (Solo (..))
 import Data.Type.Equality ((:~:) (Refl))
 import GHC.Base (TYPE)
 import GHC.Base qualified as GHC
-import GHC.Exts (State#, runRW#)
+import GHC.Exts (Multiplicity (..), State#, runRW#)
 import GHC.ST qualified as ST
 import GHC.TypeError (ErrorMessage (..))
 import Generics.Linear
@@ -303,10 +303,10 @@ assocBorrowL ::
 assocBorrowL = coerceLin
 
 assocBorrowEq ::
-  forall bk α β γ a.
-  (Borrow (bk ((α /\ β) /\ γ)) a) :~: (Borrow (bk (α /\ (β /\ γ))) a)
+  forall (bk :: BorrowKind) α β γ a.
+  Borrow bk ((α /\ β) /\ γ) a :~: Borrow bk (α /\ (β /\ γ)) a
 {-# INLINE assocBorrowEq #-}
-assocBorrowEq = Unsafe.coerce $ Refl @(Borrow (bk ((α /\ β) /\ γ)) a)
+assocBorrowEq = Unsafe.coerce $ Refl @(Borrow bk ((α /\ β) /\ γ) a)
 
 assocLendR ::
   Lend ((α /\ β) /\ γ) a %1 ->
@@ -389,6 +389,56 @@ reclaim = \(UnsafeAlias !a) -> a
 reborrow :: forall β α a. (α >= β) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
 reborrow = Unsafe.toLinear \ !mutA ->
   (Data.Coerce.coerce mutA, Data.Coerce.coerce mutA)
+
+{- |
+Run and discard the result of a continuation with a representation-identical
+borrow narrowed to a fresh sublifetime, then, on normal return, restore the
+original mutable borrow.
+
+This is the trusted non-finalizing delimiter used by the scalar public
+result-discarding combinators. The rank-2 continuation cannot return its
+private @β@ at a caller-nameable lifetime; existentially hiding it supplies no
+ambient outlives evidence. The outer 'Mut' is retained only inside this
+function while the continuation runs. The continuation result is consumed
+before the outer borrow is restored. The continuation and state token are each
+consumed exactly once. Since the lifetime indices have runtime-erased
+representations, no runtime lifetime token or lender is required.
+-}
+unsafeBorrowScope_ ::
+  forall bk α α' a r.
+  (Consumable r) =>
+  Mut α a %1 ->
+  (forall β. Borrow bk (β /\ α) a %(BorrowMultiplicity bk) -> BO (β /\ α') r) %1 ->
+  BO α' (Mut α a)
+{-# INLINE unsafeBorrowScope_ #-}
+unsafeBorrowScope_ = Unsafe.toLinear2 \mut k ->
+  unsafeSrunBO_ $
+    k (Unsafe.coerce mut) Control.<&> \r ->
+      consume r `lseq` mut
+
+type BorrowMultiplicity :: BorrowKind -> Multiplicity
+type family BorrowMultiplicity bk where
+  BorrowMultiplicity 'Mut = One
+  BorrowMultiplicity 'Share = Many
+
+{- |
+Run a rank-2 'BO' action in a statically delimited fresh sublifetime without
+constructing a runtime lifetime token.
+
+The action is typechecked parametrically for every private lifetime, so it
+cannot rely on the implementation's erased instantiation at the ambient
+lifetime or return a borrow at a caller-nameable lifetime. Existentially hiding
+the private lifetime supplies no evidence needed to use such a borrow in an
+ambient 'BO'. The state-token coercion executes the action exactly once. This
+is the non-finalizing analogue of 'srunBO'; it cannot eliminate 'After' or
+provide 'End' evidence.
+-}
+unsafeSrunBO_ ::
+  forall β a.
+  (forall α. BO (α /\ β) a) %1 ->
+  BO β a
+{-# INLINE unsafeSrunBO_ #-}
+unsafeSrunBO_ action = unsafeCastBO (action @β)
 
 -- | Collapse a borrower to a mutable borrower.
 joinMut :: Borrow bk α (Mut β a) %1 -> Borrow bk (α /\ β) a

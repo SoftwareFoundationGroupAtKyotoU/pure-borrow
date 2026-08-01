@@ -409,29 +409,11 @@ benchmark multi-store-scan-bench
     -threaded
     -rtsopts
     -O2
-    -with-rtsopts=-N1
+    "-with-rtsopts=-N1 -T"
 
   build-depends:
     base >=4.7 && <5,
     pure-borrow:multi-store-scan-bench-suites,
-
-  default-language: GHC2021
-
-benchmark multi-store-scan-allocation
-  import: defaults
-  type: exitcode-stdio-1.0
-  main-is: multi-store-scan-allocation.hs
-  hs-source-dirs: bench
-  ghc-options:
-    -rtsopts
-    -O2
-    -with-rtsopts=-T
-
-  build-depends:
-    base >=4.7 && <5,
-    deepseq,
-    pure-borrow:multi-store-scan-bench-suites,
-    vector,
 
   default-language: GHC2021
 
@@ -444,27 +426,10 @@ benchmark worklist-resume-bench
     -threaded
     -rtsopts
     -O2
-    -with-rtsopts=-N1
+    "-with-rtsopts=-N1 -T"
 
   build-depends:
     base >=4.7 && <5,
-    pure-borrow:bench-suites,
-
-  default-language: GHC2021
-
-benchmark worklist-resume-allocation
-  import: defaults
-  type: exitcode-stdio-1.0
-  main-is: worklist-resume-allocation.hs
-  hs-source-dirs: bench
-  ghc-options:
-    -rtsopts
-    -O2
-    -with-rtsopts=-T
-
-  build-depends:
-    base >=4.7 && <5,
-    deepseq,
     pure-borrow:bench-suites,
 
   default-language: GHC2021

@@ -137,26 +137,49 @@ unsafeFromMutable v lin =
 {-
 Note [Unrestricted Materialization of Vector]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-We impose 'Copyable' on 'toVector' and 'toList' to ensure elements doesn't bare any essentially linear contents inside, but we don't make use of the constraint internally.
-Is it a cheating? Maybe. Think hard about it.
+Consuming 'toVector' and 'toList' transfer their elements from a linear owner
+to an unrestricted, GC-owned result. 'Movable' is exactly the evidence for
+that transfer. Each element is passed through 'move', which performs any deep
+copy required by its 'Movable' instance. 'Copyable' is neither sufficient nor
+required.
 -}
 
--- | /O(1)/. Freezes @'Vector' a@ to @'V.Vector' a@ from @vector@ package, /without/ copying.
+-- | /O(n)/. Move every element into GC ownership, then freeze the storage.
 toVector ::
   -- See Note [Unrestricted Materialization of Vector].
-  (Copyable a) =>
+  (Movable a) =>
   Vector a %1 -> Ur (V.Vector a)
 {-# NOINLINE toVector #-}
 toVector = GHC.noinline $
-  Unsafe.toLinear \(Vector v) -> Ur $ unsafePerformIO $ V.unsafeFreeze v
+  Unsafe.toLinear \(Vector v) ->
+    let !frozen =
+          unsafePerformIO do
+            moveElements 0 (MV.length v) v
+            V.unsafeFreeze v
+     in Ur frozen
 
--- Same applies to 'Copyable' here, as in 'toVector'.
+-- Same applies to 'Movable' here, as in 'toVector'.
 toList ::
   -- See Note [Unrestricted Materialization of Vector].
-  (Copyable a) =>
+  (Movable a) =>
   Vector a %1 -> Ur [a]
 {-# INLINE toList #-}
 toList = Ur.lift V.toList . toVector
+
+moveElements ::
+  (Movable a) =>
+  Int ->
+  Int ->
+  MV.IOVector a ->
+  NonLinear.IO ()
+{-# INLINE moveElements #-}
+moveElements !index !length_ vector
+  | index >= length_ = NonLinear.pure ()
+  | otherwise = do
+      value <- MV.unsafeRead vector index
+      case move value of
+        Ur !moved -> MV.unsafeWrite vector index moved
+      moveElements (index + 1) length_ vector
 
 {- | Unsafely thaws 'V.Vector' (from @vector@ package) to a 'Vector',
 reusing the same memory.
@@ -344,7 +367,8 @@ copyAtMut = Unsafe.toLinear2 \i mut@(UnsafeAlias (Vector v)) ->
           -- The raw read temporarily aliases the element retained by the
           -- vector. 'copy' consumes that alias and returns only an authorized
           -- unrestricted copy; the mutable vector borrow stays exclusive.
-          NonLinear.pure (Ur $! copy (UnsafeAlias a), mut)
+          let !copied = copy (UnsafeAlias a)
+          NonLinear.pure (Ur copied, mut)
 #endif
 
 -- | Applies an in-place mutation on 'V.MVector' from @vector@ package.

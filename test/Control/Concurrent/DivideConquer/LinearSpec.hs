@@ -53,7 +53,7 @@ test_qsort =
             P..$ ("output", sorted)
     ]
 
-qsortDCVec :: (Ord a, Copyable a) => StdGen -> V.Vector a -> V.Vector a
+qsortDCVec :: (Ord a, Copyable a, Movable a) => StdGen -> V.Vector a -> V.Vector a
 qsortDCVec g v = unur $ linearly \lin -> DataFlow.do
   (l1, l2) <- dup lin
   runBO l1 Control.do

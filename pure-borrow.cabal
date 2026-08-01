@@ -158,6 +158,7 @@ test-suite pure-borrow-test
   other-modules:
     Control.Concurrent.DivideConquer.LinearSpec
     Control.Monad.Borrow.Pure.BOSpec
+    Control.Monad.Borrow.Pure.CopyableSpec
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
     Data.Vector.Mutable.Linear.BorrowSpec

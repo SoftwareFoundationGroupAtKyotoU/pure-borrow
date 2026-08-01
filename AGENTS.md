@@ -71,11 +71,28 @@ The suite then stays green while the limitation stands, and turns red the day th
 `test_should_pass` in `test/Control/Monad/Borrow/Pure/LifetimeSpec.hs` is the reference case: transitivity and monotonicity of the outlives relation *should* hold, and the layered `INCOHERENT` instances simply do not derive them today.
 Asserting a deferred type error there would claim the opposite — that we intend those properties to be underivable.
 
+Exception verified with GHC 9.12.4: linear multiplicity errors such as `Couldn't match type 'Many' with 'One'` are rejected while compiling the module even with `-fdefer-type-errors -Wno-deferred-type-errors`; they do not reach the runtime deferred-error path above.
+Put those cases in `test/typing-fail/` and validate their compile failure using the Cabal-selected compiler.
+Keep errors that GHC does defer in `TypingCases`.
+
 ### Benchmarks & profiling
 
 Benchmarks are `tasty-bench` executables; pass options through cabal, e.g. `cabal bench qsort-bench --benchmark-options='--csv bench-results/qsort.csv -j1 --time-mode=wall +RTS -N -s'`.
 For profiled runs use the dedicated project file: `cabal --project-file=cabal-bench.project ...` (enables `-fprof-late`/`-fprof-auto` profiling).
 CSV/plots land in `bench-results/`.
+
+#### Never call `unsafePerformIO` in a `direct` baseline
+
+A `direct…` kernel exists to show what the plain `vector` API costs, so it must be written the way a user of `vector` would actually write it.
+Use `modify` (`Data.Vector.modify`, `Data.Vector.Unboxed.modify`, `Data.Vector.Generic.modify`), which takes a `forall s. MVector s a -> ST s ()` and handles the thaw/freeze internally.
+Reach for `STRef` when a kernel needs auxiliary mutable state inside that `ST` action.
+
+Never hand-roll the same thing as `unsafePerformIO (thaw >>= … >>= unsafeFreeze)`.
+It is unsound — `unsafePerformIO` gives no guarantee the action runs once, or at all, or is not floated out of a loop — and it also makes the comparison dishonest, because the measured pure-borrow variant is held to a safety standard the baseline is not.
+`unsafeFreeze` on a buffer that was reachable from `IO` is exactly the aliasing hazard this library exists to rule out.
+The same applies to `unsafeThaw`, `unsafeDupablePerformIO` and `runST . unsafeIOToST`.
+
+This prohibition is about *baselines*, not about the library: trusted `unsafe*` primitives inside `src/` remain a proof obligation as described above, and `unsafePerformIO` is still fine in a test that deliberately observes an effect (for example the `IORef`-based copy/move trackers in the vector specs).
 
 ## Architecture
 
@@ -111,6 +128,12 @@ Borrow types are all one zero-cost representation, `Alias ak α a`:
 - `Lifetime/Token/Internal.hs` — zero-cost value-level tokens (`Now`, `EndToken`/`End`, `newLifetime`), the `After α a` finalizer monad, and the linearity witnesses (`Linearly`, `linearly`, `LinearOnly`).
   Several `NOINLINE`/`noinline` annotations here deliberately defeat CSE / full-laziness that would otherwise duplicate linear tokens — **do not "clean these up".**
 
+The same rule applies wherever a binding's own body calls `unsafePerformIO`: mark it `NOINLINE`, and mark any class method that reaches one — `Consumable`'s `consume` for the vector owners is the recurring case.
+Inlining hands GHC a licence the linear types do not: it can duplicate the call across use sites or float it out of a scope, and each surviving copy runs the effect again.
+This bites even when the action only *reads*, as an element-consuming traversal does, because running it twice consumes every element twice.
+`INLINE` on such a binding is a bug, not a tuning choice.
+An ordinary `IO` worker that does not itself call `unsafePerformIO` may stay `INLINE`; it is the `unsafePerformIO` occurrence that must be kept unique.
+
 ### Parallel divide-and-conquer — `src/Control/Concurrent/DivideConquer/Linear.hs`
 
 A borrow-safe **work-stealing/work-sharing** divide-and-conquer skeleton.
@@ -135,6 +158,8 @@ Includes a demonstrative in-place parallel `qsort` (budgeted `parBO`; the heavie
 - **One sentence per line.** Never fold a line in the middle of a sentence — insert a newline only at a sentence boundary, and let the editor soft-wrap whatever is long.
   This governs every kind of prose you write: Markdown files, Haddock and ordinary source comments, and commit-message bodies.
   It keeps diffs sentence-scoped, so rewording one sentence never reflows the paragraph around it.
+- **Lifetime parameter names:** quantify lifetime parameters as `α`, `β`, `γ`, using primes or numeric suffixes when more are needed.
+  Do not use prose names such as `lifetime`, `scope`, or `inner` for lifetime type variables.
 - **Multiplicity determines ownership:** data bound nonlinearly (through an ordinary arrow / `%Many`) is GC-owned.
   Do not require or invoke `Clone`, `Dupable`, or `Consumable` merely to copy, retain, or discard that data, including elements reached through an unrestricted standard container.
   By the Linear Haskell convention, a nonlinearly bindable resource may be consumed repeatedly; exactly-once consumption applies only to a linearly bound resource.

@@ -135,7 +135,14 @@ library
     Data.Ref.Linear.Borrow
     Data.Ref.Linear.Unlifted
     Data.Unique.Linear
+    Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted
+    Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted.Internal
+    Data.Vector.Mutable.Growable.Linear.Borrow
+    Data.Vector.Mutable.Growable.Linear.Borrow.Internal
     Data.Vector.Mutable.Linear.Borrow
+    Data.Vector.Mutable.Linear.Borrow.Internal
+    Data.Vector.Unboxed.Mutable.Linear.Borrow
+    Data.Vector.Unboxed.Mutable.Linear.Borrow.Internal
 
   -- cabal-gild: discover src --include src/**/Utils.hs --include src/**/Utils/**/*.hs
   other-modules:
@@ -154,14 +161,20 @@ test-suite pure-borrow-test
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: Main.hs
-  -- cabal-gild: discover test --exclude=test/Main.hs
+  -- cabal-gild: discover test --exclude=test/Main.hs --exclude=test/typing-fail/**
   other-modules:
     Control.Concurrent.DivideConquer.LinearSpec
     Control.Monad.Borrow.Pure.BOSpec
     Control.Monad.Borrow.Pure.CopyableSpec
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
+    Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted.TypingCases
+    Data.Vector.Generic.Mutable.Linear.Borrow.UnrestrictedSpec
+    Data.Vector.Mutable.Growable.Linear.BorrowSpec
+    Data.Vector.Mutable.Growable.Linear.TypingCases
     Data.Vector.Mutable.Linear.BorrowSpec
+    Data.Vector.Unboxed.Mutable.Linear.BorrowSpec
+    Data.Vector.Unboxed.Mutable.Linear.TypingCases
 
   ghc-options:
     -O2
@@ -175,6 +188,7 @@ test-suite pure-borrow-test
     deepseq,
     falsify,
     pure-borrow,
+    pure-borrow:test-bench-common,
     random,
     tasty,
     tasty-expected-failure,
@@ -203,13 +217,16 @@ test-suite pure-borrow-doctests
     doctest-parallel >=0.4.1,
     pure-borrow,
 
-library bench-suites
+-- Kernels shared by `pure-borrow-test` and the benchmark suites. Kernels used
+-- only by a benchmark live under `bench/suite` instead.
+library test-bench-common
   import: defaults
-  hs-source-dirs: internal-src/bench-suites
-  -- cabal-gild: discover internal-src/bench-suites
+  hs-source-dirs: internal-src/test-bench-common
+  -- cabal-gild: discover internal-src/test-bench-common
   exposed-modules:
     PureBorrow.Internal.Bench.Fft
     PureBorrow.Internal.Bench.QSort
+    PureBorrow.Internal.Bench.Unboxed
 
   build-depends:
     base >=4.7 && <5,
@@ -232,7 +249,9 @@ benchmark pure-borrow-bench
   -- cabal-gild: discover bench/suite --exclude=bench/suite/Main.hs
   other-modules:
     PureBorrow.Bench.CopyAt
+    PureBorrow.Bench.Growable
     PureBorrow.Bench.Ingredients
+    PureBorrow.Bench.Unboxed
 
   ghc-options:
     -threaded
@@ -246,6 +265,7 @@ benchmark pure-borrow-bench
   build-depends:
     base >=4.7 && <5,
     pure-borrow,
+    pure-borrow:test-bench-common,
     tasty,
     tasty-bench,
     vector,
@@ -265,7 +285,7 @@ benchmark qsort-bench
 
   build-depends:
     base >=4.7 && <5,
-    pure-borrow:bench-suites,
+    pure-borrow:test-bench-common,
 
   default-language: GHC2021
 
@@ -282,7 +302,7 @@ benchmark fft-bench
 
   build-depends:
     base >=4.7 && <5,
-    pure-borrow:bench-suites,
+    pure-borrow:test-bench-common,
 
   default-language: GHC2021
 

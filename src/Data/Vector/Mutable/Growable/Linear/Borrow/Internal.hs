@@ -824,6 +824,12 @@ capacity nor growth. A mutable result may be split using the fixed-vector API;
 the mutable growable owner becomes recoverable only after every resulting
 fixed borrow has ended. A shared input follows the ordinary unrestricted
 'Share' rules.
+
+Where a transaction branches, prefer projecting once at its entry --
+@let %1 !content = 'getContents' borrow@ -- over projecting separately inside
+each branch. Both are correct and consume the growable occurrence exactly
+once; the entry form simply gives the optimizer one header read to place
+rather than one per surviving branch.
 -}
 getContents ::
   Borrow bk α (GrowableVector a) %1 ->

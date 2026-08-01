@@ -24,13 +24,16 @@ import Control.Concurrent.DivideConquer.Linear (fftDC)
 import Control.DeepSeq (NFData (..), force)
 import Control.Exception (evaluate)
 import Control.Functor.Linear qualified as Control
+import Control.Monad.Borrow.Pure.BO
+import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Bits (popCount)
 import Data.Complex
 import Data.FMList qualified as FML
 import Data.Vector qualified as V
-import Data.Vector.Mutable.Linear.Borrow qualified as LV
+import Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted qualified as UV
 import Data.Vector.Unboxed qualified as U
 import Options.Applicative qualified as Opts
+import Prelude.Linear (dup, unur)
 import Prelude.Linear qualified as PL
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath (takeDirectory)
@@ -139,7 +142,12 @@ defaultMainWith CLIOpts {..} = do
           putStrLn $ "Written to: " <> fp
   retrv $
     postprocess size $
-      LV.modifyBoxedVector (Control.void PL.. fftDC g numCap threshold) v
+      unur PL.$ linearly \lin -> DataFlow.do
+        (lin, l2) <- dup lin
+        runBO lin Control.do
+          (vec, lend) <- borrowM (UV.fromVector v l2)
+          Control.void PL.$ fftDC g numCap threshold vec
+          pureAfter (UV.toVector PL.$ reclaim lend)
 
 postprocess :: Int -> V.Vector (Complex Double) -> V.Vector (Complex Double)
 postprocess kN hs =

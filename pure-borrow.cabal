@@ -106,6 +106,7 @@ library
   -- cabal-gild: discover src --exclude src/**/Utils.hs --exclude src/**/Utils/**/*.hs
   exposed-modules:
     Control.Concurrent.DivideConquer.Linear
+    Control.Concurrent.DivideConquer.Linear.Internal
     Control.Concurrent.Queue.ChaseLev
     Control.Monad.Borrow.Pure
     Control.Monad.Borrow.Pure.Affine
@@ -141,6 +142,8 @@ library
     Data.Vector.Mutable.Growable.Linear.Borrow.Internal
     Data.Vector.Mutable.Linear.Borrow
     Data.Vector.Mutable.Linear.Borrow.Internal
+    Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow
+    Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow.Internal
     Data.Vector.Unboxed.Mutable.Linear.Borrow
     Data.Vector.Unboxed.Mutable.Linear.Borrow.Internal
 
@@ -173,6 +176,8 @@ test-suite pure-borrow-test
     Data.Vector.Mutable.Growable.Linear.BorrowSpec
     Data.Vector.Mutable.Growable.Linear.TypingCases
     Data.Vector.Mutable.Linear.BorrowSpec
+    Data.Vector.Unboxed.Mutable.Growable.Linear.BorrowSpec
+    Data.Vector.Unboxed.Mutable.Growable.Linear.TypingCases
     Data.Vector.Unboxed.Mutable.Linear.BorrowSpec
     Data.Vector.Unboxed.Mutable.Linear.TypingCases
 
@@ -193,6 +198,29 @@ test-suite pure-borrow-test
     tasty,
     tasty-expected-failure,
     tasty-hunit,
+    vector,
+
+-- Keep Core inspections in a separate component: in the larger main test
+-- component GHC leaves concrete generic-vector dictionaries unspecialized.
+test-suite pure-borrow-inspection
+  import: defaults
+  default-language: GHC2021
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test-inspection
+  main-is: Main.hs
+  -- cabal-gild: discover test-inspection --exclude=test-inspection/Main.hs
+  other-modules:
+    PureBorrow.Inspection.Fft
+    PureBorrow.Inspection.QSort
+
+  ghc-options:
+    -O2
+    -fplugin=Test.Tasty.Inspection.Plugin
+
+  build-depends:
+    pure-borrow,
+    tasty,
+    tasty-inspection-testing,
     vector,
 
 test-suite pure-borrow-doctests
@@ -224,20 +252,13 @@ library test-bench-common
   hs-source-dirs: internal-src/test-bench-common
   -- cabal-gild: discover internal-src/test-bench-common
   exposed-modules:
-    PureBorrow.Internal.Bench.Fft
-    PureBorrow.Internal.Bench.QSort
     PureBorrow.Internal.Bench.Unboxed
 
   build-depends:
     base >=4.7 && <5,
-    deepseq,
-    optparse-applicative,
     pure-borrow,
-    random,
-    tasty,
     tasty-bench,
     vector,
-    vector-algorithms,
 
   default-language: GHC2021
 
@@ -285,7 +306,12 @@ benchmark qsort-bench
 
   build-depends:
     base >=4.7 && <5,
-    pure-borrow:test-bench-common,
+    pure-borrow,
+    random,
+    tasty,
+    tasty-bench,
+    vector,
+    vector-algorithms,
 
   default-language: GHC2021
 
@@ -302,7 +328,11 @@ benchmark fft-bench
 
   build-depends:
     base >=4.7 && <5,
-    pure-borrow:test-bench-common,
+    pure-borrow,
+    random,
+    tasty,
+    tasty-bench,
+    vector,
 
   default-language: GHC2021
 

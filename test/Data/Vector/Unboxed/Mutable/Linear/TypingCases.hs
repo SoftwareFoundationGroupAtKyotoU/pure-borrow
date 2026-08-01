@@ -52,7 +52,7 @@ badSplit ::
 badSplit = split
 
 badDuplicate ::
-  Borrow borrowKind α (Unboxed.Vector Int) %1 ->
+  Borrow bk α (Unboxed.Vector Int) %1 ->
   Unboxed.Vector Int
 badDuplicate = copy
 
@@ -65,30 +65,42 @@ instance Consumable (U.DoNotUnboxLazy LinearElement) where
     Unsafe.toLinear \(U.DoNotUnboxLazy (LinearElement ref)) ->
       consume ref
 
+newtype MovableOnly = MovableOnly Int
+
+type UnboxedMovableOnly = U.DoNotUnboxLazy MovableOnly
+
+instance Consumable UnboxedMovableOnly where
+  consume = Unsafe.toLinear \_ -> ()
+
+instance Dupable UnboxedMovableOnly where
+  dup2 = Unsafe.toLinear \value -> (value, value)
+
+instance Movable UnboxedMovableOnly where
+  move = Unsafe.toLinear \value -> Ur value
+
 nonCopyableGet ::
   Mut α (Unboxed.Vector BoxedLinearElement) %1 ->
   BO α (Mut α BoxedLinearElement)
 nonCopyableGet = Unboxed.get 0
 
 badNonCopyableCopyAtMut ::
-  Mut α (Unboxed.Vector BoxedLinearElement) %1 ->
+  Mut α (Unboxed.Vector UnboxedMovableOnly) %1 ->
   BO
     α
-    ( Ur BoxedLinearElement
-    , Mut α (Unboxed.Vector BoxedLinearElement)
+    ( Ur UnboxedMovableOnly
+    , Mut α (Unboxed.Vector UnboxedMovableOnly)
     )
 badNonCopyableCopyAtMut = Unboxed.copyAtMut 0
 
 badNonCopyableCopyAtMutCase :: Int
 badNonCopyableCopyAtMutCase =
   linearly \linear -> DataFlow.do
-    (refLinear, remainingLinear) <- dup linear
-    (ownerLinear, runLinear) <- dup remainingLinear
+    (ownerLinear, runLinear) <- dup linear
     runBO runLinear Control.do
       (vector, lend) <-
         borrowM
           ( Unboxed.fromList
-              [U.DoNotUnboxLazy (LinearElement (Ref.new 1 refLinear))]
+              [U.DoNotUnboxLazy (MovableOnly 1)]
               ownerLinear
           )
       (Ur _, vector) <- Unboxed.copyAtMut 0 vector
@@ -98,13 +110,12 @@ badNonCopyableCopyAtMutCase =
 badNonCopyableCopyAtCase :: Int
 badNonCopyableCopyAtCase =
   linearly \linear -> DataFlow.do
-    (refLinear, remainingLinear) <- dup linear
-    (ownerLinear, runLinear) <- dup remainingLinear
+    (ownerLinear, runLinear) <- dup linear
     runBO runLinear Control.do
       (vector, lend) <-
         borrowM
           ( Unboxed.fromList
-              [U.DoNotUnboxLazy (LinearElement (Ref.new 1 refLinear))]
+              [U.DoNotUnboxLazy (MovableOnly 1)]
               ownerLinear
           )
       share vector & \(Ur shared) -> Control.do

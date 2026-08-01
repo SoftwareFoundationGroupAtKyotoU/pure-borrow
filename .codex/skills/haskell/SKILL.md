@@ -31,6 +31,10 @@ Codex skills with the agent-agnostic repository policy in `AGENTS.md`:
   baseline with `modify`, which takes a `forall s. MVector s a -> ST s ()` and
   handles thaw/freeze itself; use `STRef` for auxiliary mutable state. See the
   benchmark section of `AGENTS.md`.
+- After changing any Haskell source, run `cabal build all` and then `cabal test`
+  before committing. The plain build must come first: the doctest suite reads the
+  built library. Keep `-O2` (pinned in `cabal.project`); the inspection suite
+  asserts optimized-Core properties that hold vacuously at `-O1`.
 - There is no `package.yaml`/hpack in this repository; edit `.cabal` files directly.
 
 ## Workflow

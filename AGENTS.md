@@ -35,6 +35,7 @@ cabal build pure-borrow               # just the library
 
 cabal test                            # run all test suites
 cabal test pure-borrow-test           # main tasty suite only
+cabal test pure-borrow-inspection     # optimized-Core inspection tests
 cabal test pure-borrow-doctests       # doctests (needs GHC >= 9.12.3)
 
 cabal bench qsort-bench               # parallel quicksort benchmark (tasty-bench)
@@ -45,6 +46,23 @@ cabal run fft   -- --help             # FFT demo executable (needs +examples)
 ```
 
 Prefer HLS (via the haskell skill) for iterating; it is far faster than a full `cabal build` for typecheck / hover / go-to-definition / find-references / rename.
+
+#### Running the suites is mandatory
+
+Any change under `src/`, `test/`, `bench/` or `internal-src/` must be validated with a full `cabal build all` followed by `cabal test` **before it is committed**.
+Not "when it looks risky" — every time.
+A change that only moves code between modules still changes what GHC optimizes and what the Core inspections see.
+
+Run the plain `cabal build all` first, and separately.
+`pure-borrow-doctests` extracts its examples from the built library, so `cabal test` on its own can silently exercise a stale build.
+
+#### Build and test at `-O2`
+
+`cabal.project` pins `optimization: 2`, matching the `--enable-optimisation=2` that CI configures with.
+Do not work around it with `-O1` or `--disable-optimisation` to save time.
+`pure-borrow-inspection` asserts properties of *optimized* Core — that a loop carries no type-class dictionary, that a generic vector specializes.
+At `-O1` those assertions hold whether or not the library actually specializes, so a green run at the default level says nothing about whether CI will pass.
+This is not hypothetical: a merge that kept every suite green locally at `-O1` failed every GHC in CI on exactly this assertion.
 
 ### Tests — tasty + tasty-discover (property tests via `falsify`)
 

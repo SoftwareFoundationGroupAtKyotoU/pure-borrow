@@ -3,9 +3,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 
-module PureBorrow.Internal.Bench.CopyAt (
-  defaultMain,
-  benches,
+module PureBorrow.Bench.CopyAt (
+  test_copyAt,
   composedPureBorrowCopiedReadLoop,
   directCopiedReadLoop,
   pureBorrowCopiedReadLoop,
@@ -23,7 +22,6 @@ import Data.Vector.Mutable qualified as MV
 import Data.Vector.Mutable.Linear.Borrow qualified as VL
 import Prelude.Linear
 import Test.Tasty.Bench hiding (defaultMain)
-import Test.Tasty.Bench qualified as Bench
 import Prelude qualified as NonLinear
 
 directCopiedReadLoop :: V.Vector Int -> (Int, V.Vector Int)
@@ -152,11 +150,8 @@ reborrowingUpdateLoop input = unur $ linearly \linearlyToken -> DataFlow.do
               Control.pure (consume modifiedScoped)
           go length_ (i + 1) nextMutable lend
 
-defaultMain :: IO ()
-defaultMain = Bench.defaultMain benches
-
-benches :: [Benchmark]
-benches =
+test_copyAt :: [Benchmark]
+test_copyAt =
   [ bgroup
       "copy-at"
       [ env

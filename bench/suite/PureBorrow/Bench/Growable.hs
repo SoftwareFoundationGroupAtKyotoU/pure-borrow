@@ -4,9 +4,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 
-module PureBorrow.Internal.Bench.Growable (
-  defaultMain,
-  benches,
+module PureBorrow.Bench.Growable (
+  test_growable,
   directContentUpdateLoop,
   fixedContentUpdateLoop,
   growableContentUpdateLoop,
@@ -23,7 +22,6 @@ import Data.Vector.Mutable.Linear.Borrow qualified as Fixed
 import GHC.IO (unsafePerformIO)
 import Prelude.Linear
 import Test.Tasty.Bench hiding (defaultMain)
-import Test.Tasty.Bench qualified as Bench
 import Prelude qualified as NonLinear
 
 directContentUpdateLoop :: V.Vector Int -> V.Vector Int
@@ -83,11 +81,8 @@ updateContents !logicalSize !index contents
           contents
       updateContents logicalSize (index + 1) nextContents
 
-defaultMain :: IO ()
-defaultMain = Bench.defaultMain benches
-
-benches :: [Benchmark]
-benches =
+test_growable :: [Benchmark]
+test_growable =
   [ env
       (NonLinear.pure $ V.generate (1024 * 1024) (`NonLinear.rem` 1024))
       \input ->

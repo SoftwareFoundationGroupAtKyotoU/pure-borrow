@@ -21,10 +21,7 @@ extra-doc-files:
   CHANGELOG.md
   README.md
 
-data-files:
-  dockerfiles/artifact/Dockerfile
-  scripts/genplot.gnuplot
-
+data-files: scripts/genplot.gnuplot
 tested-with: ghc ==9.10.3 || ==9.12.4 || ==9.14.1
 
 source-repository head
@@ -33,11 +30,6 @@ source-repository head
 
 flag examples
   description: Build the example executable, which runs some examples of the library.
-  default: False
-  manual: True
-
-flag artifact
-  description: Build the artifact runner executable, which runs all the benchmarks and produces CSV files.
   default: False
   manual: True
 
@@ -198,9 +190,7 @@ test-suite pure-borrow-test
     deepseq,
     falsify,
     pure-borrow,
-    pure-borrow:bench-suites,
-    pure-borrow:multi-store-scan-bench-suites,
-    pure-borrow:unboxed-bench-suites,
+    pure-borrow:test-bench-common,
     random,
     tasty,
     tasty-hunit,
@@ -228,8 +218,7 @@ test-suite pure-borrow-inspection
 
   build-depends:
     pure-borrow,
-    pure-borrow:bench-suites,
-    pure-borrow:multi-store-scan-bench-suites,
+    pure-borrow:test-bench-common,
     tasty,
     tasty-inspection-testing,
     vector,
@@ -256,72 +245,16 @@ test-suite pure-borrow-doctests
     doctest-parallel >=0.4.1,
     pure-borrow,
 
-library bench-suites
+-- Hosts the common cases used in both benchmarks and tests.
+library test-bench-common
   import: defaults
-  hs-source-dirs: internal-src/bench-suites
-  -- cabal-gild: discover internal-src/bench-suites --exclude internal-src/bench-suites/PureBorrow/Internal/Bench/CopyAt.hs --exclude internal-src/bench-suites/PureBorrow/Internal/Bench/Growable.hs --exclude internal-src/bench-suites/PureBorrow/Internal/Bench/MultiStoreScan.hs --exclude internal-src/bench-suites/PureBorrow/Internal/Bench/Unboxed.hs
+  hs-source-dirs: internal-src/test-bench-common
+  -- cabal-gild: discover internal-src/test-bench-common
   exposed-modules:
-    PureBorrow.Internal.Bench.Fft
-    PureBorrow.Internal.Bench.QSort
+    PureBorrow.Internal.Bench.MultiStoreScan
+    PureBorrow.Internal.Bench.Unboxed
     PureBorrow.Internal.Bench.Worklist.Resume
 
-  build-depends:
-    base >=4.7 && <5,
-    deepseq,
-    optparse-applicative,
-    pure-borrow,
-    random,
-    tasty,
-    tasty-bench,
-    vector,
-    vector-algorithms,
-
-  ghc-options: -O2
-  default-language: GHC2021
-
-library copy-at-bench-suites
-  import: defaults
-  hs-source-dirs: internal-src/bench-suites
-  exposed-modules: PureBorrow.Internal.Bench.CopyAt
-  build-depends:
-    base >=4.7 && <5,
-    pure-borrow,
-    tasty-bench,
-    vector,
-
-  ghc-options: -O2
-  default-language: GHC2021
-
-library growable-bench-suites
-  import: defaults
-  hs-source-dirs: internal-src/bench-suites
-  exposed-modules: PureBorrow.Internal.Bench.Growable
-  build-depends:
-    base >=4.7 && <5,
-    pure-borrow,
-    tasty-bench,
-    vector,
-
-  ghc-options: -O2
-  default-language: GHC2021
-
-library unboxed-bench-suites
-  import: defaults
-  hs-source-dirs: internal-src/bench-suites
-  exposed-modules: PureBorrow.Internal.Bench.Unboxed
-  build-depends:
-    base >=4.7 && <5,
-    pure-borrow,
-    tasty-bench,
-    vector,
-
-  ghc-options: -O2
-  default-language: GHC2021
-
-library multi-store-scan-bench-suites
-  import: defaults
-  hs-source-dirs: internal-src/bench-suites
-  exposed-modules: PureBorrow.Internal.Bench.MultiStoreScan
   build-depends:
     base >=4.7 && <5,
     deepseq,
@@ -345,92 +278,50 @@ benchmark qsort-bench
 
   build-depends:
     base >=4.7 && <5,
-    pure-borrow:bench-suites,
+    pure-borrow,
+    random,
+    tasty,
+    tasty-bench,
+    vector,
+    vector-algorithms,
 
   default-language: GHC2021
 
-benchmark copy-at-bench
+-- Every single-threaded micro-benchmark lives here, discovered by
+-- tasty-discover from bench/suite. Kernels shared with pure-borrow-test or
+-- pure-borrow-inspection stay in lib:test-bench-common and are re-exported by a
+-- thin module under PureBorrow.Bench; kernels used only by this benchmark live
+-- in bench/suite directly.
+benchmark pure-borrow-bench
   import: defaults
   type: exitcode-stdio-1.0
-  main-is: copy-at.hs
-  hs-source-dirs: bench
-  ghc-options:
-    -threaded
-    -rtsopts
-    -O2
-    -with-rtsopts=-N1
+  main-is: Main.hs
+  hs-source-dirs: bench/suite
+  -- cabal-gild: discover bench/suite --exclude=bench/suite/Main.hs
+  other-modules:
+    PureBorrow.Bench.CopyAt
+    PureBorrow.Bench.Growable
+    PureBorrow.Bench.Ingredients
+    PureBorrow.Bench.MultiStoreScan
+    PureBorrow.Bench.Unboxed
+    PureBorrow.Bench.Worklist.Resume
 
-  build-depends:
-    base >=4.7 && <5,
-    pure-borrow:copy-at-bench-suites,
-
-  default-language: GHC2021
-
-benchmark growable-bench
-  import: defaults
-  type: exitcode-stdio-1.0
-  main-is: growable.hs
-  hs-source-dirs: bench
-  ghc-options:
-    -threaded
-    -rtsopts
-    -O2
-    -with-rtsopts=-N1
-
-  build-depends:
-    base >=4.7 && <5,
-    pure-borrow:growable-bench-suites,
-
-  default-language: GHC2021
-
-benchmark unboxed-bench
-  import: defaults
-  type: exitcode-stdio-1.0
-  main-is: unboxed.hs
-  hs-source-dirs: bench
-  ghc-options:
-    -threaded
-    -rtsopts
-    -O2
-    -with-rtsopts=-N1
-
-  build-depends:
-    base >=4.7 && <5,
-    pure-borrow:unboxed-bench-suites,
-
-  default-language: GHC2021
-
-benchmark multi-store-scan-bench
-  import: defaults
-  type: exitcode-stdio-1.0
-  main-is: multi-store-scan.hs
-  hs-source-dirs: bench
   ghc-options:
     -threaded
     -rtsopts
     -O2
     "-with-rtsopts=-N1 -T"
 
-  build-depends:
-    base >=4.7 && <5,
-    pure-borrow:multi-store-scan-bench-suites,
-
-  default-language: GHC2021
-
-benchmark worklist-resume-bench
-  import: defaults
-  type: exitcode-stdio-1.0
-  main-is: worklist-resume.hs
-  hs-source-dirs: bench
-  ghc-options:
-    -threaded
-    -rtsopts
-    -O2
-    "-with-rtsopts=-N1 -T"
+  build-tool-depends:
+    tasty-discover:tasty-discover >=5.0.1
 
   build-depends:
     base >=4.7 && <5,
-    pure-borrow:bench-suites,
+    pure-borrow,
+    pure-borrow:test-bench-common,
+    tasty,
+    tasty-bench,
+    vector,
 
   default-language: GHC2021
 
@@ -447,7 +338,11 @@ benchmark fft-bench
 
   build-depends:
     base >=4.7 && <5,
-    pure-borrow:bench-suites,
+    pure-borrow,
+    random,
+    tasty,
+    tasty-bench,
+    vector,
 
   default-language: GHC2021
 
@@ -519,46 +414,6 @@ executable convert-qsort-bench-csv
     pure-borrow,
     text,
     unordered-containers,
-    vector,
-    vector-algorithms,
-
-  default-language: GHC2021
-
-executable artifact-runner
-  import: defaults
-
-  if flag(artifact)
-    buildable: True
-  else
-    buildable: False
-
-  main-is: artifact-runner.hs
-  hs-source-dirs: app
-  ghc-options:
-    -O2
-    -threaded
-    -rtsopts
-    "-with-rtsopts=-N -s"
-
-  build-depends:
-    base >=4.7 && <5,
-    bytestring,
-    cassava,
-    containers,
-    deepseq,
-    directory,
-    file-embed,
-    monoidal-containers,
-    optparse-applicative,
-    process,
-    pure-borrow,
-    pure-borrow:bench-suites,
-    pure-borrow:demo-impl,
-    tasty,
-    template-haskell,
-    temporary,
-    text,
-    transformers,
     vector,
     vector-algorithms,
 

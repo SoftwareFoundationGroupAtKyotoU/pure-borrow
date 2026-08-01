@@ -14,7 +14,8 @@ module Data.Vector.Unboxed.Mutable.Linear.BorrowSpec (
 import Control.Exception qualified as Exception
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.Copyable (copyMut)
+import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (UnsafeAlias))
+import Control.Monad.Borrow.Pure.Copyable (Copyable (copy), copyMut)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import Data.List qualified as List
@@ -43,6 +44,77 @@ instance Consumable (U.DoNotUnboxStrict Tracked) where
   consume =
     Unsafe.toLinear \(U.DoNotUnboxStrict (Tracked counter _)) ->
       unsafePerformIO (modifyIORef' counter NonLinear.succ)
+
+data MoveTracked = MoveTracked !(IORef Int) !Int !Bool
+
+type UnboxedMoveTracked = U.DoNotUnboxLazy MoveTracked
+
+instance Consumable UnboxedMoveTracked where
+  consume = Unsafe.toLinear \_ -> ()
+
+instance Dupable UnboxedMoveTracked where
+  dup2 = Unsafe.toLinear \value -> (value, value)
+
+instance Movable UnboxedMoveTracked where
+  move =
+    Unsafe.toLinear
+      \(U.DoNotUnboxLazy (MoveTracked moves value _)) ->
+        case unsafePerformIO (modifyIORef' moves NonLinear.succ) of
+          () -> Ur (U.DoNotUnboxLazy (MoveTracked moves value True))
+
+materializeMoveTracked :: IORef Int -> [(Int, Bool)]
+materializeMoveTracked moves =
+  linearly \linear ->
+    case Vector.toVector
+      ( Vector.fromVector
+          ( U.fromList
+              [ U.DoNotUnboxLazy (MoveTracked moves 10 False)
+              , U.DoNotUnboxLazy (MoveTracked moves 20 False)
+              ]
+          )
+          linear
+      ) of
+      Ur vector ->
+        NonLinear.map
+          ( \(U.DoNotUnboxLazy (MoveTracked _ value wasMoved)) ->
+              (value, wasMoved)
+          )
+          (U.toList vector)
+
+discardMaterializedMoveTracked :: IORef Int -> ()
+discardMaterializedMoveTracked moves =
+  linearly \linear ->
+    case Vector.toVector
+      ( Vector.fromVector
+          ( U.fromList
+              [ U.DoNotUnboxLazy (MoveTracked moves 10 False)
+              , U.DoNotUnboxLazy (MoveTracked moves 20 False)
+              ]
+          )
+          linear
+      ) of
+      Ur _ -> ()
+
+data CopyTracked = CopyTracked !(IORef Int) !(IORef Int) !Int
+
+type UnboxedCopyTracked = U.DoNotUnboxLazy CopyTracked
+
+instance Copyable UnboxedCopyTracked where
+  copy =
+    Unsafe.toLinear
+      \(UnsafeAlias value@(U.DoNotUnboxLazy (CopyTracked copies retired _))) ->
+        case unsafePerformIO do
+          retirementCount <- readIORef retired
+          if retirementCount == 0
+            then modifyIORef' copies NonLinear.succ
+            else NonLinear.error "copy invoked after source retirement" of
+          () -> value
+
+instance Consumable UnboxedCopyTracked where
+  consume =
+    Unsafe.toLinear
+      \(U.DoNotUnboxLazy (CopyTracked _ retired _)) ->
+        unsafePerformIO (modifyIORef' retired NonLinear.succ)
 
 freezeList :: Vector.Vector Int %1 -> [Int]
 freezeList array =
@@ -74,6 +146,35 @@ test_construction =
         linearly
           (\linear -> freezeList (Vector.fromVector (U.fromList [4, 5, 6]) linear))
           @?= [4, 5, 6]
+    , testCase "ordinary sources need no Copyable instance" do
+        counter <- newIORef 0
+        _ <-
+          Exception.evaluate $
+            linearly \linear ->
+              dup linear & \(constantLinear, vectorLinear) ->
+                consume
+                  ( Vector.constant
+                      2
+                      (U.DoNotUnboxLazy (Tracked counter 1))
+                      constantLinear
+                  )
+                  `lseq` consume
+                    ( Vector.fromVector
+                        (U.singleton (U.DoNotUnboxLazy (Tracked counter 2)))
+                        vectorLinear
+                    )
+        consumed <- readIORef counter
+        consumed @?= 3
+    , testCase "materialization invokes move for every owned element" do
+        moves <- newIORef 0
+        materializeMoveTracked moves @?= [(10, True), (20, True)]
+        moveCount <- readIORef moves
+        moveCount @?= 2
+    , testCase "discarding materialization still invokes every move" do
+        moves <- newIORef 0
+        _ <- Exception.evaluate (discardMaterializedMoveTracked moves)
+        moveCount <- readIORef moves
+        moveCount @?= 2
     , testCase "unsafeFromVector takes ownership of the source" do
         linearly
           ( \linear ->
@@ -142,6 +243,42 @@ test_mirroredSurface =
   testCase "supports borrowed and copied reads, replacement, update, modify, and swap" do
     mirroredSurface @?= (((3, 2, 1, 3), (2, 2, 20)), [3, 21, 11])
 
+retireCopiedResult ::
+  (Ur UnboxedCopyTracked, Mut α (Vector.Vector UnboxedCopyTracked)) %1 ->
+  Vector.Vector UnboxedCopyTracked %1 ->
+  Int
+retireCopiedResult =
+  Unsafe.toLinear2 \(copiedResult, borrowed) owner ->
+    consume borrowed `lseq`
+      consume owner `lseq`
+        case copiedResult of
+          Ur (U.DoNotUnboxLazy (CopyTracked _ _ value)) -> value
+
+copyAtMutAfterRetirement :: IORef Int -> IORef Int -> Int
+copyAtMutAfterRetirement copies retired =
+  linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM
+          ( Vector.fromList
+              [U.DoNotUnboxLazy (CopyTracked copies retired 10)]
+              ownerLinear
+          )
+      copiedResult <- Vector.copyAtMut 0 vector
+      pureAfter (retireCopiedResult copiedResult (reclaim lend))
+
+test_copyAtMutStrictness :: TestTree
+test_copyAtMutStrictness =
+  testCase "copyAtMut completes copying before mutable recovery" do
+    copies <- newIORef 0
+    retired <- newIORef 0
+    copyAtMutAfterRetirement copies retired @?= 10
+    copyCount <- readIORef copies
+    copyCount @?= 1
+    retirementCount <- readIORef retired
+    retirementCount @?= 1
+
 sharedReads :: ((Int, Int), [Int])
 sharedReads =
   linearly \linear -> DataFlow.do
@@ -169,6 +306,28 @@ snapshotThenMutate =
       let !() = consume array
       pureAfter (U.toList snapshot, freezeList (reclaim lend))
 
+trackedSnapshot :: IORef Int -> IORef Int -> [Int]
+trackedSnapshot copies retired =
+  linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (array, lend) <-
+        borrowM
+          ( Vector.fromList
+              [ U.DoNotUnboxLazy (CopyTracked copies retired 10)
+              , U.DoNotUnboxLazy (CopyTracked copies retired 20)
+              ]
+              ownerLinear
+          )
+      (Ur snapshot, array) <- Vector.copyToVector array
+      let !() = consume array
+      pureAfter
+        ( consume (reclaim lend) `lseq`
+            NonLinear.map
+              (\(U.DoNotUnboxLazy (CopyTracked _ _ value)) -> value)
+              (U.toList snapshot)
+        )
+
 test_copyToVector :: TestTree
 test_copyToVector =
   testGroup
@@ -177,6 +336,14 @@ test_copyToVector =
         snapshotThenMutate @?= ([1, 2, 3], [101, 2, 3])
     , testCase "accepts a shared borrow" do
         sharedSnapshot @?= ([1, 2, 3], [1, 2, 3])
+    , testCase "invokes copy for every element while retaining the owner" do
+        copies <- newIORef 0
+        retired <- newIORef 0
+        trackedSnapshot copies retired @?= [10, 20]
+        copyCount <- readIORef copies
+        copyCount @?= 2
+        retirementCount <- readIORef retired
+        retirementCount @?= 2
     ]
 
 sharedSnapshot :: ([Int], [Int])
@@ -524,12 +691,12 @@ test_typingBoundaries =
         "cannot be copied!"
         badDuplicate
     , expectDeferredTypeError
-        "Unbox alone does not permit copyAt"
-        "Copyable (U.DoNotUnboxLazy LinearElement)"
+        "Movable alone does not permit copyAt"
+        "Copyable (U.DoNotUnboxLazy MovableOnly)"
         badNonCopyableCopyAtCase
     , expectDeferredTypeError
-        "Unbox alone does not permit copyAtMut"
-        "Copyable (U.DoNotUnboxLazy LinearElement)"
+        "Movable alone does not permit copyAtMut"
+        "Copyable (U.DoNotUnboxLazy MovableOnly)"
         badNonCopyableCopyAtMutCase
     ]
   where
@@ -547,7 +714,20 @@ test_typingBoundaries =
 
 test_benchmarkRoots :: TestTree
 test_benchmarkRoots =
-  testCase "direct and Pure Borrow benchmark roots agree" do
-    let input = U.generate 257 (\index -> index `NonLinear.rem` 17)
-    UnboxedBench.pureBorrowFixedUnboxedUpdateLoop input
-      @?= UnboxedBench.directFixedUnboxedUpdateLoop input
+  testGroup
+    "benchmark roots"
+    [ testGroup
+        ("length " <> show length_)
+        [ testCase "fixed kernel roots agree" do
+            let input =
+                  U.generate length_ (\index -> index `NonLinear.rem` 17)
+            UnboxedBench.pureBorrowFixedUnboxedKernel input
+              @?= UnboxedBench.directFixedUnboxedKernel input
+        , testCase "fixed public-materialization roots agree" do
+            let input =
+                  U.generate length_ (\index -> index `NonLinear.rem` 17)
+            UnboxedBench.pureBorrowFixedUnboxedMaterialization input
+              @?= UnboxedBench.directFixedUnboxedMaterialization input
+        ]
+    | length_ <- [0, 1, 257, 1024 * 1024]
+    ]

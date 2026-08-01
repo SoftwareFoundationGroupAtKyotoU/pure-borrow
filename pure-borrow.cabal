@@ -142,6 +142,8 @@ library
     Data.Vector.Mutable.Growable.Linear.Borrow.Internal
     Data.Vector.Mutable.Linear.Borrow
     Data.Vector.Mutable.Linear.Borrow.Internal
+    Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow
+    Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow.Internal
     Data.Vector.Unboxed.Mutable.Linear.Borrow
     Data.Vector.Unboxed.Mutable.Linear.Borrow.Internal
 
@@ -174,6 +176,8 @@ test-suite pure-borrow-test
     Data.Vector.Mutable.Growable.Linear.BorrowSpec
     Data.Vector.Mutable.Growable.Linear.TypingCases
     Data.Vector.Mutable.Linear.BorrowSpec
+    Data.Vector.Unboxed.Mutable.Growable.Linear.BorrowSpec
+    Data.Vector.Unboxed.Mutable.Growable.Linear.TypingCases
     Data.Vector.Unboxed.Mutable.Linear.BorrowSpec
     Data.Vector.Unboxed.Mutable.Linear.TypingCases
 

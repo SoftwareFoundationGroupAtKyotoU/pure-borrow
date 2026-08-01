@@ -41,6 +41,8 @@ module Control.Monad.Borrow.Pure.BO (
 
   -- * Parallel computation
   parBO,
+  Par (..),
+  runPar,
 
   -- * Borrowing
   Alias,
@@ -50,6 +52,7 @@ module Control.Monad.Borrow.Pure.BO (
   Mut,
   Share,
   Lend,
+  subShare,
   coerceShare,
   shareCoercion,
   borrowM,
@@ -111,6 +114,8 @@ import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce (Coercible)
 import Data.Coerce.Directed
+import Data.Function qualified as NonLinear
+import Data.Functor.Linear qualified as Data
 import Data.Type.Coercion (Coercion (..))
 import Prelude.Linear
 
@@ -340,6 +345,16 @@ pureAfter :: ((End α) => a) %1 -> BO α (After α a)
 {-# INLINE pureAfter #-}
 pureAfter a = Control.pure (After a)
 
+{- | Shorten a shared borrow to a sublifetime.
+
+This is the inference-friendly, borrow-kind-fixed variant of 'upcast'. It is
+particularly useful when a shared borrow is captured outside a read-only loop
+and must be used inside the loop's shorter lifetime.
+-}
+subShare :: (α >= β) => Share α a -> Share β a
+{-# INLINE subShare #-}
+subShare shr = upcast shr
+
 coerceShare :: forall b α a. (Coercible a b) => Share α a %1 -> Share α b
 {-# INLINE coerceShare #-}
 coerceShare = coerceLin
@@ -378,3 +393,37 @@ srunBO bo = asksLinearlyM \lin ->
 srunBO_ :: (forall α. BO (α /\ β) a) %1 -> BO β a
 {-# INLINE srunBO_ #-}
 srunBO_ k = srunBO Control.do a <- k; Control.pure $ After a
+
+{- | A parallel comoutation applicative functor for 'BO' monad.
+All the computations chained by '<*>' or 'liftA2' will be executed in parallel.
+-}
+newtype Par α a = Par (BO α a)
+  deriving newtype (Data.Functor, Control.Functor)
+
+runPar :: Par α a %1 -> BO α a
+runPar = coerceLin
+{-# INLINE runPar #-}
+
+instance Data.Applicative (Par α) where
+  pure = Par NonLinear.. Data.pure
+  {-# INLINE pure #-}
+  Par f <*> Par x = Par Control.do
+    (f, x) <- parBO f x
+    Control.pure $ f x
+  {-# INLINE (<*>) #-}
+  liftA2 f (Par x) (Par y) = Par Control.do
+    (x, y) <- parBO x y
+    Control.pure $ f x y
+  {-# INLINE liftA2 #-}
+
+instance Control.Applicative (Par α) where
+  pure = Par . Control.pure
+  {-# INLINE pure #-}
+  Par f <*> Par x = Par Control.do
+    (f, x) <- parBO f x
+    Control.pure $ f x
+  {-# INLINE (<*>) #-}
+  liftA2 f (Par x) (Par y) = Par Control.do
+    (x, y) <- parBO x y
+    Control.pure $ f x y
+  {-# INLINE liftA2 #-}

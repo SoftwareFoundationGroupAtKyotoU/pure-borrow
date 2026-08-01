@@ -269,27 +269,6 @@ sequentialDivideAndConquer' DivideConquer {..} ini = reborrowing ini \ini -> Con
           NoConquer -> Control.pure $ consume (x, rs)
           Conquer conq -> conq c x rs
 
-newtype Par α a = Par (BO α a)
-  deriving newtype (Data.Functor, Control.Functor)
-
-runPar :: Par α a %1 -> BO α a
-runPar = coerceLin
-{-# INLINE runPar #-}
-
-instance Data.Applicative (Par α) where
-  pure = Par NonLinear.. Data.pure
-  {-# INLINE pure #-}
-  Par f <*> Par x = Par Control.do
-    (f, x) <- parBO f x
-    Control.pure $ f x
-
-instance Control.Applicative (Par α) where
-  pure = Par . Control.pure
-  {-# INLINE pure #-}
-  Par f <*> Par x = Par Control.do
-    (f, x) <- parBO f x
-    Control.pure $ f x
-
 naiveDivideAndConquer ::
   forall c α t a.
   (Data.Traversable t, Consumable (t ())) =>

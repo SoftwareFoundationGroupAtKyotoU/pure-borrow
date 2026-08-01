@@ -1,5 +1,10 @@
 packages: *.cabal
 write-ghc-environment-files: always
+-- CI configures with --enable-optimisation=2, and `pure-borrow-inspection`
+-- asserts properties of optimized Core. Pinning it here too keeps a local
+-- `cabal test` honest: at -O1 those assertions pass whether or not the
+-- library actually specializes.
+optimization: 2
 
 package pure-borrow
   flags: +examples

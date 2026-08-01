@@ -28,6 +28,7 @@ import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Functor (void)
 import Data.Vector qualified as V
 import Data.Vector.Algorithms.Intro qualified as AI
+import Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted qualified as UV
 import Data.Vector.Mutable.Linear.Borrow qualified as VL
 import GHC.Generics (Generic)
 import Options.Applicative qualified as Opts
@@ -88,17 +89,17 @@ qsortWith (Worksteal workers thresh) g v =
     DataFlow.do
       (lin, l2) <- dup lin
       runBO lin Control.do
-        (v, lend) <- borrowM (VL.fromVector v l2)
+        (v, lend) <- borrowM (UV.fromVector v l2)
         Control.void PL.$ qsortDC g workers thresh v
-        pureAfter (VL.toVector PL.$ reclaim lend)
+        pureAfter (UV.toVector PL.$ reclaim lend)
 qsortWith (Naive thresh) _ v =
   unur PL.$ linearly \lin ->
     DataFlow.do
       (lin, l2) <- dup lin
       runBO lin Control.do
-        (v, lend) <- borrowM (VL.fromVector v l2)
+        (v, lend) <- borrowM (UV.fromVector v l2)
         Control.void PL.$ naiveDivideAndConquer (qsortDC' thresh) v
-        pureAfter (VL.toVector PL.$ reclaim lend)
+        pureAfter (UV.toVector PL.$ reclaim lend)
 
 defaultMainWith :: CLIOpts -> IO ()
 defaultMainWith CLIOpts {..} = do

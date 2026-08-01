@@ -34,14 +34,22 @@ module Control.Concurrent.DivideConquer.Linear (
   naiveDivideAndConquer',
 
   -- * Examples
+  qsort,
   qsortDC,
   qsortDC',
   fftDC,
   fftDC',
+
+  -- ** Example internals
+  -- $example-internals
+  Pair (..),
+  FftCoe (..),
+  combineLoop,
 ) where
 
 import Control.Applicative qualified as NonLinear
 import Control.Concurrent (ThreadId, forkIO)
+import Control.Concurrent.DivideConquer.Linear.Internal (combineLoop)
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (Sink, Source)
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear qualified as Once
 import Control.Concurrent.DivideConquer.Utils.QueuePool (QueuePool, newQueuePool, popWork, pushWorkMaster, pushWorks)
@@ -51,7 +59,7 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Affine (Affine, GenericallyAffine (..))
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe
-import Control.Monad.Borrow.Pure.Copyable
+import Control.Monad.Borrow.Pure.Copyable ()
 import Control.Monad.Borrow.Pure.Experimental.Borrows
 import Control.Monad.Borrow.Pure.Experimental.Loop (iterReborrowing_)
 import Data.Bifunctor.Linear qualified as BiL
@@ -64,6 +72,8 @@ import Data.Proxy (Proxy (..))
 import Data.V.Linear (V)
 import Data.V.Linear.Internal (V (..))
 import Data.Vector qualified as V
+import Data.Vector.Generic qualified as G
+import Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted qualified as Vector
 import Data.Vector.Internal.Check (HasCallStack)
 import Data.Vector.Mutable.Linear.Borrow qualified as LV
 import GHC.Generics qualified as GHC
@@ -76,6 +86,17 @@ import System.Random (RandomGen)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as P
 
+{- $example-internals
+
+The worked examples above expose these because they appear in their own
+signatures: 'fftDC'' returns a @'DivideConquer' 'FftCoe' α 'Pair' …@, so a caller
+cannot so much as write its type without them.
+'combineLoop' is the FFT butterfly, exposed so that a benchmark or
+inspection test can specialize it at a concrete backend.
+-}
+
+data Result c β t a r = Done !r | Continue !(t (Ur c, Mut β a))
+
 data DivideConquer c α t a r = DivideConquer
   { initialise :: forall β. (α >= β) => Mut β a %1 -> BO β (Ur c)
   , divide :: forall β. (α >= β) => c -> Mut β a %1 -> BO β (Result c β t a r)
@@ -85,8 +106,6 @@ data DivideConquer c α t a r = DivideConquer
 data Conquer c α t a r where
   NoConquer :: Conquer c α t a ()
   Conquer :: (forall β. (α >= β) => c -> Mut β a %1 -> t r %1 -> BO β r) -> Conquer c α t a r
-
-data Result c β t a r = Done !r | Continue !(t (Ur c, Mut β a))
 
 data Switch r a
   = Switch
@@ -367,41 +386,6 @@ instance Data.Traversable Pair where
   traverse = Data.genericTraverse
   {-# INLINE traverse #-}
 
-qsortDC ::
-  (Ord a, Copyable a, α >= β, RandomGen g) =>
-  g ->
-  -- | The # of workers.
-  Int ->
-  -- | Threshold for the length of vector to switch to sequential sort.
-  Int ->
-  Mut α (LV.Vector a) %1 ->
-  BO β (Mut α (LV.Vector a))
-qsortDC g nwork thresh = divideAndConquer g nwork (qsortDC' thresh)
-
-qsortDC' ::
-  (Ord a, Copyable a) =>
-  -- | Threshold for the length of vector to switch to sequential sort.
-  Int ->
-  DivideConquer () α Pair (LV.Vector a) ()
-qsortDC' thresh =
-  DivideConquer
-    { initialise = Control.pure . move . consume
-    , divide = \_ vs ->
-        case LV.size vs of
-          (Ur n, v)
-            | n <= 1 ->
-                v `lseq` Control.pure $ Done ()
-            | n <= thresh -> Control.do
-                !() <- LV.qsort 0 v
-                Control.pure $ Done ()
-            | otherwise -> Control.do
-                let i = n `quot` 2
-                (Ur pivot, v) <- LV.copyAtMut i v
-                (lo, hi) <- LV.divide pivot v 0 n
-                Control.pure $ Continue $ Pair (Ur (), lo) (Ur (), hi)
-    , conquer = NoConquer
-    }
-
 data FftCoe = FftCoe
   { cosθ :: {-# UNPACK #-} !Double
   , sinθ :: {-# UNPACK #-} !Double
@@ -409,140 +393,361 @@ data FftCoe = FftCoe
   }
   deriving (Show)
 
-fftDC ::
-  (α >= β, RandomGen g, HasCallStack) =>
-  g ->
-  -- | The # of workers.
-  Int ->
-  -- | Threshold for the length of vector to switch to sequential sort.
-  Int ->
-  Mut α (LV.Vector (Complex Double)) %1 ->
-  BO β (Mut α (LV.Vector (Complex Double)))
-fftDC g nwork thresh vec =
-  case LV.size vec of
-    (Ur n, vec)
-      | popCount n /= 1 -> vec `lseq` error ("fftDC: the length " <> show n <> " of vector must be a power of 2")
-      | otherwise -> divideAndConquer g nwork (fftDC' thresh) vec
+{- | Sort a vector, optionally using nested parallelism.
 
-fftDC' ::
-  -- | Threshold for the length of vector to switch to sequential FFT.
+A zero budget is sequential. At every recursive split a positive budget is
+halved, bounding the depth at which 'parBO' is used.
+-}
+qsort ::
+  forall v a α β.
+  (G.Vector v a, Ord a, α >= β) =>
+  Word ->
+  Mut α (Vector.Vector v a) %1 ->
+  BO β ()
+{-# INLINEABLE qsort #-}
+qsort = go
+  where
+    go ::
+      Word ->
+      Mut α (Vector.Vector v a) %1 ->
+      BO β ()
+    go budget vector =
+      case Vector.size vector of
+        (Ur 0, vector) -> Control.pure (consume vector)
+        (Ur 1, vector) -> Control.pure (consume vector)
+        (Ur length_, vector) -> Control.do
+          let pivotIndex = length_ `quot` 2
+          (Ur pivot, vector) <-
+            Vector.unsafeGet pivotIndex vector
+          (lower, upper) <-
+            partitionVector pivot vector 0 length_
+          let nextBudget = budget `quot` 2
+          Control.void $
+            parIf
+              (nextBudget P.> 0)
+              (go nextBudget lower)
+              (go nextBudget upper)
+
+partitionVector ::
+  (G.Vector v a, Ord a, α >= β) =>
+  a ->
+  Mut α (Vector.Vector v a) %1 ->
   Int ->
-  DivideConquer FftCoe α Pair (LV.Vector (Complex Double)) ()
-fftDC' thresh =
+  Int ->
+  BO
+    β
+    ( Mut α (Vector.Vector v a)
+    , Mut α (Vector.Vector v a)
+    )
+{-# INLINEABLE partitionVector #-}
+partitionVector pivot = partitionUp
+  where
+    partitionUp vector lower upper
+      | lower < upper = Control.do
+          (Ur element, vector) <-
+            Vector.unsafeGet lower vector
+          if element < pivot
+            then partitionUp vector (lower + 1) upper
+            else partitionDown vector lower (upper - 1)
+      | otherwise =
+          Control.pure (Vector.splitAt lower vector)
+
+    partitionDown vector lower upper
+      | lower < upper = Control.do
+          (Ur element, vector) <-
+            Vector.unsafeGet upper vector
+          if pivot < element
+            then partitionDown vector lower (upper - 1)
+            else Control.do
+              vector <-
+                Vector.unsafeSwap vector lower upper
+              partitionUp vector (lower + 1) upper
+      | otherwise =
+          Control.pure (Vector.splitAt lower vector)
+
+parIf :: Bool %1 -> BO α a %1 -> BO α b %1 -> BO α (a, b)
+{-# INLINE parIf #-}
+parIf condition =
+  if condition
+    then parBO
+    else Control.liftA2 (,)
+
+{- | Sort a vector with the work-sharing scheduler.
+
+The worker count must be positive. Subvectors no longer than the threshold are
+sorted sequentially.
+-}
+qsortDC ::
+  (G.Vector v a, Ord a, α >= β, RandomGen g) =>
+  g ->
+  Int ->
+  Int ->
+  Mut α (Vector.Vector v a) %1 ->
+  BO β (Mut α (Vector.Vector v a))
+{-# INLINE qsortDC #-}
+qsortDC generator workers threshold =
+  divideAndConquer
+    generator
+    workers
+    (qsortDC' threshold)
+
+-- | Construct a quicksort workload with the given sequential cutoff.
+qsortDC' ::
+  (G.Vector v a, Ord a) =>
+  Int ->
+  DivideConquer
+    ()
+    α
+    Pair
+    (Vector.Vector v a)
+    ()
+{-# INLINEABLE qsortDC' #-}
+qsortDC' threshold =
+  DivideConquer
+    { initialise = Control.pure . move . consume
+    , divide = \_ vector ->
+        case Vector.size vector of
+          (Ur length_, vector)
+            | length_ <= 1 ->
+                vector `lseq` Control.pure (Done ())
+            | length_ <= threshold -> Control.do
+                !() <- qsort 0 vector
+                Control.pure (Done ())
+            | otherwise -> Control.do
+                let pivotIndex = length_ `quot` 2
+                (Ur pivot, vector) <-
+                  Vector.unsafeGet pivotIndex vector
+                (lower, upper) <-
+                  partitionVector pivot vector 0 length_
+                Control.pure $
+                  Continue $
+                    Pair
+                      (Ur (), lower)
+                      (Ur (), upper)
+    , conquer = NoConquer
+    }
+
+{- | Transform a power-of-two vector with the work-sharing scheduler.
+
+The worker count must be positive. The vector length is checked here and must
+be a power of two. Subvectors no longer than the threshold are transformed
+sequentially.
+-}
+fftDC ::
+  ( G.Vector v (Complex Double)
+  , α >= β
+  , RandomGen g
+  , HasCallStack
+  ) =>
+  g ->
+  Int ->
+  Int ->
+  Mut α (Vector.Vector v (Complex Double)) %1 ->
+  BO β (Mut α (Vector.Vector v (Complex Double)))
+{-# INLINE fftDC #-}
+fftDC generator workers threshold vector =
+  case Vector.size vector of
+    (Ur length_, vector)
+      | popCount length_ /= 1 ->
+          vector `lseq`
+            error
+              ( "fftDC: the length "
+                  <> show length_
+                  <> " of vector must be a power of 2"
+              )
+      | otherwise ->
+          divideAndConquer
+            generator
+            workers
+            (fftDC' threshold)
+            vector
+
+{- | Construct an FFT workload with the given sequential cutoff.
+
+This lower-level constructor does not validate the input length. Every vector
+run with the returned workload must have power-of-two length; use 'fftDC' when
+that check should be performed by the API.
+-}
+fftDC' ::
+  forall v α.
+  (G.Vector v (Complex Double)) =>
+  Int ->
+  DivideConquer
+    FftCoe
+    α
+    Pair
+    (Vector.Vector v (Complex Double))
+    ()
+{-# INLINEABLE fftDC' #-}
+fftDC' threshold =
   DivideConquer
     { initialise = \array ->
-        case LV.size array of
-          (Ur n, array) -> Control.do
-            Control.void $ reverseBit array
+        case Vector.size array of
+          (Ur length_, array) -> Control.do
+            Control.void (reverseBit array)
             Control.pure $
               Ur
                 FftCoe
-                  { cosθ = cos (2 * pi / fromIntegral n)
-                  , sinθ = sin (2 * pi / fromIntegral n)
-                  , size = n
+                  { cosθ =
+                      cos
+                        (2 * pi / fromIntegral length_)
+                  , sinθ =
+                      sin
+                        (2 * pi / fromIntegral length_)
+                  , size = length_
                   }
-    , divide = \coe@FftCoe {..} vs ->
+    , divide = \coefficient@FftCoe {..} vector ->
         if
           | size <= 1 ->
-              vs `lseq` Control.pure $ Done ()
-          | size <= thresh -> Done () Control.<$ sequential coe vs
+              vector `lseq` Control.pure (Done ())
+          | size <= threshold ->
+              Done ()
+                Control.<$ sequential coefficient vector
           | otherwise -> Control.do
-              (Ur coe, lo, hi) <- step coe vs
-              Control.pure $ Continue $ Pair (Ur coe, lo) (Ur coe, hi)
-    , conquer = Conquer $ \coe vs l -> l `lseq` combine coe vs
+              (Ur nextCoefficient, lower, upper) <-
+                step coefficient vector
+              Control.pure $
+                Continue $
+                  Pair
+                    (Ur nextCoefficient, lower)
+                    (Ur nextCoefficient, upper)
+    , conquer =
+        Conquer \coefficient vector results ->
+          results `lseq` combine coefficient vector
     }
   where
     step ::
       FftCoe ->
-      Mut α (LV.Vector (Complex Double)) %1 ->
+      Mut β (Vector.Vector v (Complex Double)) %1 ->
       BO
-        α
+        β
         ( Ur FftCoe
-        , Mut α (LV.Vector (Complex Double))
-        , Mut α (LV.Vector (Complex Double))
+        , Mut β (Vector.Vector v (Complex Double))
+        , Mut β (Vector.Vector v (Complex Double))
         )
-    step FftCoe {..} vs = Control.do
+    step FftCoe {..} vector = Control.do
       let !half = size `quot` 2
-          !dblCs = 2 * cosθ * cosθ - 1
-          !dblSn = 2 * sinθ * cosθ
-          !coe' = FftCoe {cosθ = dblCs, sinθ = dblSn, size = half}
-          %1 !(lo, hi) = LV.splitAt half vs
-      Control.pure (Ur coe', lo, hi)
+          !doubleCosine =
+            2 * cosθ * cosθ - 1
+          !doubleSine =
+            2 * sinθ * cosθ
+          !nextCoefficient =
+            FftCoe
+              { cosθ = doubleCosine
+              , sinθ = doubleSine
+              , size = half
+              }
+          %1 !(lower, upper) =
+            Vector.splitAt half vector
+      Control.pure
+        (Ur nextCoefficient, lower, upper)
 
     sequential ::
       FftCoe ->
-      Mut α (LV.Vector (Complex Double)) %1 ->
-      BO α ()
-    sequential coe vs = case LV.size vs of
-      (Ur i, vs)
-        | i <= 1 -> Control.pure $ consume vs
-        | otherwise -> Control.do
-            vs <- reborrowing_ vs \vs -> Control.do
-              (Ur coe', lo, hi) <- step coe vs
-              sequential coe' lo
-              sequential coe' hi
-            combine coe vs
+      Mut β (Vector.Vector v (Complex Double)) %1 ->
+      BO β ()
+    sequential coefficient vector =
+      case Vector.size vector of
+        (Ur length_, vector)
+          | length_ <= 1 ->
+              Control.pure (consume vector)
+          | otherwise -> Control.do
+              vector <-
+                reborrowing_ vector \shorter -> Control.do
+                  (Ur nextCoefficient, lower, upper) <-
+                    step coefficient shorter
+                  sequential nextCoefficient lower
+                  sequential nextCoefficient upper
+              combine coefficient vector
 
-    combine :: FftCoe -> Mut β (LV.Vector (Complex Double)) %1 -> BO β ()
-    combine FftCoe {..} vs = Control.do
+    combine ::
+      FftCoe ->
+      Mut β (Vector.Vector v (Complex Double)) %1 ->
+      BO β ()
+    combine FftCoe {..} vector = Control.do
       let !half = size `quot` 2
-          !kW = cosθ :+ sinθ
-      go half kW 0 1 vs
-      where
-        go !half !kW !k !w vs
-          | k >= half = Control.pure $ consume vs
-          | otherwise = Control.do
-              (Ur ek, vs) <- LV.copyAtMut k vs
-              (Ur ok, vs) <- LV.copyAtMut (half + k) vs
-              let !t = w P.* ok
-              (lr :+ li, vs) <- LV.set k (ek P.+ t) vs
-              (rr :+ ri, vs) <- LV.set (half + k) (ek P.- t) vs
-              consume (lr, li, rr, ri) `lseq` go half kW (k + 1) (w P.* kW) vs
+          !root = cosθ :+ sinθ
+      combineLoop half root 0 1 vector
 
 reverseBit ::
-  forall α a.
-  Mut α (LV.Vector a) %1 ->
+  forall v a α.
+  (G.Vector v a) =>
+  Mut α (Vector.Vector v a) %1 ->
   BO α ()
-reverseBit v =
-  LV.size v & \(Ur len, v) -> Control.do
-    let !n = intLog2 len
-        !m = bit $ n `shiftR` 1
-    consume Control.<$> reborrowing' v \v -> Control.do
-      (table, lend) <- borrowLinearlyM $ LV.constant m 0
-      table <- buildTable n <%= table
-      Control.void $
-        iterReborrowing_ (m - 1) (table :- v :- BNil) $
-          \((+ 1) -> !i) (table :- v :- BNil) -> Control.do
-            (Ur iOff, table) <- LV.copyAtMut i table
-            Control.void $
-              iterReborrowing_ i (table :- v :- BNil) \j (table :- v :- BNil) -> Control.do
-                (Ur jOff, table) <- LV.copyAtMut j table
-                let !ji = j + iOff
-                    !ij = i + jOff
-                v <- LV.swap v ji ij
-                if even n
-                  then Control.pure $ v `lseq` consume table
-                  else consume . (,table) Control.<$> LV.swap v (ji + m) (ij + m)
+{-# INLINEABLE reverseBit #-}
+reverseBit vector =
+  Vector.size vector
+    & \(Ur length_, vector) -> Control.do
+      let !bits = intLog2 length_
+          !middle = bit (bits `shiftR` 1)
+      consume
+        Control.<$> reborrowing' vector \shorter -> Control.do
+          (table, lend) <-
+            borrowLinearlyM (LV.constant middle 0)
+          table <- buildTable bits <%= table
+          Control.void $
+            iterReborrowing_
+              (middle - 1)
+              (table :- shorter :- BNil)
+              \((+ 1) -> !first) (table :- current :- BNil) -> Control.do
+                (Ur firstOffset, table) <-
+                  LV.copyAtMut first table
+                Control.void $
+                  iterReborrowing_
+                    first
+                    (table :- current :- BNil)
+                    \second (table :- current :- BNil) -> Control.do
+                      (Ur secondOffset, table) <-
+                        LV.copyAtMut second table
+                      let !forward =
+                            second + firstOffset
+                          !backward =
+                            first + secondOffset
+                      current <-
+                        Vector.unsafeSwap
+                          current
+                          forward
+                          backward
+                      if even bits
+                        then
+                          Control.pure $
+                            current `lseq`
+                              consume table
+                        else
+                          consume . (,table)
+                            Control.<$> Vector.unsafeSwap
+                              current
+                              (forward + middle)
+                              (backward + middle)
 
-      Control.pure $ upcast @_ @(After _ ()) $ consume . LV.toList Control.<$> reclaim' lend
+          Control.pure $
+            upcast @_ @(After _ ()) $
+              consume . LV.toList
+                Control.<$> reclaim' lend
   where
     buildTable ::
       Int ->
       Mut β (LV.Vector Int) %1 ->
       BO β ()
-    buildTable n table =
+    buildTable bits table =
       fix
-        ( \loop !pk !pl table ->
-            if pl + 1 >= pk
-              then Control.pure $ consume table
+        ( \loop !high !low table ->
+            if low + 1 >= high
+              then Control.pure (consume table)
               else Control.do
-                let !k = bit $ pk - 1
-                    !l = bit pl
-                table <- iterReborrowing_ l table \j table -> Control.do
-                  (Ur t, table) <- LV.copyAtMut j table
-                  consume Control.<$> LV.set (l + j) (t + k) table
-                loop (pk - 1) (pl + 1) table
+                let !highBit = bit (high - 1)
+                    !lowBit = bit low
+                table <-
+                  iterReborrowing_ lowBit table \index table -> Control.do
+                    (Ur value, table) <-
+                      LV.copyAtMut index table
+                    consume
+                      Control.<$> LV.set
+                        (lowBit + index)
+                        (value + highBit)
+                        table
+                loop (high - 1) (low + 1) table
         )
-        n
+        bits
         0
         table

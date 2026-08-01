@@ -266,6 +266,22 @@ newtype Alias ak a = UnsafeAlias a
 unsafeUnalias :: Alias ak a %1 -> a
 unsafeUnalias (UnsafeAlias x) = x
 
+{- |
+Retags an alias with another 'AliasKind', leaving the aliased resource alone.
+
+The role annotation below makes @ak@ nominal precisely so that this retagging is
+not derivable, so every use is a proof obligation about the kind being moved to:
+a 'Share' must not be widened into a 'Mut', a borrower must not become a lender,
+and the lifetime it is retagged to must be one throughout which the resource is
+really borrowed.
+
+This is a coercion, not a coincidence of representation: 'Alias' is a newtype
+over the resource, so the retagged alias is the very same value.
+-}
+unsafeCastAlias :: Alias ak a %1 -> Alias ak' a
+{-# INLINE unsafeCastAlias #-}
+unsafeCastAlias = coerceLin
+
 type role Alias nominal representational
 
 -- | Alias kind.
@@ -413,8 +429,51 @@ unsafeBorrowScope_ ::
 {-# INLINE unsafeBorrowScope_ #-}
 unsafeBorrowScope_ = Unsafe.toLinear2 \mut k ->
   unsafeSrunBO_ $
-    k (Unsafe.coerce mut) Control.<&> \r ->
+    k (unsafeCastAlias mut) Control.<&> \r ->
       consume r `lseq` mut
+
+{- |
+Run a continuation with a representation-identical borrow narrowed to a fresh
+sublifetime, then, on normal return, restore the original mutable borrow
+alongside the continuation's result.
+
+This is the trusted delimiter used by the scalar public result-returning
+combinators, and every obligation discharged in 'unsafeBorrowScope_' is
+discharged here in the same way. The result type is fixed by the caller, so it
+cannot mention the private @β@ and no borrow at @β@ escapes in it.
+-}
+unsafeBorrowScope ::
+  forall bk α α' a r.
+  Mut α a %1 ->
+  (forall β. Borrow bk (β /\ α) a %(BorrowMultiplicity bk) -> BO (β /\ α') r) %1 ->
+  BO α' (r, Mut α a)
+{-# INLINE unsafeBorrowScope #-}
+unsafeBorrowScope = Unsafe.toLinear2 \mut k ->
+  unsafeSrunBO_ $
+    k (unsafeCastAlias mut) Control.<&> \r ->
+      (r, mut)
+
+{- |
+The finalizing variant of 'unsafeBorrowScope': the continuation returns its
+result 'After' the sublifetime, and this discharges that 'After' before
+restoring the original mutable borrow.
+
+Beyond the obligations of 'unsafeBorrowScope', the 'EndToken' supplied to
+'withEnd' is the runtime-erased one. That is sound for the same reason it is in
+'Control.Monad.Borrow.Pure.BO.srunBO': the continuation has already returned, so
+the sublifetime it was typechecked in is over by the time the token is applied,
+and the caller-fixed result type cannot mention that lifetime.
+-}
+unsafeBorrowScope' ::
+  forall bk α α' a r.
+  Mut α a %1 ->
+  (forall β. Borrow bk (β /\ α) a %(BorrowMultiplicity bk) -> BO (β /\ α') (After β r)) %1 ->
+  BO α' (r, Mut α a)
+{-# INLINE unsafeBorrowScope' #-}
+unsafeBorrowScope' = Unsafe.toLinear2 \mut k ->
+  unsafeSrunBO_ $
+    k (unsafeCastAlias mut) Control.<&> \after ->
+      (withEnd UnsafeEnd after, mut)
 
 type BorrowMultiplicity :: BorrowKind -> Multiplicity
 type family BorrowMultiplicity bk where

@@ -34,7 +34,13 @@ module PureBorrow.Inspection.Sublifetime (
   srunBO_At,
   idBOAt,
   reborrowingRefAt,
+  reborrowingValueRefAt,
+  bumpRefAt,
+  bumpRefAfterAt,
   sharingRefAt,
+  sharingValueRefAt,
+  copyRefAt,
+  copyRefAfterAt,
 ) where
 
 import Control.Functor.Linear qualified as Control
@@ -82,20 +88,93 @@ idBOAt :: BO β Int %1 -> BO β Int
 {-# NOINLINE idBOAt #-}
 idBOAt bo = bo
 
--- | A client-level probe: 'reborrowing'' is one of the two public combinators built on 'srunBO', so the erasure has to reach through it too.
-reborrowingRefAt :: Mut α (Ref Int) %1 -> BO α (Int, Mut α (Ref Int))
-{-# NOINLINE reborrowingRefAt #-}
-reborrowingRefAt ref = reborrowing' ref \borrowed -> Control.do
-  (old, spent) <-
-    Ref.update (\x -> dup2 x & \(seen, next) -> Control.pure (seen, next + 1)) borrowed
-  spent `lseq` Control.pure (After old)
+{- | The body every mutable-side probe below delimits: read the reference, put back its successor, and report what was there.
 
--- | The other 'srunBO' client, on the shared side.
-sharingRefAt :: Mut α (Ref Int) %1 -> BO α (Int, Mut α (Ref Int))
+Sharing it between the probes and their specification is what makes the equalities statements about the delimiter alone.
+-}
+bumpRef :: (α >= β) => Mut α (Ref Int) %1 -> BO β (Int, Mut α (Ref Int))
+{-# INLINE bumpRef #-}
+bumpRef = Ref.update \x -> dup2 x & \(seen, next) -> Control.pure (seen, next + 1)
+
+{- | A client-level probe: 'reborrowing'' is one of the two public combinators built on 'srunBO', so the erasure has to reach through it too.
+
+The restored borrow is dropped rather than returned, because a delimiter-free specification cannot both operate on the caller's 'Mut' and hand it back — handing it back is precisely the service the delimiter provides.
+Returning it would compare a probe that gives back the box it was handed against a specification that rebuilds one, and the two differ in worker/wrapper shape for a reason that has nothing to do with the sublifetime.
+-}
+reborrowingRefAt :: Mut α (Ref Int) %1 -> BO α Int
+{-# NOINLINE reborrowingRefAt #-}
+reborrowingRefAt ref =
+  reborrowing'
+    ref
+    ( \borrowed -> Control.do
+        (old, spent) <- bumpRef borrowed
+        spent `lseq` Control.pure (After old)
+    )
+    Control.<&> \(old, mut) -> mut `lseq` old
+
+-- | 'reborrowing', the same probe with the result returned directly instead of 'After' the sublifetime.
+reborrowingValueRefAt :: Mut α (Ref Int) %1 -> BO α Int
+{-# NOINLINE reborrowingValueRefAt #-}
+reborrowingValueRefAt ref =
+  reborrowing
+    ref
+    ( \borrowed -> Control.do
+        (old, spent) <- bumpRef borrowed
+        spent `lseq` Control.pure old
+    )
+    Control.<&> \(old, mut) -> mut `lseq` old
+
+{- | The specification 'reborrowingValueRefAt' must meet: 'bumpRef' on the caller's own borrow, with no sublifetime anywhere.
+
+Note the signature — no rank-2 argument and no @/\\@ — so an equality says the reborrow left no residue at all, not merely that it allocated no token.
+-}
+bumpRefAt :: Mut α (Ref Int) %1 -> BO α Int
+{-# NOINLINE bumpRefAt #-}
+bumpRefAt ref = Control.do
+  (old, spent) <- bumpRef ref
+  spent `lseq` Control.pure old
+
+{- | The specification 'reborrowingRefAt' must meet: 'bumpRefAt', plus the application that hands the runtime-erased 'EndToken' to the 'After' the continuation returned.
+
+That application is the one thing a delimiter taking an @'After' β r@ cannot drop, and 'srunBO' pays it too — see 'endTokenAt'.
+-}
+bumpRefAfterAt :: forall α. Mut α (Ref Int) %1 -> BO α Int
+{-# NOINLINE bumpRefAfterAt #-}
+bumpRefAfterAt ref = Control.do
+  (old, spent) <- bumpRef ref
+  spent `lseq` Control.pure (withEnd (UnsafeEnd @α) (After old))
+
+-- | The other 'srunBO' client, on the shared side, with the restored borrow dropped as above.
+sharingRefAt :: Mut α (Ref Int) %1 -> BO α Int
 {-# NOINLINE sharingRefAt #-}
-sharingRefAt ref = sharing' ref \shared -> Control.do
-  seen <- Ref.copyRef shared
-  Control.pure (After seen)
+sharingRefAt ref =
+  sharing'
+    ref
+    ( \shared -> Control.do
+        seen <- Ref.copyRef shared
+        Control.pure (After seen)
+    )
+    Control.<&> \(seen, mut) -> mut `lseq` seen
+
+-- | 'sharing', the same probe with the result returned directly instead of 'After' the sublifetime.
+sharingValueRefAt :: Mut α (Ref Int) %1 -> BO α Int
+{-# NOINLINE sharingValueRefAt #-}
+sharingValueRefAt ref =
+  sharing ref (\shared -> Ref.copyRef shared) Control.<&> \(seen, mut) -> mut `lseq` seen
+
+{- | The specification 'sharingValueRefAt' must meet: read through the caller's own borrow, with no sublifetime anywhere.
+
+'Data.Ref.Linear.Borrow.copyRef' reads through a borrow of either kind, so the 'Mut' serves here where the probes pass a 'Share' narrowed to the sublifetime.
+-}
+copyRefAt :: Mut α (Ref Int) %1 -> BO α Int
+{-# NOINLINE copyRefAt #-}
+copyRefAt ref = Ref.copyRef ref
+
+-- | The specification 'sharingRefAt' must meet: 'copyRefAt' plus the end-token application, as 'bumpRefAfterAt' is to 'bumpRefAt'.
+copyRefAfterAt :: forall α. Mut α (Ref Int) %1 -> BO α Int
+{-# NOINLINE copyRefAfterAt #-}
+copyRefAfterAt ref =
+  Ref.copyRef ref Control.<&> \seen -> withEnd (UnsafeEnd @α) (After seen)
 
 {- | Every obligation below describes the statically erased delimiters, so under @+slow@ — where the sublifetime is a genuine runtime token by construction — each one is expected to fail rather than to be skipped.
 That inversion is what keeps them honest: an obligation that also holds of the allocating implementation is no evidence about this one, and turns the group red under @+slow@ until it is either sharpened or dropped.
@@ -172,6 +251,34 @@ tests =
              ( (doesNotUse 'sharingRefAt 'askLinearly)
                  { testName =
                      Just "sharing' does not reach for the ambient Linearly"
+                 }
+             )
+         )
+      , $( inspectTest
+             ( ('reborrowingRefAt ==- 'bumpRefAfterAt)
+                 { testName =
+                     Just "reborrowing' only supplies the erased end token"
+                 }
+             )
+         )
+      , $( inspectTest
+             ( ('reborrowingValueRefAt ==- 'bumpRefAt)
+                 { testName =
+                     Just "reborrowing costs nothing over the update it delimits"
+                 }
+             )
+         )
+      , $( inspectTest
+             ( ('sharingRefAt ==- 'copyRefAfterAt)
+                 { testName =
+                     Just "sharing' only supplies the erased end token"
+                 }
+             )
+         )
+      , $( inspectTest
+             ( ('sharingValueRefAt ==- 'copyRefAt)
+                 { testName =
+                     Just "sharing costs nothing over the read it delimits"
                  }
              )
          )

@@ -413,19 +413,17 @@ Hence, if you see @'Borrow' bk α a@ in a function, it can be either 'Mut' or 'S
 
 == Performance-sensitive loops
 
-Choose the loop structure that performs the least algorithmic work first. With
-the surrounding functions properly inlined, one 'sharing' or 'reborrowing' per
-iteration is normally cheap. For an otherwise read-only loop, however, prefer
-sharing once outside the loop and shortening that shared borrow inside each
-iteration with 'subShare':
+Choose the loop structure that performs the least algorithmic work first.
+The sublifetime that a 'sharing' or a 'reborrowing' delimits is erased at compile time, so with the surrounding functions properly inlined one of them per iteration costs nothing beyond the borrow it hands to the body.
+For an otherwise read-only loop, however, prefer sharing once outside the loop and shortening that shared borrow inside each iteration with 'subShare':
 
 @
 'share' resource \& \('Ur' shared) ->
   ... 'subShare' shared ...
 @
 
-This avoids opening and reclaiming a sublifetime merely to read the same
-resource. Functions containing hot loops over operations that return
+That way the body never has to give the borrow back, so no @(r, 'Mut' α a)@ pair is built and taken apart on every iteration.
+Functions containing hot loops over operations that return
 @(Ur a, container)@ should themselves be @INLINE@, @INLINABLE@, or specialised.
 That lets GHC eliminate the transient tuple and 'Ur' constructors; without
 cross-module inlining those constructors can allocate on every read.

@@ -69,7 +69,12 @@ type Muts α = Borrows 'Mut α
 type Shares :: Lifetime -> [Type] -> Type
 type Shares α = Borrows 'Share α
 
-instance Affine (Aliases α xs) where
+{- |
+Only borrow bundles are affine; a @'Lends' α xs@ must not be discardable.
+Dropping a bundle of lenders would abandon the owners it holds, and a lender is the sole capability to 'reclaim' one.
+The @k ~ \'Borrow bk α@ constraint therefore excludes @\'Lend α@, exactly as the scalar @'Affine' ('Alias' ak a)@ instance does.
+-}
+instance (k ~ 'Borrow bk α) => Affine (Aliases k xs) where
   aff = unsafeAff
   {-# INLINE aff #-}
 

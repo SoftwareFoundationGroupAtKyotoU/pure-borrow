@@ -221,6 +221,13 @@ test-suite pure-borrow-test
 -- component GHC leaves concrete generic-vector dictionaries unspecialized.
 test-suite pure-borrow-inspection
   import: defaults
+
+  -- PureBorrow.Inspection.Sublifetime asserts the Core shape of the statically
+  -- erased sublifetime delimiters, which is exactly what @+slow@ swaps out.
+  -- PureBorrow.Inspection.Flags reads this define to invert those obligations
+  -- there; it is the only module in the component that uses CPP.
+  if flag(slow)
+    cpp-options: -DPURE_BORROW_SLOW_SCOPES
   default-language: GHC2021
   type: exitcode-stdio-1.0
   hs-source-dirs: test-inspection
@@ -228,19 +235,32 @@ test-suite pure-borrow-inspection
   -- cabal-gild: discover test-inspection --exclude=test-inspection/Main.hs
   other-modules:
     PureBorrow.Inspection.Fft
+    PureBorrow.Inspection.Flags
     PureBorrow.Inspection.GenericGrowableUnrestricted
     PureBorrow.Inspection.MultiStoreScan
     PureBorrow.Inspection.QSort
+    PureBorrow.Inspection.Sublifetime
     PureBorrow.Inspection.Worklist.Resume
 
+  -- The -dsuppress-* set is the one inspection-testing's own "Help, I am
+  -- drowning in Core!" recommends: a failing obligation prints the Core the
+  -- same way GHC would, and without these a single BO term is mostly
+  -- coercions, uniques and IdInfo.
   ghc-options:
     -O2
+    -dsuppress-coercions
+    -dsuppress-idinfo
+    -dsuppress-module-prefixes
+    -dsuppress-type-applications
+    -dsuppress-type-signatures
+    -dsuppress-uniques
     -fplugin=Test.Tasty.Inspection.Plugin
 
   build-depends:
     pure-borrow,
     pure-borrow:test-bench-common,
     tasty,
+    tasty-expected-failure,
     tasty-inspection-testing,
     vector,
 

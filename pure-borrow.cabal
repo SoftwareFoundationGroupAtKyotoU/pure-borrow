@@ -135,6 +135,8 @@ library
     Data.Ref.Linear.Borrow
     Data.Ref.Linear.Unlifted
     Data.Unique.Linear
+    Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted
+    Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted.Internal
     Data.Vector.Mutable.Growable.Linear.Borrow
     Data.Vector.Mutable.Growable.Linear.Borrow.Internal
     Data.Vector.Mutable.Linear.Borrow
@@ -166,6 +168,8 @@ test-suite pure-borrow-test
     Control.Monad.Borrow.Pure.CopyableSpec
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
+    Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted.TypingCases
+    Data.Vector.Generic.Mutable.Linear.Borrow.UnrestrictedSpec
     Data.Vector.Mutable.Growable.Linear.BorrowSpec
     Data.Vector.Mutable.Growable.Linear.TypingCases
     Data.Vector.Mutable.Linear.BorrowSpec

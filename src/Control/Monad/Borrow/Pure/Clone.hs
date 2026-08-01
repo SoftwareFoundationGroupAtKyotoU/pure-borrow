@@ -53,7 +53,7 @@ newtype AsCopyable a = AsCopyable a
   deriving newtype (Copyable)
 
 instance (Copyable a) => Clone (AsCopyable a) where
-  clone = Control.pure . copy
+  clone borrowed = Control.pure $! copy borrowed
   {-# INLINE clone #-}
 
 deriving via AsCopyable Int instance Clone Int

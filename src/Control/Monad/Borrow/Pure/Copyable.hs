@@ -22,6 +22,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
@@ -52,8 +53,18 @@ import Generics.Linear
 import Numeric.Natural (Natural)
 import Prelude.Linear
 import Prelude.Linear.Unsatisfiable (Unsatisfiable, unsatisfiable)
+import Unsafe.Linear qualified as Unsafe
 
+-- | Values that can be copied from a live borrow.
 class Copyable a where
+  {- | Copy the borrowed value.
+
+  Evaluating this method must complete the copy and return the result in
+  weak head normal form. It must not return a thunk whose evaluation depends
+  on the borrow remaining live. Composite instances must complete their
+  component copies as well, so copying a recursive value traverses its finite
+  structure before returning.
+  -}
   copy :: Borrow bk α a %1 -> a
 
 instance Copyable (Ur a) where
@@ -111,8 +122,23 @@ deriving via UnsafeAssumeNoVar Char instance Copyable Char
 deriving via UnsafeAssumeNoVar Bool instance Copyable Bool
 
 instance (Copyable a) => Copyable (Complex a) where
-  copy = \(UnsafeAlias !a) -> a
+  copy = \(UnsafeAlias (!real :+ !imaginary)) ->
+    let !realCopy = copy (UnsafeAlias real)
+        !imaginaryCopy = copy (UnsafeAlias imaginary)
+     in realCopy :+ imaginaryCopy
   {-# INLINE copy #-}
+
+instance Consumable (Complex Double) where
+  consume = Unsafe.toLinear \_ -> ()
+  {-# INLINE consume #-}
+
+instance Dupable (Complex Double) where
+  dup2 = Unsafe.toLinear \value -> (value, value)
+  {-# INLINE dup2 #-}
+
+instance Movable (Complex Double) where
+  move = Unsafe.toLinear \ !value -> Ur value
+  {-# INLINE move #-}
 
 deriving via Generically1 Complex instance Copyable1 Complex
 
@@ -120,32 +146,36 @@ type GenericCopyable a = (Generic a, GCopyable (Rep a))
 
 genericCopy :: (GenericCopyable a) => Borrow bk α a %1 -> a
 {-# INLINE genericCopy #-}
-genericCopy (UnsafeAlias x) = to (gcopy (UnsafeAlias (from x)))
+genericCopy (UnsafeAlias x) =
+  let !representation = gcopy (UnsafeAlias (from x))
+   in to $! representation
 
 type GCopyable :: forall {k}. (k -> Type) -> Constraint
 class GCopyable f where
   gcopy :: Borrow bk α (f x) %1 -> f x
 
 instance (Copyable a) => GCopyable (K1 i a) where
-  gcopy = \(UnsafeAlias (K1 !a)) -> K1 (copy (UnsafeAlias a))
+  gcopy = \(UnsafeAlias (K1 !a)) -> K1 $! copy (UnsafeAlias a)
   {-# INLINE gcopy #-}
 
 instance (GCopyable f, GCopyable g) => GCopyable (f :*: g) where
   gcopy (UnsafeAlias (!f :*: !g)) =
-    gcopy (UnsafeAlias f) :*: gcopy (UnsafeAlias g)
+    let !fCopy = gcopy (UnsafeAlias f)
+        !gCopy = gcopy (UnsafeAlias g)
+     in fCopy :*: gCopy
 
 instance (GCopyable f) => GCopyable (M1 i c f) where
   gcopy = \case
-    UnsafeAlias (M1 !x) -> M1 (gcopy (UnsafeAlias x))
+    UnsafeAlias (M1 !x) -> M1 $! gcopy (UnsafeAlias x)
 
 instance (GCopyable f) => GCopyable (MP1 m f) where
   gcopy = \case
-    UnsafeAlias (MP1 !x) -> MP1 (gcopy (UnsafeAlias x))
+    UnsafeAlias (MP1 !x) -> MP1 $! gcopy (UnsafeAlias x)
 
 instance (GCopyable f, GCopyable g) => GCopyable (f :+: g) where
   gcopy = \case
-    UnsafeAlias (L1 !x) -> L1 (gcopy (UnsafeAlias x))
-    UnsafeAlias (R1 !x) -> R1 (gcopy (UnsafeAlias x))
+    UnsafeAlias (L1 !x) -> L1 $! gcopy (UnsafeAlias x)
+    UnsafeAlias (R1 !x) -> R1 $! gcopy (UnsafeAlias x)
 
 instance GCopyable U1 where
   gcopy = \case
@@ -155,7 +185,10 @@ instance GCopyable V1 where
   gcopy = \case {} . unsafeUnalias
 
 instance (GenericCopyable a) => Copyable (Generically a) where
-  copy = Generically . genericCopy . unsafeMapAlias (\(Generically x) -> x)
+  copy borrow =
+    Generically $!
+      genericCopy
+        (unsafeMapAlias (\(Generically x) -> x) borrow)
 
 deriving via Generically () instance Copyable ()
 
@@ -220,18 +253,27 @@ deriving via
 newtype AsCopyable1 f a = AsCopyable1 (f a)
 
 instance (Copyable1 f, Copyable a) => Copyable (AsCopyable1 f a) where
-  copy = AsCopyable1 . copy1 . unsafeMapAlias \(AsCopyable1 x) -> x
+  copy borrow =
+    AsCopyable1 $!
+      copy1
+        (unsafeMapAlias (\(AsCopyable1 x) -> x) borrow)
   {-# INLINE copy #-}
 
 -- | Lifting of the 'Copyable' operation to unary type constructors.
 class Copyable1 f where
+  {- | Copy every contained value and force each result to weak head normal
+  form before returning. Recursive structures are traversed before the borrow
+  can end.
+  -}
   liftCopy :: (Borrow bk α a %1 -> b) -> Borrow bk α (f a) %1 -> f b
 
 type GenericCopyable1 f = (Copyable1 (Rep1 @Type f), Generic1 f)
 
 genericLiftCopy :: forall f bk α a b. (GenericCopyable1 f) => (Borrow bk α a %1 -> b) -> Borrow bk α (f a) %1 -> f b
 {-# INLINE genericLiftCopy #-}
-genericLiftCopy f (UnsafeAlias x) = to1 $ liftCopy f (UnsafeAlias $ from1 x)
+genericLiftCopy f (UnsafeAlias x) =
+  let !representation = liftCopy f (UnsafeAlias $ from1 x)
+   in to1 $! representation
 
 genericCopy1 :: forall f a α. (GenericCopyable1 f, Copyable a) => Share α (f a) %1 -> f a
 {-# INLINE genericCopy1 #-}
@@ -239,22 +281,28 @@ genericCopy1 = genericLiftCopy copy
 
 copy1 :: (Copyable1 f, Copyable a) => Borrow bk α (f a) %1 -> f a
 {-# INLINE copy1 #-}
-copy1 = liftCopy copy
+copy1 borrow =
+  let !copied = liftCopy copy borrow
+   in copied
 
 instance (GenericCopyable1 f) => Copyable1 (Generically1 @Type f) where
-  liftCopy f = Generically1 . genericLiftCopy f . coerceLin
+  liftCopy f borrow =
+    Generically1 $! genericLiftCopy f (coerceLin borrow)
   {-# INLINE liftCopy #-}
 
 instance (Copyable c) => Copyable1 (K1 i c) where
-  liftCopy _ = coerceLin $! copy @c
+  liftCopy _ borrow =
+    K1 $! copy @c (coerceLin borrow)
   {-# INLINE liftCopy #-}
 
 instance Copyable1 Par1 where
-  liftCopy f = Par1 . f . coerceLin
+  liftCopy f borrow =
+    Par1 $! f (coerceLin borrow)
   {-# INLINE liftCopy #-}
 
 instance (Copyable1 f) => Copyable1 (M1 i c f) where
-  liftCopy f = M1 . liftCopy f . coerceLin
+  liftCopy f borrow =
+    M1 $! liftCopy f (coerceLin borrow)
   {-# INLINE liftCopy #-}
 
 instance (Copyable1 l, Copyable1 r) => Copyable1 (l :*: r) where
@@ -265,14 +313,23 @@ instance (Copyable1 l, Copyable1 r) => Copyable1 (l :*: r) where
   {-# INLINE liftCopy #-}
 
 instance (Copyable1 f, Copyable1 g) => Copyable1 (f :.: g) where
-  liftCopy f = \(UnsafeAlias (Comp1 x)) ->
-    Comp1 . liftCopy (liftCopy f) $ UnsafeAlias x
+  liftCopy f = \(UnsafeAlias (Comp1 !x)) ->
+    Comp1 $! liftCopy (liftCopy f) (UnsafeAlias x)
   {-# INLINE liftCopy #-}
 
 instance (Copyable1 l, Copyable1 r) => Copyable1 (l :+: r) where
   liftCopy f = \(UnsafeAlias sum) -> case sum of
     L1 !l -> L1 $! (liftCopy f (UnsafeAlias l))
     R1 !r -> R1 $! (liftCopy f (UnsafeAlias r))
+  {-# INLINE liftCopy #-}
+
+instance Copyable1 U1 where
+  liftCopy _ = \case
+    UnsafeAlias U1 -> U1
+  {-# INLINE liftCopy #-}
+
+instance Copyable1 V1 where
+  liftCopy _ = \case {} . unsafeUnalias
   {-# INLINE liftCopy #-}
 
 {- | A variant of 'copy' that returns 'Ur' wrapped copy of the value.
@@ -283,4 +340,4 @@ copyMut :: (Copyable a) => Mut α a %1 -> Ur a
 {-# INLINE copyMut #-}
 copyMut mut =
   let !(Ur shr) = share mut
-   in Ur (copy shr)
+   in Ur $! copy shr

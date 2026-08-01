@@ -14,12 +14,15 @@ module Data.Vector.Mutable.Linear.BorrowSpec (
 import Control.Exception qualified as Exception
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (UnsafeAlias))
 import Control.Monad.Borrow.Pure.Copyable
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Bifunctor.Linear qualified as Bi
+import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import Data.List qualified as List
 import Data.Vector qualified as V
 import Data.Vector.Mutable.Linear.Borrow qualified as VL
+import GHC.IO (unsafePerformIO)
 import Prelude.Linear
 import Test.Falsify.Generator qualified as G
 import Test.Falsify.Predicate qualified as P
@@ -28,7 +31,87 @@ import Test.Falsify.Range qualified as G
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Falsify (testProperty)
 import Test.Tasty.HUnit
+import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
+
+data MoveTracked = MoveTracked !(IORef Int) !Int !Bool
+
+instance Consumable MoveTracked where
+  consume = Unsafe.toLinear \_ -> ()
+
+instance Dupable MoveTracked where
+  dup2 = Unsafe.toLinear \value -> (value, value)
+
+instance Movable MoveTracked where
+  move =
+    Unsafe.toLinear \(MoveTracked moves value _) ->
+      case unsafePerformIO (modifyIORef' moves NonLinear.succ) of
+        () -> Ur (MoveTracked moves value True)
+
+data CopyTracked = CopyTracked !(IORef Int) !(IORef Int) !Int
+
+instance Copyable CopyTracked where
+  copy =
+    Unsafe.toLinear \(UnsafeAlias value@(CopyTracked copies retired _)) ->
+      case unsafePerformIO do
+        retirementCount <- readIORef retired
+        if retirementCount == 0
+          then modifyIORef' copies NonLinear.succ
+          else NonLinear.error "copy invoked after source retirement" of
+        () -> value
+
+instance Consumable CopyTracked where
+  consume =
+    Unsafe.toLinear \(CopyTracked _ retired _) ->
+      unsafePerformIO (modifyIORef' retired NonLinear.succ)
+
+instance Dupable CopyTracked where
+  dup2 = Unsafe.toLinear \value -> (value, value)
+
+instance Movable CopyTracked where
+  move =
+    Unsafe.toLinear \value@(CopyTracked _ retired _) ->
+      case unsafePerformIO (modifyIORef' retired NonLinear.succ) of
+        () -> Ur value
+
+materializeMoveTracked :: IORef Int -> [(Int, Bool)]
+materializeMoveTracked moves =
+  linearly \linear ->
+    case VL.toVector
+      ( VL.fromVector
+          (V.fromList [MoveTracked moves 10 False, MoveTracked moves 20 False])
+          linear
+      ) of
+      Ur vector ->
+        NonLinear.map
+          (\(MoveTracked _ value wasMoved) -> (value, wasMoved))
+          (V.toList vector)
+
+discardMaterializedMoveTracked :: IORef Int -> ()
+discardMaterializedMoveTracked moves =
+  linearly \linear ->
+    case VL.toVector
+      ( VL.fromVector
+          (V.fromList [MoveTracked moves 10 False, MoveTracked moves 20 False])
+          linear
+      ) of
+      Ur _ -> ()
+
+test_materialization :: TestTree
+test_materialization =
+  testGroup
+    "materialization"
+    [ testCase "invokes move for every owned element" do
+        moves <- newIORef 0
+        materializeMoveTracked moves @?= [(10, True), (20, True)]
+        moveCount <- readIORef moves
+        moveCount @?= 2
+    , testCase "completes moves even when the result is discarded" do
+        moves <- newIORef 0
+        _ <- Exception.evaluate (discardMaterializedMoveTracked moves)
+        moveCount <- readIORef moves
+        moveCount @?= 2
+    ]
 
 copyAtMutValue :: Int -> [Int] -> (Int, [Int])
 copyAtMutValue i xs = linearly \lin -> DataFlow.do
@@ -39,6 +122,31 @@ copyAtMutValue i xs = linearly \lin -> DataFlow.do
     (Ur x, mvec) <- VL.copyAtMut i mvec
     let !() = consume mvec
     pureAfter (x, unur $ VL.toList (reclaim lend))
+
+retireCopiedResult ::
+  (Ur CopyTracked, Mut α (VL.Vector CopyTracked)) %1 ->
+  VL.Vector CopyTracked %1 ->
+  Int
+retireCopiedResult =
+  Unsafe.toLinear2 \(copiedResult, borrowed) owner ->
+    consume borrowed `lseq`
+      case VL.toVector owner of
+        Ur frozen ->
+          case V.length frozen of
+            !_ ->
+              case copiedResult of
+                Ur (CopyTracked _ _ value) -> value
+
+copyAtMutAfterRetirement :: IORef Int -> IORef Int -> Int
+copyAtMutAfterRetirement copies retired =
+  linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM
+          (VL.fromList [CopyTracked copies retired 10] ownerLinear)
+      copiedResult <- VL.copyAtMut 0 vector
+      pureAfter (retireCopiedResult copiedResult (reclaim lend))
 
 assertCopyAtMutBoundsError :: Int -> Assertion
 assertCopyAtMutBoundsError i = do
@@ -56,13 +164,21 @@ test_copyAtMut =
     "copyAtMut"
     [ testCase "copies the selected element and preserves the vector" do
         copyAtMutValue 1 [10, 20, 30] @?= (20, [10, 20, 30])
+    , testCase "completes copying before mutable recovery" do
+        copies <- newIORef 0
+        retired <- newIORef 0
+        copyAtMutAfterRetirement copies retired @?= 10
+        copyCount <- readIORef copies
+        copyCount @?= 1
+        retirementCount <- readIORef retired
+        retirementCount @?= 1
     , testCase "rejects a negative index" do
         assertCopyAtMutBoundsError (-1)
     , testCase "rejects an index at the upper bound" do
         assertCopyAtMutBoundsError 3
     ]
 
-qsortVec :: (Ord a, Copyable a) => V.Vector a -> V.Vector a
+qsortVec :: (Ord a, Copyable a, Movable a) => V.Vector a -> V.Vector a
 qsortVec v = unur $ linearly \lin -> DataFlow.do
   (l1, l2) <- dup lin
   runBO l1 Control.do

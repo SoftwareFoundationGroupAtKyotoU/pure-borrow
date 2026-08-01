@@ -85,76 +85,76 @@ type SizeDataMap = MonoidalIntMap SizeData
 fromRawRow :: RawRow -> SizeDataMap
 fromRawRow RawRow {..} = fromMaybe mempty do
   dat <- case name of
-    "intro" -> pure mempty {introMean = Sum (fromIntegral mean * 1e-9), introStddev = Sum (fromIntegral stddev * 1e-9), introAlloc = Sum (fromIntegral alloc * 1e-6), introCopied = Sum (fromIntegral copied * 1e-6), introPeak = Sum (fromIntegral peak * 1e-6)}
-    "sequential" -> pure mempty {sequentialMean = Sum (fromIntegral mean * 1e-9), sequentialStddev = Sum (fromIntegral stddev * 1e-9), sequentialAlloc = Sum (fromIntegral alloc * 1e-6), sequentialCopied = Sum (fromIntegral copied * 1e-6), sequentialPeak = Sum (fromIntegral peak * 1e-6)}
-    "parallel (budget = 4)" -> pure mempty {parallel4Mean = Sum (fromIntegral mean * 1e-9), parallel4Stddev = Sum (fromIntegral stddev * 1e-9), parallel4Alloc = Sum (fromIntegral alloc * 1e-6), parallel4Copied = Sum (fromIntegral copied * 1e-6), parallel4Peak = Sum (fromIntegral peak * 1e-6)}
-    "parallel (budget = 8)" -> pure mempty {parallel8Mean = Sum (fromIntegral mean * 1e-9), parallel8Stddev = Sum (fromIntegral stddev * 1e-9), parallel8Alloc = Sum (fromIntegral alloc * 1e-6), parallel8Copied = Sum (fromIntegral copied * 1e-6), parallel8Peak = Sum (fromIntegral peak * 1e-6)}
-    "parallel (budget = 16)" -> pure mempty {parallel16Mean = Sum (fromIntegral mean * 1e-9), parallel16Stddev = Sum (fromIntegral stddev * 1e-9), parallel16Alloc = Sum (fromIntegral alloc * 1e-6), parallel16Copied = Sum (fromIntegral copied * 1e-6), parallel16Peak = Sum (fromIntegral peak * 1e-6)}
-    "parallel (budget = 32)" -> pure mempty {parallel32Mean = Sum (fromIntegral mean * 1e-9), parallel32Stddev = Sum (fromIntegral stddev * 1e-9), parallel32Alloc = Sum (fromIntegral alloc * 1e-6), parallel32Copied = Sum (fromIntegral copied * 1e-6), parallel32Peak = Sum (fromIntegral peak * 1e-6)}
-    "worksteal (workers = 2)" -> pure mempty {workSteal2Mean = Sum (fromIntegral mean * 1e-9), workSteal2Stddev = Sum (fromIntegral stddev * 1e-9), workSteal2Alloc = Sum (fromIntegral alloc * 1e-6), workSteal2Copied = Sum (fromIntegral copied * 1e-6), workSteal2Peak = Sum (fromIntegral peak * 1e-6)}
-    "worksteal (workers = 4)" -> pure mempty {workSteal4Mean = Sum (fromIntegral mean * 1e-9), workSteal4Stddev = Sum (fromIntegral stddev * 1e-9), workSteal4Alloc = Sum (fromIntegral alloc * 1e-6), workSteal4Copied = Sum (fromIntegral copied * 1e-6), workSteal4Peak = Sum (fromIntegral peak * 1e-6)}
-    "worksteal (workers = 6)" -> pure mempty {workSteal6Mean = Sum (fromIntegral mean * 1e-9), workSteal6Stddev = Sum (fromIntegral stddev * 1e-9), workSteal6Alloc = Sum (fromIntegral alloc * 1e-6), workSteal6Copied = Sum (fromIntegral copied * 1e-6), workSteal6Peak = Sum (fromIntegral peak * 1e-6)}
-    "worksteal (workers = 8)" -> pure mempty {workSteal8Mean = Sum (fromIntegral mean * 1e-9), workSteal8Stddev = Sum (fromIntegral stddev * 1e-9), workSteal8Alloc = Sum (fromIntegral alloc * 1e-6), workSteal8Copied = Sum (fromIntegral copied * 1e-6), workSteal8Peak = Sum (fromIntegral peak * 1e-6)}
-    "worksteal (workers = 10)" -> pure mempty {workSteal10Mean = Sum (fromIntegral mean * 1e-9), workSteal10Stddev = Sum (fromIntegral stddev * 1e-9), workSteal10Alloc = Sum (fromIntegral alloc * 1e-6), workSteal10Copied = Sum (fromIntegral copied * 1e-6), workSteal10Peak = Sum (fromIntegral peak * 1e-6)}
+    "intro" -> pure mempty {introMean = Just $ Sum (fromIntegral mean * 1e-9), introStddev = Just $ Sum (fromIntegral stddev * 1e-9), introAlloc = Just $ Sum (fromIntegral alloc * 1e-6), introCopied = Just $ Sum (fromIntegral copied * 1e-6), introPeak = Just $ Sum (fromIntegral peak * 1e-6)}
+    "sequential" -> pure mempty {sequentialMean = Just $ Sum (fromIntegral mean * 1e-9), sequentialStddev = Just $ Sum (fromIntegral stddev * 1e-9), sequentialAlloc = Just $ Sum (fromIntegral alloc * 1e-6), sequentialCopied = Just $ Sum (fromIntegral copied * 1e-6), sequentialPeak = Just $ Sum (fromIntegral peak * 1e-6)}
+    "parallel (budget = 4)" -> pure mempty {parallel4Mean = Just $ Sum (fromIntegral mean * 1e-9), parallel4Stddev = Just $ Sum (fromIntegral stddev * 1e-9), parallel4Alloc = Just $ Sum (fromIntegral alloc * 1e-6), parallel4Copied = Just $ Sum (fromIntegral copied * 1e-6), parallel4Peak = Just $ Sum (fromIntegral peak * 1e-6)}
+    "parallel (budget = 8)" -> pure mempty {parallel8Mean = Just $ Sum (fromIntegral mean * 1e-9), parallel8Stddev = Just $ Sum (fromIntegral stddev * 1e-9), parallel8Alloc = Just $ Sum (fromIntegral alloc * 1e-6), parallel8Copied = Just $ Sum (fromIntegral copied * 1e-6), parallel8Peak = Just $ Sum (fromIntegral peak * 1e-6)}
+    "parallel (budget = 16)" -> pure mempty {parallel16Mean = Just $ Sum (fromIntegral mean * 1e-9), parallel16Stddev = Just $ Sum (fromIntegral stddev * 1e-9), parallel16Alloc = Just $ Sum (fromIntegral alloc * 1e-6), parallel16Copied = Just $ Sum (fromIntegral copied * 1e-6), parallel16Peak = Just $ Sum (fromIntegral peak * 1e-6)}
+    "parallel (budget = 32)" -> pure mempty {parallel32Mean = Just $ Sum (fromIntegral mean * 1e-9), parallel32Stddev = Just $ Sum (fromIntegral stddev * 1e-9), parallel32Alloc = Just $ Sum (fromIntegral alloc * 1e-6), parallel32Copied = Just $ Sum (fromIntegral copied * 1e-6), parallel32Peak = Just $ Sum (fromIntegral peak * 1e-6)}
+    "worksteal (workers = 2)" -> pure mempty {workSteal2Mean = Just $ Sum (fromIntegral mean * 1e-9), workSteal2Stddev = Just $ Sum (fromIntegral stddev * 1e-9), workSteal2Alloc = Just $ Sum (fromIntegral alloc * 1e-6), workSteal2Copied = Just $ Sum (fromIntegral copied * 1e-6), workSteal2Peak = Just $ Sum (fromIntegral peak * 1e-6)}
+    "worksteal (workers = 4)" -> pure mempty {workSteal4Mean = Just $ Sum (fromIntegral mean * 1e-9), workSteal4Stddev = Just $ Sum (fromIntegral stddev * 1e-9), workSteal4Alloc = Just $ Sum (fromIntegral alloc * 1e-6), workSteal4Copied = Just $ Sum (fromIntegral copied * 1e-6), workSteal4Peak = Just $ Sum (fromIntegral peak * 1e-6)}
+    "worksteal (workers = 6)" -> pure mempty {workSteal6Mean = Just $ Sum (fromIntegral mean * 1e-9), workSteal6Stddev = Just $ Sum (fromIntegral stddev * 1e-9), workSteal6Alloc = Just $ Sum (fromIntegral alloc * 1e-6), workSteal6Copied = Just $ Sum (fromIntegral copied * 1e-6), workSteal6Peak = Just $ Sum (fromIntegral peak * 1e-6)}
+    "worksteal (workers = 8)" -> pure mempty {workSteal8Mean = Just $ Sum (fromIntegral mean * 1e-9), workSteal8Stddev = Just $ Sum (fromIntegral stddev * 1e-9), workSteal8Alloc = Just $ Sum (fromIntegral alloc * 1e-6), workSteal8Copied = Just $ Sum (fromIntegral copied * 1e-6), workSteal8Peak = Just $ Sum (fromIntegral peak * 1e-6)}
+    "worksteal (workers = 10)" -> pure mempty {workSteal10Mean = Just $ Sum (fromIntegral mean * 1e-9), workSteal10Stddev = Just $ Sum (fromIntegral stddev * 1e-9), workSteal10Alloc = Just $ Sum (fromIntegral alloc * 1e-6), workSteal10Copied = Just $ Sum (fromIntegral copied * 1e-6), workSteal10Peak = Just $ Sum (fromIntegral peak * 1e-6)}
     _ -> Nothing
   pure (MIM.singleton size dat)
 
 data SizeData = SizeData
-  { introMean :: !(Sum Double)
-  , introStddev :: !(Sum Double)
-  , introAlloc :: !(Sum Double)
-  , introCopied :: !(Sum Double)
-  , introPeak :: !(Sum Double)
-  , sequentialMean :: !(Sum Double)
-  , sequentialStddev :: !(Sum Double)
-  , sequentialAlloc :: !(Sum Double)
-  , sequentialCopied :: !(Sum Double)
-  , sequentialPeak :: !(Sum Double)
-  , parallel4Mean :: !(Sum Double)
-  , parallel4Stddev :: !(Sum Double)
-  , parallel4Alloc :: !(Sum Double)
-  , parallel4Copied :: !(Sum Double)
-  , parallel4Peak :: !(Sum Double)
-  , parallel8Mean :: !(Sum Double)
-  , parallel8Stddev :: !(Sum Double)
-  , parallel8Alloc :: !(Sum Double)
-  , parallel8Copied :: !(Sum Double)
-  , parallel8Peak :: !(Sum Double)
-  , parallel16Mean :: !(Sum Double)
-  , parallel16Stddev :: !(Sum Double)
-  , parallel16Alloc :: !(Sum Double)
-  , parallel16Copied :: !(Sum Double)
-  , parallel16Peak :: !(Sum Double)
-  , parallel32Mean :: !(Sum Double)
-  , parallel32Stddev :: !(Sum Double)
-  , parallel32Alloc :: !(Sum Double)
-  , parallel32Copied :: !(Sum Double)
-  , parallel32Peak :: !(Sum Double)
-  , workSteal2Mean :: !(Sum Double)
-  , workSteal2Stddev :: !(Sum Double)
-  , workSteal2Alloc :: !(Sum Double)
-  , workSteal2Copied :: !(Sum Double)
-  , workSteal2Peak :: !(Sum Double)
-  , workSteal4Mean :: !(Sum Double)
-  , workSteal4Stddev :: !(Sum Double)
-  , workSteal4Alloc :: !(Sum Double)
-  , workSteal4Copied :: !(Sum Double)
-  , workSteal4Peak :: !(Sum Double)
-  , workSteal6Mean :: !(Sum Double)
-  , workSteal6Stddev :: !(Sum Double)
-  , workSteal6Alloc :: !(Sum Double)
-  , workSteal6Copied :: !(Sum Double)
-  , workSteal6Peak :: !(Sum Double)
-  , workSteal8Mean :: !(Sum Double)
-  , workSteal8Stddev :: !(Sum Double)
-  , workSteal8Alloc :: !(Sum Double)
-  , workSteal8Copied :: !(Sum Double)
-  , workSteal8Peak :: !(Sum Double)
-  , workSteal10Mean :: !(Sum Double)
-  , workSteal10Stddev :: !(Sum Double)
-  , workSteal10Alloc :: !(Sum Double)
-  , workSteal10Copied :: !(Sum Double)
-  , workSteal10Peak :: !(Sum Double)
+  { introMean :: !(Maybe (Sum Double))
+  , introStddev :: !(Maybe (Sum Double))
+  , introAlloc :: !(Maybe (Sum Double))
+  , introCopied :: !(Maybe (Sum Double))
+  , introPeak :: !(Maybe (Sum Double))
+  , sequentialMean :: !(Maybe (Sum Double))
+  , sequentialStddev :: !(Maybe (Sum Double))
+  , sequentialAlloc :: !(Maybe (Sum Double))
+  , sequentialCopied :: !(Maybe (Sum Double))
+  , sequentialPeak :: !(Maybe (Sum Double))
+  , parallel4Mean :: !(Maybe (Sum Double))
+  , parallel4Stddev :: !(Maybe (Sum Double))
+  , parallel4Alloc :: !(Maybe (Sum Double))
+  , parallel4Copied :: !(Maybe (Sum Double))
+  , parallel4Peak :: !(Maybe (Sum Double))
+  , parallel8Mean :: !(Maybe (Sum Double))
+  , parallel8Stddev :: !(Maybe (Sum Double))
+  , parallel8Alloc :: !(Maybe (Sum Double))
+  , parallel8Copied :: !(Maybe (Sum Double))
+  , parallel8Peak :: !(Maybe (Sum Double))
+  , parallel16Mean :: !(Maybe (Sum Double))
+  , parallel16Stddev :: !(Maybe (Sum Double))
+  , parallel16Alloc :: !(Maybe (Sum Double))
+  , parallel16Copied :: !(Maybe (Sum Double))
+  , parallel16Peak :: !(Maybe (Sum Double))
+  , parallel32Mean :: !(Maybe (Sum Double))
+  , parallel32Stddev :: !(Maybe (Sum Double))
+  , parallel32Alloc :: !(Maybe (Sum Double))
+  , parallel32Copied :: !(Maybe (Sum Double))
+  , parallel32Peak :: !(Maybe (Sum Double))
+  , workSteal2Mean :: !(Maybe (Sum Double))
+  , workSteal2Stddev :: !(Maybe (Sum Double))
+  , workSteal2Alloc :: !(Maybe (Sum Double))
+  , workSteal2Copied :: !(Maybe (Sum Double))
+  , workSteal2Peak :: !(Maybe (Sum Double))
+  , workSteal4Mean :: !(Maybe (Sum Double))
+  , workSteal4Stddev :: !(Maybe (Sum Double))
+  , workSteal4Alloc :: !(Maybe (Sum Double))
+  , workSteal4Copied :: !(Maybe (Sum Double))
+  , workSteal4Peak :: !(Maybe (Sum Double))
+  , workSteal6Mean :: !(Maybe (Sum Double))
+  , workSteal6Stddev :: !(Maybe (Sum Double))
+  , workSteal6Alloc :: !(Maybe (Sum Double))
+  , workSteal6Copied :: !(Maybe (Sum Double))
+  , workSteal6Peak :: !(Maybe (Sum Double))
+  , workSteal8Mean :: !(Maybe (Sum Double))
+  , workSteal8Stddev :: !(Maybe (Sum Double))
+  , workSteal8Alloc :: !(Maybe (Sum Double))
+  , workSteal8Copied :: !(Maybe (Sum Double))
+  , workSteal8Peak :: !(Maybe (Sum Double))
+  , workSteal10Mean :: !(Maybe (Sum Double))
+  , workSteal10Stddev :: !(Maybe (Sum Double))
+  , workSteal10Alloc :: !(Maybe (Sum Double))
+  , workSteal10Copied :: !(Maybe (Sum Double))
+  , workSteal10Peak :: !(Maybe (Sum Double))
   }
   deriving (Show, Eq, Ord, Generic)
   deriving anyclass (ToNamedRecord, DefaultOrdered)

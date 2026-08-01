@@ -45,7 +45,10 @@ flag slow
   default: False
   manual: True
 
-common defaults
+-- Settings shared by every component, minus @linear-base@.
+-- A component that does not use linear types at all imports this instead of
+-- @defaults@, so that @-Wunused-packages@ stays clean for it.
+common base-defaults
   default-language: GHC2021
   default-extensions: LinearTypes
   autogen-modules: Paths_pure_borrow
@@ -62,9 +65,11 @@ common defaults
     -Wredundant-constraints
     -Wunused-packages
 
-  build-depends:
-    base >=4.17 && <5,
-    linear-base >=0.7,
+  build-depends: base >=4.17 && <5
+
+common defaults
+  import: base-defaults
+  build-depends: linear-base >=0.7
 
 common examples
   import: defaults
@@ -405,7 +410,7 @@ executable fft
     pure-borrow:demo-impl,
 
 executable convert-qsort-bench-csv
-  import: defaults
+  import: base-defaults
   main-is: convert-qsort-bench-csv.hs
   hs-source-dirs: app
   ghc-options:
@@ -422,13 +427,10 @@ executable convert-qsort-bench-csv
     base >=4.7 && <5,
     bytestring,
     cassava,
-    deepseq,
     monoidal-containers,
     optparse-applicative,
-    pure-borrow,
     text,
     unordered-containers,
     vector,
-    vector-algorithms,
 
   default-language: GHC2021

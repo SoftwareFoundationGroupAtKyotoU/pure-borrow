@@ -19,7 +19,7 @@ jobs:
     outputs:
       plan: ${{steps.list-ci.outputs.plan}}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{github.event.pull_request.head.sha || github.sha}}
       - name: Enumerate CI plans
@@ -59,7 +59,7 @@ jobs:
       tests: ${{steps.list-bins.outputs.tests}}
       artifact: "artifact-${{matrix.plan.name}}"
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{github.event.pull_request.head.sha || github.sha}}
       - name: Calculate hash keys
@@ -138,7 +138,7 @@ jobs:
       cabal: "cabal --project-file=ci/configs/ghc-9.14.1.project"
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{github.event.pull_request.head.sha || github.sha}}
       - name: Calculate hash keys
@@ -202,7 +202,7 @@ jobs:
       - name: Fail when Corresponding Build didn't succeed
         if: ${{needs.build.result != 'success' }}
         run: echo "BUILD FAILED" >&2; exit 1
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{github.event.pull_request.head.sha || github.sha}}
       - name: Download artifacts
@@ -233,9 +233,9 @@ jobs:
     name: Fourmolu
     runs-on: ubuntu-latest
     steps:
-      # Note that you must checkout your code before running fourmolu/fourmolu-action
-      - uses: actions/checkout@v2
-      - uses: fourmolu/fourmolu-action@v10
+      # Note that you must checkout your code before running haskell-actions/run-fourmolu
+      - uses: actions/checkout@v4
+      - uses: haskell-actions/run-fourmolu@v13
         with:
           version: 0.20.0.0
           pattern: |
@@ -248,7 +248,7 @@ jobs:
     name: Cabal Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: haskell-actions/setup@v2
         with:
           cabal-version: ${{env.cabal-version}}
@@ -267,7 +267,7 @@ jobs:
           RELEASE=$(echo ${{github.ref_name}} | sed 's/^v//')
           echo "RELEASE=${RELEASE}" >> "${GITHUB_ENV}"
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Creates Tarball
         run: cabal sdist
       - name: Download Haddock

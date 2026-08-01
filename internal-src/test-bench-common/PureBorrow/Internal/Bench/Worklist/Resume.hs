@@ -29,6 +29,10 @@ module PureBorrow.Internal.Bench.Worklist.Resume (
   worklistPureBorrowOpenOnceRootWithSeed,
   worklistPureBorrowOpenOnceWorker,
   worklistPureBorrowOpenOnceEdgeWorker,
+  worklistPureBorrowCheckedOpenOnceRoot,
+  worklistPureBorrowCheckedOpenOnceRootWithSeed,
+  worklistPureBorrowCheckedOpenOnceWorker,
+  worklistPureBorrowCheckedOpenOnceEdgeWorker,
   worklistPureBorrowFlatReopenRoot,
   worklistPureBorrowFlatReopenRootWithSeed,
   worklistPureBorrowNestedReopenRoot,
@@ -226,6 +230,12 @@ benches =
               nf worklistDirectOpenOnceRoot target
           , bench "pure-borrow" $
               nf worklistPureBorrowOpenOnceRoot target
+          , -- Same traversal through the checked public element surface. The
+            -- difference against "pure-borrow" is the cost of the checked
+            -- facade alone, and is reported separately from the
+            -- safe-minus-direct excess.
+            bench "pure-borrow-checked" $
+              nf worklistPureBorrowCheckedOpenOnceRoot target
           ]
       | target <- [minBound .. maxBound]
       ]
@@ -620,6 +630,116 @@ worklistPureBorrowOpenOnceRootWithSeed seed target =
                 , logContent
                 ) <-
                 worklistPureBorrowOpenOnceWorker
+                  (targetVisits target)
+                  seededInitial
+                  offsetsBorrow
+                  marksBorrow
+                  stateBorrow
+                  adjacencyContent
+                  payloadContent
+                  queueContent
+                  logContent
+              let !() =
+                    consumeWorklistViews
+                      offsetsBorrow
+                      marksBorrow
+                      stateBorrow
+                      adjacencyContent
+                      payloadContent
+                      queueContent
+                      logContent
+              Control.pure (Ur traversal)
+          let !(Ur _) = share storeBorrow
+          pureAfter
+            ( finishWorklistStore
+                (outcomeFor target traversal)
+                4
+                0
+                0
+                0
+                traversal
+                (reclaim lender)
+            )
+    )
+
+{- | The open-once traversal, reading and writing through the /checked/ public
+element surface instead of the unchecked one.
+
+This is the copied-read attribution control. It differs from
+'worklistPureBorrowOpenOnceRoot' in exactly one respect: every element access
+goes through 'Fixed.copyAtMut' and 'Fixed.write' rather than
+'Fixed.unsafeGet' and 'Fixed.unsafeWrite'. Ownership, lifetimes, projection
+structure, transition counts and the final digest are identical, so the
+allocation difference between the two roots is the cost of the public checked
+facade alone: the bounds check, the @size@ call, the @Ur@ boxing, and whatever
+survives of the @HasCallStack@ obligation those operations carry.
+
+Both roots must therefore produce equal 'WorklistOutput'. Note that
+@copyAtMut@ on this non-element-owning family is defined as @get@; it is not a
+@Copyable@ copy, and this control deliberately does not switch to an
+element-owning family, which would change the ownership mode and make the
+allocation numbers incomparable.
+-}
+worklistPureBorrowCheckedOpenOnceRoot ::
+  WorklistTarget ->
+  WorklistOutput
+{-# NOINLINE worklistPureBorrowCheckedOpenOnceRoot #-}
+worklistPureBorrowCheckedOpenOnceRoot =
+  worklistPureBorrowCheckedOpenOnceRootWithSeed 0
+
+worklistPureBorrowCheckedOpenOnceRootWithSeed ::
+  Int ->
+  WorklistTarget ->
+  WorklistOutput
+{-# NOINLINE worklistPureBorrowCheckedOpenOnceRootWithSeed #-}
+worklistPureBorrowCheckedOpenOnceRootWithSeed seed target =
+  unur
+    ( linearly \linear -> DataFlow.do
+        (allocationLinear, borrowLinear) <- dup linear
+        store <- newWorklistStore OpenOnceStorage allocationLinear
+        runBO borrowLinear Control.do
+          (storeBorrow, lender) <- borrowM store
+          (Ur traversal, storeBorrow) <-
+            reborrowing storeBorrow \local -> Control.do
+              let %1 !(fixedRootBorrows, graphRootBorrows, frontierRootBorrows) =
+                    local
+                      .@ ( worklistFixedRootsField
+                         , worklistGraphRootsField
+                         , worklistFrontierRootsField
+                         )
+              let %1 !(offsetsBorrow, marksBorrow, stateBorrow) =
+                    fixedRootBorrows
+                      .@ (fixedOffsetsField, fixedMarksField, fixedStateField)
+              let %1 !(adjacencyBorrow, payloadBorrow) =
+                    graphRootBorrows
+                      .@ (graphAdjacencyField, graphPayloadField)
+              let %1 !(queueBorrow, logBorrow) =
+                    frontierRootBorrows
+                      .@ (frontierQueueField, frontierLogField)
+              let %1 !adjacencyContent =
+                    Growable.getContents adjacencyBorrow
+              let %1 !payloadContent =
+                    Growable.getContents payloadBorrow
+              let %1 !queueContent =
+                    Growable.getContents queueBorrow
+              let %1 !logContent =
+                    Growable.getContents logBorrow
+              (Ur initial, stateBorrow) <-
+                readTraversalStateChecked stateBorrow
+              let !seededInitial =
+                    initial
+                      { stateDigest = initialDigestForSeed seed
+                      }
+              ( Ur traversal
+                , offsetsBorrow
+                , marksBorrow
+                , stateBorrow
+                , adjacencyContent
+                , payloadContent
+                , queueContent
+                , logContent
+                ) <-
+                worklistPureBorrowCheckedOpenOnceWorker
                   (targetVisits target)
                   seededInitial
                   offsetsBorrow
@@ -1556,6 +1676,225 @@ worklistPureBorrowOpenOnceEdgeWorker
               payload
               marks
               queue
+
+{- | Checked counterpart of 'worklistPureBorrowOpenOnceWorker'.
+
+Every element access uses the checked public entry point. The traversal,
+transition counts and digest are identical to the unchecked worker; only the
+element-access surface differs.
+-}
+worklistPureBorrowCheckedOpenOnceWorker ::
+  Int ->
+  TraversalState ->
+  Mut α (Fixed.Vector U.Vector Int) %1 ->
+  Mut α (Fixed.Vector U.Vector Int) %1 ->
+  Mut α (Fixed.Vector U.Vector Int) %1 ->
+  Mut α (Fixed.Vector U.Vector Int) %1 ->
+  Mut α (Fixed.Vector V.Vector (Int, Int)) %1 ->
+  Mut α (Fixed.Vector U.Vector Int) %1 ->
+  Mut α (Fixed.Vector U.Vector Int) %1 ->
+  BO
+    α
+    ( Ur TraversalState
+    , Mut α (Fixed.Vector U.Vector Int)
+    , Mut α (Fixed.Vector U.Vector Int)
+    , Mut α (Fixed.Vector U.Vector Int)
+    , Mut α (Fixed.Vector U.Vector Int)
+    , Mut α (Fixed.Vector V.Vector (Int, Int))
+    , Mut α (Fixed.Vector U.Vector Int)
+    , Mut α (Fixed.Vector U.Vector Int)
+    )
+{-# NOINLINE worklistPureBorrowCheckedOpenOnceWorker #-}
+worklistPureBorrowCheckedOpenOnceWorker
+  stopAfter
+  current
+  offsets
+  marks
+  state
+  adjacency
+  payload
+  queue
+  outputLog
+    | stateVisits current >= stopAfter
+        || stateHead current >= stateTail current = Control.do
+        state <- writeTraversalStateCheckedPureBorrow current state
+        Control.pure
+          ( Ur current
+          , offsets
+          , marks
+          , state
+          , adjacency
+          , payload
+          , queue
+          , outputLog
+          )
+    | otherwise = Control.do
+        (Ur node, queue) <-
+          Fixed.copyAtMut (stateHead current) queue
+        (Ur start, offsets) <-
+          Fixed.copyAtMut node offsets
+        (Ur end, offsets) <-
+          Fixed.copyAtMut (node + 1) offsets
+        ( Ur (nextTail, nextEnqueues, nodeDigest)
+          , adjacency
+          , payload
+          , marks
+          , queue
+          ) <-
+          worklistPureBorrowCheckedOpenOnceEdgeWorker
+            start
+            end
+            (stateTail current)
+            (stateEnqueues current)
+            (stateDigest current)
+            adjacency
+            payload
+            marks
+            queue
+        let !logValue = digestToLogValue nodeDigest node
+        outputLog <-
+          Fixed.write
+            (stateLogSize current)
+            logValue
+            outputLog
+        let !nextState =
+              TraversalState
+                { stateHead = stateHead current + 1
+                , stateTail = nextTail
+                , stateVisits = stateVisits current + 1
+                , stateEnqueues = nextEnqueues
+                , stateLogSize = stateLogSize current + 1
+                , stateDigest = mixDigest nodeDigest logValue
+                }
+        worklistPureBorrowCheckedOpenOnceWorker
+          stopAfter
+          nextState
+          offsets
+          marks
+          state
+          adjacency
+          payload
+          queue
+          outputLog
+
+{- | Checked counterpart of 'worklistPureBorrowOpenOnceEdgeWorker'.
+
+Unlike its unchecked sibling this worker establishes its own bounds, so it
+carries no unchecked-access proof obligation. It exists to anchor the
+checked-surface attribution measurement.
+-}
+worklistPureBorrowCheckedOpenOnceEdgeWorker ::
+  Int ->
+  Int ->
+  Int ->
+  Int ->
+  Int64 ->
+  Mut α (Fixed.Vector U.Vector Int) %1 ->
+  Mut α (Fixed.Vector V.Vector (Int, Int)) %1 ->
+  Mut α (Fixed.Vector U.Vector Int) %1 ->
+  Mut α (Fixed.Vector U.Vector Int) %1 ->
+  BO
+    α
+    ( Ur (Int, Int, Int64)
+    , Mut α (Fixed.Vector U.Vector Int)
+    , Mut α (Fixed.Vector V.Vector (Int, Int))
+    , Mut α (Fixed.Vector U.Vector Int)
+    , Mut α (Fixed.Vector U.Vector Int)
+    )
+{-# INLINEABLE worklistPureBorrowCheckedOpenOnceEdgeWorker #-}
+worklistPureBorrowCheckedOpenOnceEdgeWorker
+  edge
+  end
+  tailIndex
+  enqueues
+  digest
+  adjacency
+  payload
+  marks
+  queue
+    | edge >= end =
+        Control.pure
+          ( Ur (tailIndex, enqueues, digest)
+          , adjacency
+          , payload
+          , marks
+          , queue
+          )
+    | otherwise = Control.do
+        (Ur neighbor, adjacency) <-
+          Fixed.copyAtMut edge adjacency
+        (Ur (tag, delta), payload) <-
+          Fixed.copyAtMut edge payload
+        (Ur marked, marks) <-
+          Fixed.copyAtMut neighbor marks
+        let !nextDigest =
+              mixDigest
+                digest
+                (neighbor * 31 + tag * 17 + delta + marked)
+        if marked == 0
+          then Control.do
+            marks <-
+              Fixed.write neighbor 1 marks
+            queue <-
+              Fixed.write tailIndex neighbor queue
+            worklistPureBorrowCheckedOpenOnceEdgeWorker
+              (edge + 1)
+              end
+              (tailIndex + 1)
+              (enqueues + 1)
+              nextDigest
+              adjacency
+              payload
+              marks
+              queue
+          else
+            worklistPureBorrowCheckedOpenOnceEdgeWorker
+              (edge + 1)
+              end
+              tailIndex
+              enqueues
+              nextDigest
+              adjacency
+              payload
+              marks
+              queue
+
+readTraversalStateChecked ::
+  Mut α (Fixed.Vector U.Vector Int) %1 ->
+  BO
+    α
+    ( Ur TraversalState
+    , Mut α (Fixed.Vector U.Vector Int)
+    )
+readTraversalStateChecked state = Control.do
+  (Ur headIndex, state) <- Fixed.copyAtMut 0 state
+  (Ur tailIndex, state) <- Fixed.copyAtMut 1 state
+  (Ur visits, state) <- Fixed.copyAtMut 2 state
+  (Ur enqueues, state) <- Fixed.copyAtMut 3 state
+  (Ur logSize, state) <- Fixed.copyAtMut 4 state
+  Control.pure
+    ( Ur
+        TraversalState
+          { stateHead = headIndex
+          , stateTail = tailIndex
+          , stateVisits = visits
+          , stateEnqueues = enqueues
+          , stateLogSize = logSize
+          , stateDigest = initialDigest
+          }
+    , state
+    )
+
+writeTraversalStateCheckedPureBorrow ::
+  TraversalState ->
+  Mut α (Fixed.Vector U.Vector Int) %1 ->
+  BO α (Mut α (Fixed.Vector U.Vector Int))
+writeTraversalStateCheckedPureBorrow traversal state = Control.do
+  state <- Fixed.write 0 (stateHead traversal) state
+  state <- Fixed.write 1 (stateTail traversal) state
+  state <- Fixed.write 2 (stateVisits traversal) state
+  state <- Fixed.write 3 (stateEnqueues traversal) state
+  Fixed.write 4 (stateLogSize traversal) state
 
 readTraversalState ::
   Mut α (Fixed.Vector U.Vector Int) %1 ->

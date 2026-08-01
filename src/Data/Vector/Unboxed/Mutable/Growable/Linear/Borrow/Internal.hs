@@ -745,6 +745,12 @@ checkedAdd operation left right
 
 The projection preserves borrow kind and lifetime and exposes no spare
 capacity or growth operation.
+
+Where a transaction branches, prefer projecting once at its entry --
+@let %1 !content = 'getContents' borrow@ -- over projecting separately inside
+each branch. Both are correct and consume the growable occurrence exactly
+once; the entry form simply gives the optimizer one header read to place
+rather than one per surviving branch.
 -}
 getContents ::
   (U.Unbox a) =>

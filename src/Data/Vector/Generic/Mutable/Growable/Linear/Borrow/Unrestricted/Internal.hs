@@ -787,6 +787,18 @@ The result preserves the borrow kind and lifetime and exposes neither spare
 capacity nor growth. A mutable result may be split with the fixed unrestricted
 vector API. The growable borrow becomes recoverable only after all resulting
 fixed borrows have ended.
+
+Each call performs one header read. Where a transaction branches, prefer
+projecting once at its entry --
+
+@
+let %1 !content = 'getContents' borrow
+@
+
+-- over projecting separately inside each branch. Both are correct and consume
+the growable occurrence exactly once; the entry form simply gives the
+optimizer one read to place rather than one per surviving branch, which
+matters for code size in transactions with several control exits.
 -}
 getContents ::
   (G.Vector v a) =>

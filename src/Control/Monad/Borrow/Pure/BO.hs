@@ -120,6 +120,10 @@ import Data.Functor.Linear qualified as Data
 import Data.Type.Coercion (Coercion (..))
 import Prelude.Linear
 
+#ifndef PURE_BORROW_SLOW_SCOPES
+import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe qualified as Unsafe
+#endif
+
 {- |
 Runs a 'BO' computation and returns the result of postprocessing 'After' the lifetime has ended.
 
@@ -392,16 +396,26 @@ borrowLinearlyM k = asksLinearlyM $ borrowM . k
 -- | Runs a 'BO' computation within the ephemeral sublifetime and returns the result.
 srunBO :: (forall α. BO (α /\ β) (After α a)) %1 -> BO β a
 {-# INLINE srunBO #-}
+#ifdef PURE_BORROW_SLOW_SCOPES
 srunBO bo = asksLinearlyM \lin ->
   newLifetime' lin \now -> Control.do
     (now, f) <- sexecBO bo now
     Ur end <- Control.pure (endLifetime now)
     Control.pure (withEnd end f)
+#else
+srunBO bo = Control.do
+  after <- unsafeCastBO bo
+  Control.pure $! withEnd Unsafe.UnsafeEnd after
+#endif
 
 -- | A variant of 'srunBO' that returns the direct value of 'BO' computation.
 srunBO_ :: (forall α. BO (α /\ β) a) %1 -> BO β a
 {-# INLINE srunBO_ #-}
+#ifdef PURE_BORROW_SLOW_SCOPES
 srunBO_ k = srunBO Control.do a <- k; Control.pure $ After a
+#else
+srunBO_ = \bo -> unsafeCastBO bo
+#endif
 
 {- | A parallel comoutation applicative functor for 'BO' monad.
 All the computations chained by '<*>' or 'liftA2' will be executed in parallel.

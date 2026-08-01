@@ -21,6 +21,27 @@ test_worklistOpenOnceEvidence =
       )
       [minBound .. maxBound]
 
+test_worklistCheckedSurfaceEvidence :: TestTree
+test_worklistCheckedSurfaceEvidence =
+  testCase "checked-surface reads reproduce the unchecked traversal exactly" do
+    mapM_
+      ( \target -> do
+          let unchecked = worklistPureBorrowOpenOnceRoot target
+          assertFrozenOutput target unchecked
+          worklistPureBorrowCheckedOpenOnceRoot target @?= unchecked
+      )
+      [minBound .. maxBound]
+    mapM_
+      ( \seed ->
+          mapM_
+            ( \target ->
+                worklistPureBorrowCheckedOpenOnceRootWithSeed seed target
+                  @?= worklistPureBorrowOpenOnceRootWithSeed seed target
+            )
+            [minBound .. maxBound]
+      )
+      [1, 37]
+
 test_worklistReopenEvidence :: TestTree
 test_worklistReopenEvidence =
   testCase "flat and nested reopen shapes preserve every frozen growth trace" do

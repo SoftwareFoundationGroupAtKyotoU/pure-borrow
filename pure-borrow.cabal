@@ -188,6 +188,8 @@ test-suite pure-borrow-test
     Data.Vector.Unboxed.Mutable.Growable.Linear.TypingCases
     Data.Vector.Unboxed.Mutable.Linear.BorrowSpec
     Data.Vector.Unboxed.Mutable.Linear.TypingCases
+    PureBorrow.Internal.Bench.MultiStoreScanSpec
+    PureBorrow.Internal.Bench.Worklist.ResumeSpec
 
   ghc-options:
     -O2
@@ -220,7 +222,9 @@ test-suite pure-borrow-inspection
   other-modules:
     PureBorrow.Inspection.Fft
     PureBorrow.Inspection.GenericGrowableUnrestricted
+    PureBorrow.Inspection.MultiStoreScan
     PureBorrow.Inspection.QSort
+    PureBorrow.Inspection.Worklist.Resume
 
   ghc-options:
     -O2
@@ -228,6 +232,7 @@ test-suite pure-borrow-inspection
 
   build-depends:
     pure-borrow,
+    pure-borrow:test-bench-common,
     tasty,
     tasty-inspection-testing,
     vector,
@@ -254,52 +259,24 @@ test-suite pure-borrow-doctests
     doctest-parallel >=0.4.1,
     pure-borrow,
 
--- Kernels shared by `pure-borrow-test` and the benchmark suites. Kernels used
--- only by a benchmark live under `bench/suite` instead.
+-- Hosts the common cases used in both benchmarks and tests.
 library test-bench-common
   import: defaults
   hs-source-dirs: internal-src/test-bench-common
   -- cabal-gild: discover internal-src/test-bench-common
   exposed-modules:
+    PureBorrow.Internal.Bench.MultiStoreScan
     PureBorrow.Internal.Bench.Unboxed
+    PureBorrow.Internal.Bench.Worklist.Resume
 
   build-depends:
     base >=4.7 && <5,
+    deepseq,
     pure-borrow,
     tasty-bench,
     vector,
 
-  default-language: GHC2021
-
-benchmark pure-borrow-bench
-  import: defaults
-  type: exitcode-stdio-1.0
-  main-is: Main.hs
-  hs-source-dirs: bench/suite
-  -- cabal-gild: discover bench/suite --exclude=bench/suite/Main.hs
-  other-modules:
-    PureBorrow.Bench.CopyAt
-    PureBorrow.Bench.Growable
-    PureBorrow.Bench.Ingredients
-    PureBorrow.Bench.Unboxed
-
-  ghc-options:
-    -threaded
-    -rtsopts
-    -O2
-    "-with-rtsopts=-N1 -T"
-
-  build-tool-depends:
-    tasty-discover:tasty-discover >=5.0.1
-
-  build-depends:
-    base >=4.7 && <5,
-    pure-borrow,
-    pure-borrow:test-bench-common,
-    tasty,
-    tasty-bench,
-    vector,
-
+  ghc-options: -O2
   default-language: GHC2021
 
 benchmark qsort-bench
@@ -321,6 +298,44 @@ benchmark qsort-bench
     tasty-bench,
     vector,
     vector-algorithms,
+
+  default-language: GHC2021
+
+-- Every single-threaded micro-benchmark lives here, discovered by
+-- tasty-discover from bench/suite. Kernels shared with pure-borrow-test or
+-- pure-borrow-inspection stay in lib:test-bench-common and are re-exported by a
+-- thin module under PureBorrow.Bench; kernels used only by this benchmark live
+-- in bench/suite directly.
+benchmark pure-borrow-bench
+  import: defaults
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: bench/suite
+  -- cabal-gild: discover bench/suite --exclude=bench/suite/Main.hs
+  other-modules:
+    PureBorrow.Bench.CopyAt
+    PureBorrow.Bench.Growable
+    PureBorrow.Bench.Ingredients
+    PureBorrow.Bench.MultiStoreScan
+    PureBorrow.Bench.Unboxed
+    PureBorrow.Bench.Worklist.Resume
+
+  ghc-options:
+    -threaded
+    -rtsopts
+    -O2
+    "-with-rtsopts=-N1 -T"
+
+  build-tool-depends:
+    tasty-discover:tasty-discover >=5.0.1
+
+  build-depends:
+    base >=4.7 && <5,
+    pure-borrow,
+    pure-borrow:test-bench-common,
+    tasty,
+    tasty-bench,
+    vector,
 
   default-language: GHC2021
 

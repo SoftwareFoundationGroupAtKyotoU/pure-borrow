@@ -228,7 +228,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: fourmolu/fourmolu-action@v10
         with:
-          version: 0.18.0.0
+          version: 0.20.0.0
           pattern: |
             **/*.hs
             !**/Setup.hs

@@ -362,6 +362,52 @@ explicitContentMutation =
       let !() = consume vector
       pureAfter (freezeBoxed (reclaim lend))
 
+{- | Reproject after a growth that replaces the backing buffer.
+
+Growth publishes a replacement header, so a projection taken after it must
+describe the new buffer and the new logical length rather than the one the
+scope before it saw. The existing content tests all project within a single
+no-growth scope; this one covers the project, grow, reproject sequence
+end to end.
+
+The observation is threefold: the second projection reports the grown logical
+length, a value written through the first projection survives the relocation
+at its old index, and a write through the second projection lands beyond the
+original capacity and reaches the final frozen vector. The last of these is
+what makes the assertion sharp -- the checked write at index 40 is rejected as
+out of bounds against a view that still described the three-element prefix.
+-}
+reprojectionAfterGrowth :: (Int, Int, Int, [Int])
+reprojectionAfterGrowth =
+  linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM (Growable.fromList @V.Vector [1, 2, 3] ownerLinear)
+      (Ur before, vector) <-
+        reborrowing vector \short -> Control.do
+          let %1 !content = Growable.getContents short
+          case Fixed.size content of
+            (Ur logicalSize, content) -> Control.do
+              content <- Fixed.write 0 100 content
+              Control.pure (consume content `lseq` Ur logicalSize)
+      vector <- Growable.extend (V.fromList [4 .. 64]) vector
+      (Ur after, vector) <-
+        reborrowing vector \short -> Control.do
+          let %1 !content = Growable.getContents short
+          case Fixed.size content of
+            (Ur logicalSize, content) -> Control.do
+              (Ur preserved, content) <- Fixed.get 0 content
+              content <- Fixed.write 40 999 content
+              Control.pure
+                (consume content `lseq` Ur (logicalSize, preserved))
+      let !() = consume vector
+      pureAfter
+        ( case after of
+            (afterLength, preserved) ->
+              (before, afterLength, preserved, freezeBoxed (reclaim lend))
+        )
+
 test_content :: TestTree
 test_content =
   testGroup
@@ -376,6 +422,14 @@ test_content =
     , testCase "withContent matches explicit reborrowing and projection" do
         withContentMutation @?= explicitContentMutation
         withContentMutation @?= [1, 20, 3, 4]
+    , testCase "reprojection after growth observes the published header" do
+        let (before, after, preserved, values) = reprojectionAfterGrowth
+        before @?= 3
+        after @?= 64
+        preserved @?= 100
+        NonLinear.length values @?= 64
+        NonLinear.take 3 values @?= [100, 2, 3]
+        values NonLinear.!! 40 @?= 999
     ]
 
 data Tracked = Tracked

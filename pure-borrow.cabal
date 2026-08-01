@@ -21,10 +21,7 @@ extra-doc-files:
   CHANGELOG.md
   README.md
 
-data-files:
-  dockerfiles/artifact/Dockerfile
-  scripts/genplot.gnuplot
-
+data-files: scripts/genplot.gnuplot
 tested-with: ghc ==9.10.3 || ==9.12.4 || ==9.14.1
 
 source-repository head
@@ -33,11 +30,6 @@ source-repository head
 
 flag examples
   description: Build the example executable, which runs some examples of the library.
-  default: False
-  manual: True
-
-flag artifact
-  description: Build the artifact runner executable, which runs all the benchmarks and produces CSV files.
   default: False
   manual: True
 
@@ -317,46 +309,6 @@ executable convert-qsort-bench-csv
     pure-borrow,
     text,
     unordered-containers,
-    vector,
-    vector-algorithms,
-
-  default-language: GHC2021
-
-executable artifact-runner
-  import: defaults
-
-  if flag(artifact)
-    buildable: True
-  else
-    buildable: False
-
-  main-is: artifact-runner.hs
-  hs-source-dirs: app
-  ghc-options:
-    -O2
-    -threaded
-    -rtsopts
-    "-with-rtsopts=-N -s"
-
-  build-depends:
-    base >=4.7 && <5,
-    bytestring,
-    cassava,
-    containers,
-    deepseq,
-    directory,
-    file-embed,
-    monoidal-containers,
-    optparse-applicative,
-    process,
-    pure-borrow,
-    pure-borrow:bench-suites,
-    pure-borrow:demo-impl,
-    tasty,
-    template-haskell,
-    temporary,
-    text,
-    transformers,
     vector,
     vector-algorithms,
 

@@ -23,6 +23,7 @@ module Control.Monad.Borrow.Pure.BO.Unsafe (
   Alias (..),
   unsafeUnalias,
   unsafeMapAlias,
+  unsafeCastAlias,
 
   -- * Conversions from/to 'BO' monad.
   unsafeBOToLinIO,

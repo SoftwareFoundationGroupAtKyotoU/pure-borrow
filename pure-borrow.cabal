@@ -36,7 +36,8 @@ flag examples
 flag slow
   description:
     Restore the previous, sublifetime-allocating implementations of the
-    result-discarding borrow scopes (`sharing_`, `reborrowing_`) and of
+    borrow scopes (`sharing`, `sharing'`, `sharing_`, `reborrowing`,
+    `reborrowing'`, `reborrowing_`), of `srunBO`/`srunBO_` and of
     `copyAtMut`. These open a real sublifetime with a runtime token and a
     lender, which the default implementations statically erase. Enable to
     A/B the two against each other, or to check whether a suspected

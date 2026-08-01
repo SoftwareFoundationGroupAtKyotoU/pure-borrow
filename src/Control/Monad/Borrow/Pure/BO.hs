@@ -200,7 +200,11 @@ sharing ::
   (forall β. Share (β /\ α) a -> BO (β /\ α') r) %1 ->
   BO α' (r, Mut α a)
 {-# INLINE sharing #-}
+#ifdef PURE_BORROW_SLOW_SCOPES
 sharing v k = sharing' v (\mut -> Control.pure Control.<$> k mut)
+#else
+sharing = unsafeBorrowScope
+#endif
 
 -- | Flipped infix version of 'sharing', smoewhat analgous to '(Control.<$>)' and @(<%~)@ in @lens@ package.
 (<$~) ::
@@ -222,11 +226,15 @@ sharing' ::
   (forall β. Share (β /\ α) a -> BO (β /\ α') (After β r)) %1 ->
   BO α' (r, Mut α a)
 {-# INLINE sharing' #-}
+#ifdef PURE_BORROW_SLOW_SCOPES
 sharing' v k = DataFlow.do
   srunBO DataFlow.do
     (v, lend) <- reborrow v
     share v & \(Ur v) -> Control.do
       k v Control.<&> \v -> (,) Control.<$> v Control.<*> upcast (reclaim' lend)
+#else
+sharing' = unsafeBorrowScope'
+#endif
 
 {- | Executes an operation on 'Mut'able borrow in sub lifetime.
 You may need @-XImpredicativeTypes@ extension to use this function.
@@ -238,11 +246,15 @@ reborrowing' ::
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') (After β r)) %1 ->
   BO α' (r, Mut α a)
 {-# INLINE reborrowing' #-}
+#ifdef PURE_BORROW_SLOW_SCOPES
 reborrowing' v k = srunBO DataFlow.do
   (v, lend) <- reborrow v
   Control.do
     v <- k v
     Control.pure $ (,) Control.<$> v Control.<*> upcast (reclaim' lend)
+#else
+reborrowing' = unsafeBorrowScope'
+#endif
 
 {- | A variant of 'reborrowing'' that returns the direct value of the operation on the reborrowed mutable borrow.
 There is also a flipped infix version '(<%~)'.
@@ -254,7 +266,11 @@ reborrowing ::
   (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
   BO α' (r, Mut α a)
 {-# INLINE reborrowing #-}
+#ifdef PURE_BORROW_SLOW_SCOPES
 reborrowing mutα k = reborrowing' mutα (\mut -> Control.pure Control.<$> k mut)
+#else
+reborrowing = unsafeBorrowScope
+#endif
 
 -- | Flipped infix version of 'reborrowing', smoewhat analgous to '(Control.<$>)' and @(<%~)@ in @lens@ package.
 (<%~) ::

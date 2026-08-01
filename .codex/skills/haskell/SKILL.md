@@ -23,6 +23,14 @@ Codex skills with the agent-agnostic repository policy in `AGENTS.md`:
 - Format changed `.hs`, `.lhs`, and `.hsig` files with the `haskell-format` skill before compiling.
 - Format changed `.cabal`, `cabal.project`, `cabal.project.local`, and `cabal.project.freeze` files with the `haskell-cabal-gild` skill before compiling.
 - Prefer `(<>)` over `(++)` for all concatenation, including lists and strings.
+- Quantify lifetime type parameters as `α`, `β`, `γ`, with primes or numeric
+  suffixes as needed; do not use prose lifetime names such as `lifetime`,
+  `scope`, or `inner`.
+- Never call `unsafePerformIO` (or `unsafeDupablePerformIO`, `unsafeThaw`,
+  `unsafeIOToST`) in a `direct…` benchmark baseline. Write the plain-`vector`
+  baseline with `modify`, which takes a `forall s. MVector s a -> ST s ()` and
+  handles thaw/freeze itself; use `STRef` for auxiliary mutable state. See the
+  benchmark section of `AGENTS.md`.
 - There is no `package.yaml`/hpack in this repository; edit `.cabal` files directly.
 
 ## Workflow

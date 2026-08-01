@@ -110,8 +110,8 @@ fromList ::
 fromList =
   GHC.noinline $
     Unsafe.toLinear \values linear ->
-      linear
-        `lseq` case measureList values of
+      linear `lseq`
+        case measureList values of
           (length_, values) ->
             Vector
               ( unsafePerformIO do

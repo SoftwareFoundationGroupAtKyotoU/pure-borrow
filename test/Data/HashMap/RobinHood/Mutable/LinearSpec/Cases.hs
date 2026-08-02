@@ -75,29 +75,39 @@ data Case3Result = Case3Result
   deriving (Show, NonLinear.Eq, NonLinear.Ord)
 
 -- | Interleave lookups with the bulk mutations of 'case2'.
+
+{- NOTE: written with @case@ rather than as @DataFlow.do@, unlike 'case2'.
+
+Every step here binds through a pattern that mentions 'Ur', and 'Ur' is
+declared in GADT syntax, so GHC 9.10 rates such a pattern refutable in a @do@
+statement and demands a `fail` that "Control.Syntax.DataFlow" does not
+provide. GHC 9.12 accepts the same code. A @case@ alternative carries no such
+rule, so this compiles on every supported compiler; 'case2' can keep its @do@
+because it only ever binds plain variables.
+-}
 case3 :: HashMap String Int %1 -> Ur Case3Result
-case3 hm = DataFlow.do
-  (Ur iniOneReside, hm) <- HM.insert "1" 919 hm
-  let iniOneResideExpected = Nothing
-  (Ur oneBeforeBulkInsert, hm) <- HM.lookup "1" hm
-  let oneBeforeBulkInsertExpected = Just 919
-  hm <- HM.insertMany [(show i, i) | i <- [1 .. 128]] hm
-  (Ur oneAfterBulkInsert, hm) <- HM.lookup "1" hm
-  let oneAfterBulkInsertExpected = Just 1
-  (Ur sixteenAfterBulkInsert, hm) <- HM.lookup "16" hm
-  let sixteenAfterBulkInsertExpected = Just 16
-  hm <-
-    foldl'
-      (\hm i -> move i & \(Ur i) -> uncurry lseq (HM.delete (show i) hm))
-      hm
-      [16 .. 256 :: Int]
-  (Ur sixteenAfterBulkDelete, hm) <- HM.lookup "16" hm
-  let sixteenAfterBulkDeleteExpected = Nothing
-  hm <- HM.insertMany [(show i, i) | i <- [129 .. 256]] hm
-  (Ur poppedSixteen, hm) <- HM.insert "16" 9181 hm
-  let poppedSixteenExpected = Nothing
-  (Ur finalSixteen, hm) <- HM.lookup "16" hm
-  let finalSixteenExpected = Just 9181
-  Ur finalResult <- Map.fromList `Ur.lift` HM.toList hm
-  let expectedResult = Map.fromList $ [(show i, i) | i <- [2 .. 15] <> [129 .. 256]] <> [("1", 1), ("16", 9181)]
-  Ur Case3Result {..}
+case3 hm = case HM.insert "1" 919 hm of
+  (Ur iniOneReside, hm) -> case HM.lookup "1" hm of
+    (Ur oneBeforeBulkInsert, hm) -> case HM.insertMany [(show i, i) | i <- [1 .. 128]] hm of
+      hm -> case HM.lookup "1" hm of
+        (Ur oneAfterBulkInsert, hm) -> case HM.lookup "16" hm of
+          (Ur sixteenAfterBulkInsert, hm) ->
+            case foldl'
+              (\hm i -> move i & \(Ur i) -> uncurry lseq (HM.delete (show i) hm))
+              hm
+              [16 .. 256 :: Int] of
+              hm -> case HM.lookup "16" hm of
+                (Ur sixteenAfterBulkDelete, hm) -> case HM.insertMany [(show i, i) | i <- [129 .. 256]] hm of
+                  hm -> case HM.insert "16" 9181 hm of
+                    (Ur poppedSixteen, hm) -> case HM.lookup "16" hm of
+                      (Ur finalSixteen, hm) -> case Map.fromList `Ur.lift` HM.toList hm of
+                        Ur finalResult ->
+                          let iniOneResideExpected = Nothing
+                              oneBeforeBulkInsertExpected = Just 919
+                              oneAfterBulkInsertExpected = Just 1
+                              sixteenAfterBulkInsertExpected = Just 16
+                              sixteenAfterBulkDeleteExpected = Nothing
+                              poppedSixteenExpected = Nothing
+                              finalSixteenExpected = Just 9181
+                              expectedResult = Map.fromList $ [(show i, i) | i <- [2 .. 15] <> [129 .. 256]] <> [("1", 1), ("16", 9181)]
+                           in Ur Case3Result {..}

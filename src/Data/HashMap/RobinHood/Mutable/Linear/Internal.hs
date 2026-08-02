@@ -3,7 +3,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -323,13 +322,13 @@ alter f k hm =
       case f Nothing of
         Nothing -> hm
         Just !v -> probeForInsert k v st hm
-    (# Found loc, hm #) ->
-      case f (Just loc.val) of
+    (# Found loc@Location {foundAt, slotFp, slotDIB, val}, hm #) ->
+      case f (Just val) of
         Nothing -> deleteFrom loc hm
         (Just !v) ->
           -- Present: the slot keeps its fingerprint and DIB.
           hm & \(HashMap size capa maxDIB slots) -> DataFlow.do
-            slots <- unsafeSetSlot loc.foundAt (Occupied loc.slotFp loc.slotDIB k v) slots
+            slots <- unsafeSetSlot foundAt (Occupied slotFp slotDIB k v) slots
             HashMap size capa maxDIB slots
 
 -- | \(O(1)\). The number of live entries.
@@ -370,13 +369,13 @@ alterF f k hm =
       f Nothing Control.<&> \case
         Ur Nothing -> hm
         Ur (Just !v) -> probeForInsert k v st hm
-    (# Found loc, hm #) ->
-      f (Just loc.val) Control.<&> \case
+    (# Found loc@Location {foundAt, slotFp, slotDIB, val}, hm #) ->
+      f (Just val) Control.<&> \case
         Ur Nothing -> deleteFrom loc hm
         Ur (Just !v) ->
           -- Present: the slot keeps its fingerprint and DIB.
           hm & \(HashMap size capa maxDIB slots) -> DataFlow.do
-            slots <- unsafeSetSlot loc.foundAt (Occupied loc.slotFp loc.slotDIB k v) slots
+            slots <- unsafeSetSlot foundAt (Occupied slotFp slotDIB k v) slots
             HashMap size capa maxDIB slots
 
 {- | \(O(1)\) amortized. Look a key up, and on a miss suspend the probe.
@@ -391,7 +390,7 @@ lookupForInsert ::
   (Ur (Either v (InsertPlan k)), HashMap k v)
 {-# INLINE lookupForInsert #-}
 lookupForInsert k hm = case probeKeyForAlter k hm of
-  (# Found loc, hm #) -> (Ur (Left loc.val), hm)
+  (# Found Location {val}, hm #) -> (Ur (Left val), hm)
   (# NotFound ProbeSuspended {..}, hm #) ->
     ( Ur
         ( Right
@@ -620,7 +619,7 @@ lookup :: (Hashable k) => k -> HashMap k v %1 -> (Ur (Maybe v), HashMap k v)
 lookup k hm =
   case probeKeyForAlter k hm of
     (# NotFound _, hm #) -> (Ur Nothing, hm)
-    (# Found !loc, hm #) -> (Ur (Just loc.val), hm)
+    (# Found Location {val}, hm #) -> (Ur (Just val), hm)
 
 -- | \(O(1)\) amortized. Whether a key is present.
 member :: (Hashable k) => k -> HashMap k v %1 -> (Ur Bool, HashMap k v)
@@ -703,7 +702,7 @@ probeKeyForAlter k (HashMap size capa maxDIB slots) =
                 }
             , HashMap size capa maxDIB slots
           #)
-      | dib NonLinear.> maxDIB.getMax =
+      | dib NonLinear.> getMax maxDIB =
           -- Past the largest DIB in the table: no key can live any further out.
           unsafeGetSlot idx slots & \(Ur slot, slots) ->
             let endType = case slot of

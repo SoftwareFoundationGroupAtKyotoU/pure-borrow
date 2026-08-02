@@ -45,6 +45,7 @@ module PureBorrow.Inspection.Sublifetime (
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.Pure.BO.Unsafe (reviveAlias)
 import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (EndToken (..))
 import Data.Ref.Linear (Ref)
 import Data.Ref.Linear.Borrow qualified as Ref
@@ -52,6 +53,7 @@ import Prelude.Linear
 import PureBorrow.Inspection.Flags (expectFailIfBecause, isSlowAPI)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Inspection
+import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
 
 {- | 'srunBO' at a concrete carrier.
@@ -124,15 +126,21 @@ reborrowingValueRefAt ref =
     )
     Control.<&> \(old, mut) -> mut `lseq` old
 
-{- | The specification 'reborrowingValueRefAt' must meet: 'bumpRef' on the caller's own borrow, with no sublifetime anywhere.
+{- | The specification 'reborrowingValueRefAt' must meet: 'bumpRef' on the caller's own borrow, plus the one 'reviveAlias' through which the delimiter restores that borrow.
 
-Note the signature — no rank-2 argument and no @/\\@ — so an equality says the reborrow left no residue at all, not merely that it allocated no token.
+Note the signature — no rank-2 argument and no @/\\@ — so an equality says the reborrow left no sublifetime residue at all, not merely that it allocated no token.
+The 'reviveAlias' is not residue of the sublifetime; it is the delimiter's entire remaining cost, and it is load-bearing rather than incidental — see Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Pure.BO.Internal".
+Naming it here is what keeps these equalities honest: an earlier revision of this module asserted equality with the bare body, which said the delimiter compiled to nothing at all, and that was exactly the property that made it unsound.
+
+The specification has to reach for 'Unsafe.toLinear' because it mentions the caller's borrow twice, once to bump through and once to restore, which is precisely what the delimiter does with 'Unsafe.toLinear2'.
 -}
 bumpRefAt :: Mut α (Ref Int) %1 -> BO α Int
 {-# NOINLINE bumpRefAt #-}
-bumpRefAt ref = Control.do
+bumpRefAt = Unsafe.toLinear \ref -> Control.do
   (old, spent) <- bumpRef ref
-  spent `lseq` Control.pure old
+  spent `lseq` Control.do
+    restored <- reviveAlias ref
+    Control.pure (restored `lseq` old)
 
 {- | The specification 'reborrowingRefAt' must meet: 'bumpRefAt', plus the application that hands the runtime-erased 'EndToken' to the 'After' the continuation returned.
 
@@ -140,9 +148,11 @@ That application is the one thing a delimiter taking an @'After' β r@ cannot dr
 -}
 bumpRefAfterAt :: forall α. Mut α (Ref Int) %1 -> BO α Int
 {-# NOINLINE bumpRefAfterAt #-}
-bumpRefAfterAt ref = Control.do
+bumpRefAfterAt = Unsafe.toLinear \ref -> Control.do
   (old, spent) <- bumpRef ref
-  spent `lseq` Control.pure (withEnd (UnsafeEnd @α) (After old))
+  spent `lseq` Control.do
+    restored <- reviveAlias ref
+    Control.pure (restored `lseq` withEnd (UnsafeEnd @α) (After old))
 
 -- | The other 'srunBO' client, on the shared side, with the restored borrow dropped as above.
 sharingRefAt :: Mut α (Ref Int) %1 -> BO α Int
@@ -162,19 +172,25 @@ sharingValueRefAt :: Mut α (Ref Int) %1 -> BO α Int
 sharingValueRefAt ref =
   sharing ref (\shared -> Ref.copyRef shared) Control.<&> \(seen, mut) -> mut `lseq` seen
 
-{- | The specification 'sharingValueRefAt' must meet: read through the caller's own borrow, with no sublifetime anywhere.
+{- | The specification 'sharingValueRefAt' must meet: read through the caller's own borrow, plus the restoring 'reviveAlias', with no sublifetime anywhere.
 
 'Data.Ref.Linear.Borrow.copyRef' reads through a borrow of either kind, so the 'Mut' serves here where the probes pass a 'Share' narrowed to the sublifetime.
+The 'Unsafe.toLinear' is there for the same reason as in 'bumpRefAt'.
 -}
 copyRefAt :: Mut α (Ref Int) %1 -> BO α Int
 {-# NOINLINE copyRefAt #-}
-copyRefAt ref = Ref.copyRef ref
+copyRefAt = Unsafe.toLinear \ref -> Control.do
+  seen <- Ref.copyRef ref
+  restored <- reviveAlias ref
+  Control.pure (restored `lseq` seen)
 
 -- | The specification 'sharingRefAt' must meet: 'copyRefAt' plus the end-token application, as 'bumpRefAfterAt' is to 'bumpRefAt'.
 copyRefAfterAt :: forall α. Mut α (Ref Int) %1 -> BO α Int
 {-# NOINLINE copyRefAfterAt #-}
-copyRefAfterAt ref =
-  Ref.copyRef ref Control.<&> \seen -> withEnd (UnsafeEnd @α) (After seen)
+copyRefAfterAt = Unsafe.toLinear \ref -> Control.do
+  seen <- Ref.copyRef ref
+  restored <- reviveAlias ref
+  Control.pure (restored `lseq` withEnd (UnsafeEnd @α) (After seen))
 
 {- | Every obligation below describes the statically erased delimiters, so under @+slow@ — where the sublifetime is a genuine runtime token by construction — each one is expected to fail rather than to be skipped.
 That inversion is what keeps them honest: an obligation that also holds of the allocating implementation is no evidence about this one, and turns the group red under @+slow@ until it is either sharpened or dropped.
@@ -182,6 +198,9 @@ That inversion is what keeps them honest: an obligation that also holds of the a
 Two plausible-looking obligations were dropped for exactly that reason.
 @'hasNoType' \'srunBOAt ''SomeNow@ holds under both, because 'MkSomeNow' wraps a nullary 'Now' and case-of-known-constructor removes the box either way.
 @'hasNoType' \'reborrowingRefAt ''Now@ likewise: through 'reborrowing'' the token itself is always erased, and what the allocating version actually leaves behind is the 'Linearly' that produced it.
+
+The four borrow-scope equalities now pin the 'Control.Monad.Borrow.Pure.BO.Unsafe.reviveAlias' barrier as well, because their specifications name it.
+That matters beyond bookkeeping: the runtime regressions in "Control.Monad.Borrow.Pure.BOSpec" observe a wrong /answer/, so on a compiler that stopped performing the merge they would go vacuously green rather than red, and these equalities would be the only thing left that notices the barrier being dropped.
 -}
 tests :: TestTree
 tests =

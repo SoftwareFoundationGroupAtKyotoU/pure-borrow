@@ -282,6 +282,55 @@ unsafeCastAlias :: Alias ak a %1 -> Alias ak' a
 {-# INLINE unsafeCastAlias #-}
 unsafeCastAlias = coerceLin
 
+{-
+Note [Restoring a borrow must break its Core identity]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Not every read of a borrowed resource is threaded through this monad's state token.
+A growable vector keeps its length and its backing buffer behind a `Data.Ref.Linear.Ref`, and the reads that only project that header -- `size`, `capacity`, `getContents` and their neighbours -- go through `Data.Ref.Linear.unsafeReadRef`, an @INLINE@ pass-through to the `GHC.Magic.noinline`-wrapped `Data.Ref.Linear.Unlifted.unsafeReadRef#`, which opens its own `runRW#`.
+To GHC such a read is a plain function of the borrow.
+Two of them on the same borrow /variable/ are therefore the same Core expression, and common-subexpression elimination is entitled to serve the second from the first.
+
+What keeps that honest is that every operation which replaces the header writes through `Data.Ref.Linear.Unlifted.unsafeWriteRef#`, which is @NOINLINE@, and hands back the reference that write returned.
+The optimizer cannot see through it, so a read after a growth scrutinises a different expression than a read before it, and the two do not merge.
+The whole ordering guarantee for header traffic rests on that one data dependency.
+
+A delimiter that returns the borrow its caller passed in throws the dependency away.
+The restored borrow is then the caller's own binder, so a read after the scope is syntactically the read before it, and CSE deletes the later one -- serving a stale length and a stale buffer across every growth the scope performed.
+Writing through the stale buffer at an index the fresh length admits runs off the end of the allocation, which is how this last surfaced downstream: a SIGSEGV inside the collector, or silently wrong data under a nursery large enough that the damage is never traversed.
+
+So a delimiter restores its borrow through `reviveAlias`, and both of its properties are load-bearing.
+
+Do not weaken the @OPAQUE@ to @NOINLINE@.
+Measured on GHC 9.12.4 at -O2 a @NOINLINE@ version is an equally good barrier today, and for a knowable reason: the argument's demand comes out lazy and the result is already an unboxed tuple, so no worker/wrapper split occurs and no @$w@ worker is generated.
+But that is a property of one demand signature rather than a guarantee, and @OPAQUE@ is the one pragma GHC documents as suppressing inlining, worker/wrapper, specialisation and rules together.
+The barrier is the whole of the memory safety of these delimiters, so it should rest on a contract rather than on a coincidence.
+
+It lives in `BO` rather than being a pure function because a pure barrier depends on nothing the scope produced, so nothing would stop it -- or the reads that consume its result -- from floating above the scope body.
+Consuming the state token pins the restoration after the scope's effects.
+A pure @OPAQUE@ barrier also measures a few percent worse in a tight loop, but that is a side benefit and not the reason.
+
+The cost is one out-of-line call per scope exit, around 0.7ns on aarch64-darwin with GHC 9.12.4, plus whatever it costs that a loop-carried borrow can no longer be unboxed past the barrier: measured together at 14-20% of a tight L1-resident loop that does nothing but the scope, and unmeasurable in any benchmark this repository ships.
+No closure is allocated and the recursion remains a self tail call; what the call adds is a non-tail continuation and, in a loop, a boxed rather than unboxed loop-carried borrow.
+
+This is a statement about the delimiters, not about `Ref` in general.
+Threading the header reads through the state token, so that they are ordered like every other mutable operation and this whole hazard disappears, would be the durable fix; it is an API break and is not attempted here.
+The barrier is also one-directional -- it stops a post-scope read being served from a pre-scope one, but nothing stops a pre-scope read from sinking below the scope -- so that deferral should not drift indefinitely.
+-}
+
+{- | Return a borrow to the caller of a delimiter, through a barrier the optimizer cannot see through.
+
+Semantically this is `Control.pure` at 'Alias', and it carries no proof obligation of its own: its argument and result types are identical, so it cannot widen a 'Share' into a 'Mut', relabel a 'Lend', or lengthen a lifetime, and the `BO` index it returns at is as free as `Control.pure`'s already is.
+That is also why it comes with no @TypingCases@ entry: there is no program that should stop typechecking because of it.
+
+What it does carry is an obligation on /callers/.
+Any delimiter that runs a continuation and then hands the caller back the borrow it was given must restore it through this.
+Returning the caller's own occurrence instead lets common-subexpression elimination serve a post-scope read of the resource from a pre-scope one, across every write the scope performed.
+See Note [Restoring a borrow must break its Core identity] for why, and for why the @OPAQUE@ and the state token are both load-bearing.
+-}
+reviveAlias :: Alias ak a %1 -> BO α (Alias ak a)
+{-# OPAQUE reviveAlias #-}
+reviveAlias a = BO \s -> (# s, a #)
+
 type role Alias nominal representational
 
 -- | Alias kind.
@@ -419,6 +468,9 @@ function while the continuation runs. The continuation result is consumed
 before the outer borrow is restored. The continuation and state token are each
 consumed exactly once. Since the lifetime indices have runtime-erased
 representations, no runtime lifetime token or lender is required.
+
+The borrow is handed back through 'reviveAlias' rather than returned directly;
+see Note [Restoring a borrow must break its Core identity] there.
 -}
 unsafeBorrowScope_ ::
   forall bk α α' a r.
@@ -428,9 +480,12 @@ unsafeBorrowScope_ ::
   BO α' (Mut α a)
 {-# INLINE unsafeBorrowScope_ #-}
 unsafeBorrowScope_ = Unsafe.toLinear2 \mut k ->
-  unsafeSrunBO_ $
-    k (unsafeCastAlias mut) Control.<&> \r ->
-      consume r `lseq` mut
+  unsafeSrunBO_ Control.do
+    r <- k (unsafeCastAlias mut)
+    -- @consume r@ stays in the returned value rather than in the action, so it runs when the caller forces the restored borrow.
+    -- Sequencing it at scope exit instead would make this delimiter stricter than the one @+slow@ restores, and the two are required to stay observationally equivalent.
+    restored <- reviveAlias mut
+    Control.pure (consume r `lseq` restored)
 
 {- |
 Run a continuation with a representation-identical borrow narrowed to a fresh
@@ -449,9 +504,9 @@ unsafeBorrowScope ::
   BO α' (r, Mut α a)
 {-# INLINE unsafeBorrowScope #-}
 unsafeBorrowScope = Unsafe.toLinear2 \mut k ->
-  unsafeSrunBO_ $
-    k (unsafeCastAlias mut) Control.<&> \r ->
-      (r, mut)
+  unsafeSrunBO_ Control.do
+    r <- k (unsafeCastAlias mut)
+    (r,) Control.<$> reviveAlias mut
 
 {- |
 The finalizing variant of 'unsafeBorrowScope': the continuation returns its
@@ -471,9 +526,9 @@ unsafeBorrowScope' ::
   BO α' (r, Mut α a)
 {-# INLINE unsafeBorrowScope' #-}
 unsafeBorrowScope' = Unsafe.toLinear2 \mut k ->
-  unsafeSrunBO_ $
-    k (unsafeCastAlias mut) Control.<&> \after ->
-      (withEnd UnsafeEnd after, mut)
+  unsafeSrunBO_ Control.do
+    after <- k (unsafeCastAlias mut)
+    (withEnd UnsafeEnd after,) Control.<$> reviveAlias mut
 
 type BorrowMultiplicity :: BorrowKind -> Multiplicity
 type family BorrowMultiplicity bk where

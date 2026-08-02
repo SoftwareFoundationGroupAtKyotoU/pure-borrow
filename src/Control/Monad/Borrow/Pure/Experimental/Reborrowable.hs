@@ -20,6 +20,7 @@ module Control.Monad.Borrow.Pure.Experimental.Reborrowable (
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.Pure.BO.Unsafe (reviveAlias)
 import Data.Kind (Constraint, Type)
 import Prelude.Linear
 
@@ -50,9 +51,13 @@ instance Reborrowable (Share α) where
   type LifetimeOf (Share α) = α
   type WithLifetime (Share α) β = Share β
   {-# SPECIALIZE instance Reborrowable (Share α) #-}
+
+  -- 'move' for a shared borrow is the identity, so @sh@ is the caller's own occurrence and returning it directly would carry the defect in Note [Restoring a borrow must break its Core identity].
+  -- Hand it back through 'reviveAlias' as the scalar delimiters do.
   locally' shr k = Control.do
     let %1 !(Ur sh) = move shr
-    (,sh) Control.<$> srunBO (k (upcast sh))
+    r <- srunBO (k (upcast sh))
+    (r,) Control.<$> reviveAlias sh
   {-# INLINE locally' #-}
 
 locally ::

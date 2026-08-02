@@ -414,15 +414,16 @@ Hence, if you see @'Borrow' bk α a@ in a function, it can be either 'Mut' or 'S
 == Performance-sensitive loops
 
 Choose the loop structure that performs the least algorithmic work first.
-The sublifetime that a 'sharing' or a 'reborrowing' delimits is erased at compile time, so with the surrounding functions properly inlined one of them per iteration costs nothing beyond the borrow it hands to the body.
-For an otherwise read-only loop, however, prefer sharing once outside the loop and shortening that shared borrow inside each iteration with 'subShare':
+The sublifetime that a 'sharing' or a 'reborrowing' delimits is erased at compile time: no lifetime token is allocated, no lender is created, and no @After@ plumbing survives.
+What does remain is one opaque call at each scope exit, through which the borrow is handed back, and it allocates nothing.
+For an otherwise read-only loop, prefer sharing once outside the loop and shortening that shared borrow inside each iteration with 'subShare':
 
 @
 'share' resource \& \('Ur' shared) ->
   ... 'subShare' shared ...
 @
 
-That way the body never has to give the borrow back, so no @(r, 'Mut' α a)@ pair is built and taken apart on every iteration.
+That way the body never has to give the borrow back, so neither the @(r, 'Mut' α a)@ pair nor the restoring call is paid on every iteration.
 Functions containing hot loops over operations that return
 @(Ur a, container)@ should themselves be @INLINE@, @INLINABLE@, or specialised.
 That lets GHC eliminate the transient tuple and 'Ur' constructors; without

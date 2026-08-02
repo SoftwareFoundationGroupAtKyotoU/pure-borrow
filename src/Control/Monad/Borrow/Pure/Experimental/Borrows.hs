@@ -111,17 +111,31 @@ instance Reborrowable (Muts α) where
 reborrows :: forall β α a. (α >= β) => Muts α a %1 -> (Muts β a, Lend β (Muts α a))
 reborrows = Unsafe.toLinear \v -> (unsafeCoerce v, unsafeCoerce v)
 
+{- | Return a bundle of borrows to the caller of a delimiter, through a barrier the optimizer cannot see through.
+
+This is the plural counterpart of 'Control.Monad.Borrow.Pure.BO.Unsafe.reviveAlias', and it exists for the same reason.
+See Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Pure.BO.Internal".
+
+'reborrowings'' would otherwise restore the caller's own occurrence, since 'reborrows' hands the same value out as both borrow and lender and 'reclaim' is a newtype unwrap.
+It happens not to misbehave today, because 'reclaim'' is reached through 'withEnd', whose @withDict@ desugars through the wired-in @nospec@ and survives every Core-to-Core pass — but that is a coincidence of one desugaring, and it is exactly the kind of accident the Note argues a delimiter must not rest on.
+-}
+reviveAliases :: Aliases k xs %1 -> BO α (Aliases k xs)
+{-# OPAQUE reviveAliases #-}
+reviveAliases as = Control.pure as
+
 -- | A plural form of 'reborrowing''.
 reborrowings' ::
   Muts α a %1 ->
   (forall β. Muts (β /\ α) a %1 -> BO (β /\ α') (After β r)) %1 ->
   BO α' (r, Muts α a)
 {-# INLINE reborrowings' #-}
-reborrowings' v k = srunBO DataFlow.do
-  (v, lend) <- reborrows v
-  Control.do
-    v <- k v
-    Control.pure $ (,) Control.<$> v Control.<*> upcast (reclaim' lend)
+reborrowings' v k = Control.do
+  (r, restored) <- srunBO DataFlow.do
+    (v, lend) <- reborrows v
+    Control.do
+      v <- k v
+      Control.pure $ (,) Control.<$> v Control.<*> upcast (reclaim' lend)
+  (r,) Control.<$> reviveAliases restored
 
 reborrowings ::
   Muts α a %1 ->

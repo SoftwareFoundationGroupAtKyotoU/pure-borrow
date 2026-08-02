@@ -98,6 +98,7 @@ library
     atomic-primops,
     containers,
     deepseq,
+    hashable,
     hybrid-vectors,
     integer-logarithms,
     linear-generics,
@@ -136,6 +137,10 @@ library
     Data.Coerce.Directed.Internal
     Data.Coerce.Directed.Unsafe
     Data.Comonad.Linear
+    Data.HashMap.RobinHood.Mutable.Linear
+    Data.HashMap.RobinHood.Mutable.Linear.Borrow
+    Data.HashMap.RobinHood.Mutable.Linear.Borrow.Internal
+    Data.HashMap.RobinHood.Mutable.Linear.Internal
     Data.Record.Linear.Borrow.Experimental.PatternMatch
     Data.Record.Linear.Borrow.Experimental.Split
     Data.Ref.Linear
@@ -183,6 +188,9 @@ test-suite pure-borrow-test
     Control.Monad.Borrow.Pure.Experimental.BorrowsSpec
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
+    Data.HashMap.RobinHood.Mutable.Linear.BorrowSpec
+    Data.HashMap.RobinHood.Mutable.LinearSpec
+    Data.HashMap.RobinHood.Mutable.LinearSpec.Cases
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted.TypingCases
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.UnrestrictedSpec
     Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity.TypingCases
@@ -208,14 +216,17 @@ test-suite pure-borrow-test
     tasty-discover:tasty-discover >=5.0.1
 
   build-depends:
+    containers,
     deepseq,
     falsify,
+    hashable,
     pure-borrow,
     pure-borrow:test-bench-common,
     random,
     tasty,
     tasty-expected-failure,
     tasty-hunit,
+    unordered-containers,
     vector,
 
 -- Keep Core inspections in a separate component: in the larger main test
@@ -336,6 +347,7 @@ benchmark pure-borrow-bench
   other-modules:
     PureBorrow.Bench.CopyAt
     PureBorrow.Bench.Growable
+    PureBorrow.Bench.HashMap
     PureBorrow.Bench.Ingredients
     PureBorrow.Bench.MultiStoreScan
     PureBorrow.Bench.Unboxed
@@ -352,10 +364,13 @@ benchmark pure-borrow-bench
 
   build-depends:
     base >=4.7 && <5,
+    deepseq,
+    hashable,
     pure-borrow,
     pure-borrow:test-bench-common,
     tasty,
     tasty-bench,
+    unordered-containers,
     vector,
 
   default-language: GHC2021

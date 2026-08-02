@@ -15,6 +15,18 @@ coerceLin :: (Coercible a b) => a %1 -> b
 {-# INLINE coerceLin #-}
 coerceLin = Unsafe.toLinear Data.Coerce.coerce
 
+{- | Drop a linearly bound value without consuming it.
+
+This is for an /alias/ of a resource that some other owner is still
+responsible for: consuming it would claim an ownership this scope does not
+have, and holding it is impossible where the surrounding function has to
+return. Every use is a proof obligation that the value really is an alias,
+and that dropping it releases nothing -- otherwise it is exactly a leak.
+-}
+unsafeLeak :: a %1 -> ()
+{-# INLINE unsafeLeak #-}
+unsafeLeak = Unsafe.toLinear (\ !_ -> ())
+
 lseq# :: forall a (s :: UnliftedType). (Consumable a) => a %1 -> s %1 -> s
 {-# INLINE lseq# #-}
 lseq# a = case consume a of

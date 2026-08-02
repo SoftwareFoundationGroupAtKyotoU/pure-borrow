@@ -843,6 +843,16 @@ getContents =
           UnsafeAlias
             (Fixed.Internal.unsafeFromMutableSlice 0 logicalSize buffer)
 
+{-
+Note [Uniformly linear content callback]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Ideally the callback arrow would use @BorrowMultiplicity bk@, making a
+shared callback unrestricted. GHC 9.12 rejects that signature because type
+families cannot witness multiplicity equality (GHC #19517). Keep one linear
+callback occurrence for both borrow kinds until that limitation is removed;
+shared callers can use 'move' to recover unrestricted use.
+-}
+
 {- | Borrow the fixed initialized prefix in a rank-2 no-growth scope.
 
 The callback and returned growable borrow preserve the input borrow kind. The
@@ -851,13 +861,8 @@ content when unrestricted use is desired. For a mutable input, the growable
 borrow is restored only after the callback result is produced and the fixed
 view has ended.
 
-Note [Uniformly linear content callback]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Ideally the callback arrow would use @BorrowMultiplicity bk@, making a
-shared callback unrestricted. GHC 9.12 rejects that signature because type
-families cannot witness multiplicity equality (GHC #19517). Keep one linear
-callback occurrence for both borrow kinds until that limitation is removed;
-shared callers can use 'move' to recover unrestricted use.
+See Note [Uniformly linear content callback] for why the callback stays linear
+for a shared borrow too.
 -}
 withContent ::
   Borrow bk α (GrowableVector a) %1 ->
@@ -869,9 +874,10 @@ withContent ::
 {-# INLINE withContent #-}
 withContent =
   Unsafe.toLinear2 \vector action ->
-    unsafeSrunBO_ $
-      action (getContents (Unsafe.coerce vector))
-        Control.<&> \result -> (result, vector)
+    -- The growable borrow is handed back through `reviveAlias`, as the scalar delimiters do: see Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Pure.BO.Internal".
+    unsafeSrunBO_ Control.do
+      result <- action (getContents (Unsafe.coerce vector))
+      (result,) Control.<$> reviveAlias vector
 
 -- | A result-discarding variant of 'withContent'.
 withContent_ ::

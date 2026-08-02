@@ -248,6 +248,11 @@ Includes a demonstrative in-place parallel `qsort` (budgeted `parBO`; the heavie
 - **One sentence per line.** Never fold a line in the middle of a sentence — insert a newline only at a sentence boundary, and let the editor soft-wrap whatever is long.
   This governs every kind of prose you write: Markdown files, Haddock and ordinary source comments, and commit-message bodies.
   It keeps diffs sentence-scoped, so rewording one sentence never reflows the paragraph around it.
+- **`Note [...]` blocks are dev notes, never Haddock.** The convention is GHC's: a note is a named, cross-referenced explanation addressed to whoever maintains the code, and it is cited from elsewhere as ``See Note [Its name]``.
+  Write one in a plain block comment — `{- ... -}`, not `{- | ... -}` and not `-- |` — with the name on its own line underlined by `~`, and place it at the top level near what it explains rather than attached to a binding.
+  It is not part of the published API: a note explains why the implementation is the way it is, whereas Haddock tells a user what a function does and what they must guarantee.
+  Folding one into a Haddock comment publishes internal reasoning on Hackage and makes the note impossible to cite from a second site, since a Haddock comment belongs to exactly one binding.
+  Keep the user-facing obligation in the Haddock and cite the note from there.
 - **Lifetime parameter names:** quantify lifetime parameters as `α`, `β`, `γ`, using primes or numeric suffixes when more are needed.
   Do not use prose names such as `lifetime`, `scope`, or `inner` for lifetime type variables.
 - **Multiplicity determines ownership:** data bound nonlinearly (through an ordinary arrow / `%Many`) is GC-owned.

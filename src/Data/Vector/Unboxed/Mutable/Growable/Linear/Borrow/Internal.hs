@@ -777,9 +777,10 @@ withContent ::
 {-# INLINE withContent #-}
 withContent =
   Unsafe.toLinear2 \vector action ->
-    unsafeSrunBO_ $
-      action (getContents (Unsafe.coerce vector))
-        Control.<&> \result -> (result, vector)
+    -- The growable borrow is handed back through `reviveAlias`, as the scalar delimiters do: see Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Pure.BO.Internal".
+    unsafeSrunBO_ Control.do
+      result <- action (getContents (Unsafe.coerce vector))
+      (result,) Control.<$> reviveAlias vector
 
 -- | A result-discarding variant of 'withContent'.
 withContent_ ::

@@ -126,6 +126,64 @@ The same applies to `unsafeThaw`, `unsafeDupablePerformIO` and `runST . unsafeIO
 
 This prohibition is about *baselines*, not about the library: trusted `unsafe*` primitives inside `src/` remain a proof obligation as described above, and `unsafePerformIO` is still fine in a test that deliberately observes an effect (for example the `IORef`-based copy/move trackers in the vector specs).
 
+## Adversarial subagent review — mandatory for substantial changes
+
+The changes this repository invites can be wrong in ways that compile cleanly, pass every suite, and still break the guarantee the library exists to provide.
+A green build says nothing about whether a new API lets two live `Mut` borrows overlap, or whether an erased scope drops a `Lend` on an exception path.
+So for the changes listed below, self-review is not sufficient: delegate the review to **subagents that did not write the change**, and instruct each of them to *refute* the work rather than to confirm it.
+
+### When it applies
+
+Any one of these triggers the requirement:
+
+- a substantial change to an existing API — its signature, multiplicities, constraints, strictness, or documented semantics;
+- a new API — a newly exposed function, class, instance, or module, including in `Experimental.*`;
+- a performance optimisation of anything under `src/` or `internal-src/`;
+- any new use of a `.Unsafe` escape hatch or of `unsafePerformIO`, and any change to the lifetime algebra, the borrow scopes, `runBO`/`srunBO`, or the divide-and-conquer scheduler — however small the diff looks.
+
+It does not apply to documentation, comments, tests, formatting, dependency bumps, or mechanical renames that leave semantics untouched.
+
+### Review twice
+
+Once on the **plan**, before the implementation exists.
+A design that admits aliasing is far cheaper to discard than to unpick after it has been written, benchmarked, and threaded through call sites.
+
+Once on the **implementation**, after `cabal build all` and `cabal test` are green and *before* you commit.
+Reviewing a red tree wastes the reviewers on failures you already know about.
+
+### One perspective per subagent, at least three
+
+Do not hand a single reviewer the whole checklist; a reviewer asked for everything checks nothing deeply.
+Spawn one subagent per lens, each with fresh context, and give it the actual material to work from — the plan text or `git diff`, the paths of the modules it touches, and this file.
+Add a fourth reviewer for concurrency whenever the change touches `parBO`, the scheduler, `ChaseLev`, or anything else that can be observed from more than one thread.
+
+**Linear-ownership correctness — leak-freedom and no mutable aliasing.**
+Every linearly bound resource is consumed exactly once, on every path including the exception path; `consume` is not being used to paper over a value that should have been reclaimed.
+No two live `Mut` borrows can reach overlapping memory: sub-borrows from `splitAt` and the `split*` machinery are genuinely disjoint, and no `Share` outlives the exclusivity it was carved from.
+`Lend` is neither duplicated nor dropped, and `reclaim` cannot run before its lifetime ends.
+The multiplicity conventions in *Conventions & workflow* hold: `Copyable` versus `Movable` at the right boundary, `move` for every entry of an element-owning container, no shallow capability instance on a polymorphic container.
+Any binding whose body reaches an `unsafePerformIO` is `NOINLINE`.
+
+**Soundness.**
+The reviewer's job is to try to write a *well-typed user program* that violates an invariant, not to judge whether the code reads plausibly.
+Can a lifetime escape its scope; can the new signature be instantiated at `Static` to launder a borrow; does a new `INCOHERENT` instance admit a witness the outlives relation should not have?
+Every new `unsafe*` use must come with a stated invariant and an argument for why it holds — an unstated one is a finding.
+Check that the "this must not typecheck" cases still fail to typecheck, and that a new API surface came with its own cases in `TypingCases` or `test/typing-fail/`.
+
+**Performance.**
+No claim of a speedup without measurements: the relevant suite from *Benchmarks & profiling*, run before and after, with the numbers quoted.
+The change must not regress the optimized Core that `pure-borrow-inspection` asserts — no dictionary reintroduced into a loop, no lost specialization, no new allocation or closure in a hot path, no worker/wrapper or inlining opportunity destroyed.
+When the change touches the erased scopes, A/B it against `--flags=+slow` and confirm the two remain observationally equivalent.
+
+### Handling what comes back
+
+A useful finding names a concrete failure — a program that typechecks and should not, an interleaving, a path that leaks, a benchmark number — not a vague unease.
+Tell reviewers to default to "not established" when they are uncertain rather than to wave a case through, and to say plainly which of their findings they could not substantiate.
+
+Every finding is then either fixed or rebutted in writing, in the commit body or as a source comment where the reasoning belongs.
+Never drop one silently, and never commit while a soundness or ownership finding is unresolved — for those two lenses, when the reviewer and the author disagree, the conservative reading wins until someone produces the argument that settles it.
+A performance finding may be accepted as a known cost, provided the cost is recorded.
+
 ## Architecture
 
 Everything lives under `src/`.

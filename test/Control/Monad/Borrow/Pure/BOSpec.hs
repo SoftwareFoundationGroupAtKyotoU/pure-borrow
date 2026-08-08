@@ -17,6 +17,7 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.BO qualified as BO
 import Control.Monad.Borrow.Pure.Experimental.Borrows qualified as Borrows
+import Control.Monad.Borrow.Pure.Experimental.Reborrowable qualified as Reborrowable
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Functor.Linear qualified as Data
 import Data.HashMap.RobinHood.Mutable.Linear.Borrow qualified as HashMap
@@ -327,8 +328,9 @@ entriesAcrossReborrowingHashMap count =
 
 {- | The plural delimiter, which restores a whole 'Borrows.Muts' bundle.
 
-Like the 'Growable.withContent' kernel this one passes on the broken build, because 'Borrows.reborrowings'' restores through 'reclaim'' inside an @After@ and so picks up 'withEnd'\'s @nospec@ barrier by accident.
-It is here as a guard on that accident: erasing that delimiter the way 'reborrowing'' was erased would remove it, and this kernel is what would then go red.
+This kernel was written as a guard on an accident: before the plural scopes were erased, 'Borrows.reborrowings'' restored through 'reclaim'' inside an @After@ and so picked up 'withEnd'\'s @nospec@ barrier for free, and the comment here predicted that erasing the delimiter the way 'reborrowing'' was erased would remove it and turn this kernel red.
+That erasure has since happened, and the kernel is green because the plural delimiters restore through 'Borrows.reviveAliases' rather than because anything is left of the accident.
+It is now the runtime half of the plural obligation, paired with the Core equality in @pure-borrow-inspection@ that names the barrier.
 -}
 lengthAcrossPluralReborrowing :: Int -> (Int, Int, [Int])
 {-# NOINLINE lengthAcrossPluralReborrowing #-}
@@ -348,6 +350,129 @@ lengthAcrossPluralReborrowing count =
           vector Borrows.:- Borrows.BNil ->
             Growable.size vector & \(Ur after, vector) ->
               vector `lseq` pureAfter (report before after (reclaim lend))
+
+{- | The plural delimiter over a bundle whose members are grown /unequally/.
+
+'lengthAcrossPluralReborrowing' uses a one-member bundle, which cannot tell
+apart a barrier on the spine from a barrier on each member: with one member the
+two coincide. Here the first member is grown and the second is not, and both
+are read back through the borrows the delimiter restored, so a barrier that
+only broke the spine's identity would serve a stale length for the grown member.
+-}
+lengthsAcrossUnequalPluralReborrowing :: Int -> ((Int, Int), (Int, Int))
+{-# NOINLINE lengthsAcrossUnequalPluralReborrowing #-}
+lengthsAcrossUnequalPluralReborrowing count =
+  unur $ linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    (grownLinear, keptLinear) <- dup ownerLinear
+    runBO runLinear Control.do
+      (grown, grownLend) <-
+        borrowM (Growable.fromVector (V.fromList seeded) grownLinear)
+      (kept, keptLend) <-
+        borrowM (Growable.fromVector (V.fromList seeded) keptLinear)
+      Growable.size grown & \(Ur grownBefore, grown) ->
+        Growable.size kept & \(Ur keptBefore, kept) -> Control.do
+          bundle <-
+            Borrows.reborrowings_
+              (grown Borrows.:- kept Borrows.:- Borrows.BNil)
+              \(shortGrown Borrows.:- shortKept Borrows.:- Borrows.BNil) ->
+                shortKept `lseq` (consume Data.<$> pushRange 0 count shortGrown)
+          case bundle of
+            grown Borrows.:- kept Borrows.:- Borrows.BNil ->
+              Growable.size grown & \(Ur grownAfter, grown) ->
+                Growable.size kept & \(Ur keptAfter, kept) ->
+                  grown `lseq`
+                    kept `lseq`
+                      pureAfter
+                        ( consume (reclaim grownLend) `lseq`
+                            consume (reclaim keptLend) `lseq`
+                              Ur ((grownBefore, grownAfter), (keptBefore, keptAfter))
+                        )
+
+{- | The result-returning plural delimiter.
+
+Since the plural scopes were erased, @reborrowings@, @reborrowings'@ and
+@reborrowings_@ are three independent delimiters rather than one defined
+through another, so each needs its own kernel.
+-}
+lengthAcrossPluralReborrowingValue :: Int -> (Int, Int, [Int])
+{-# NOINLINE lengthAcrossPluralReborrowingValue #-}
+lengthAcrossPluralReborrowingValue count =
+  unur $ linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
+      Growable.size vector & \(Ur before, vector) -> Control.do
+        ((), bundle) <-
+          Borrows.reborrowings
+            (vector Borrows.:- Borrows.BNil)
+            \(short Borrows.:- Borrows.BNil) ->
+              consume Data.<$> pushRange 0 count short
+        case bundle of
+          vector Borrows.:- Borrows.BNil ->
+            Growable.size vector & \(Ur after, vector) ->
+              vector `lseq` pureAfter (report before after (reclaim lend))
+
+-- | The finalizing plural delimiter, whose continuation returns its result @After@ the sublifetime.
+lengthAcrossPluralReborrowingAfter :: Int -> (Int, Int, [Int])
+{-# NOINLINE lengthAcrossPluralReborrowingAfter #-}
+lengthAcrossPluralReborrowingAfter count =
+  unur $ linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
+      Growable.size vector & \(Ur before, vector) -> Control.do
+        ((), bundle) <-
+          Borrows.reborrowings'
+            (vector Borrows.:- Borrows.BNil)
+            \(short Borrows.:- Borrows.BNil) -> Control.do
+              short <- pushRange 0 count short
+              Control.pure (Control.pure (consume short))
+        case bundle of
+          vector Borrows.:- Borrows.BNil ->
+            Growable.size vector & \(Ur after, vector) ->
+              vector `lseq` pureAfter (report before after (reclaim lend))
+
+-- | The generic delimiter at @Muts@, which dispatches to the plural implementation.
+lengthAcrossGenericLocallyPlural :: Int -> (Int, Int, [Int])
+{-# NOINLINE lengthAcrossGenericLocallyPlural #-}
+lengthAcrossGenericLocallyPlural count =
+  unur $ linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
+      Growable.size vector & \(Ur before, vector) -> Control.do
+        bundle <-
+          Reborrowable.locally_
+            (vector Borrows.:- Borrows.BNil)
+            \(short Borrows.:- Borrows.BNil) ->
+              consume Data.<$> pushRange 0 count short
+        case bundle of
+          vector Borrows.:- Borrows.BNil ->
+            Growable.size vector & \(Ur after, vector) ->
+              vector `lseq` pureAfter (report before after (reclaim lend))
+
+{- | The generic delimiter, reached through 'Reborrowable' rather than by naming 'reborrowing_'.
+
+@locally_@ at 'Mut' is now the erased scalar delimiter rather than a composition over the @After@-returning @locally'@, so it needs its own runtime coverage: a caller who writes generic code over the class must see the same ordering as one who names the combinator.
+-}
+lengthAcrossGenericLocally :: Int -> (Int, Int, [Int])
+{-# NOINLINE lengthAcrossGenericLocally #-}
+lengthAcrossGenericLocally count =
+  unur $ linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
+      Growable.size vector & \(Ur before, vector) -> Control.do
+        vector <-
+          Reborrowable.locally_ vector \short ->
+            consume Data.<$> pushRange 0 count short
+        Growable.size vector & \(Ur after, vector) ->
+          vector `lseq` pureAfter (report before after (reclaim lend))
 
 insertRange ::
   Int ->
@@ -416,7 +541,18 @@ test_scopeRestoresAUsableBorrow =
             valueAcrossReborrowingRef start @?= (start, start + 1)
         | start <- [0, 1, 41]
         ]
-    , testGroup "reborrowings (plural)" (cases lengthAcrossPluralReborrowing)
+    , testGroup "reborrowings_ (plural)" (cases lengthAcrossPluralReborrowing)
+    , testGroup "reborrowings (plural)" (cases lengthAcrossPluralReborrowingValue)
+    , testGroup "reborrowings' (plural)" (cases lengthAcrossPluralReborrowingAfter)
+    , testGroup "locally_ (generic, Mut)" (cases lengthAcrossGenericLocally)
+    , testGroup "locally_ (generic, Muts)" (cases lengthAcrossGenericLocallyPlural)
+    , testGroup
+        "a two-member bundle where only one member grows"
+        [ testCase (show count <> " appended") do
+            lengthsAcrossUnequalPluralReborrowing count
+              @?= ((3, 3 + count), (3, 3))
+        | count <- counts
+        ]
     , testGroup
         "RobinHood HashMap"
         [ testCase (show count <> " inserted") do

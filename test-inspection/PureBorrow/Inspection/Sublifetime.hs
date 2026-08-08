@@ -41,11 +41,16 @@ module PureBorrow.Inspection.Sublifetime (
   sharingValueRefAt,
   copyRefAt,
   copyRefAfterAt,
+  locallyValueRefAt,
+  reborrowingsValueRefAt,
+  bumpBundleAt,
 ) where
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe (reviveAlias)
+import Control.Monad.Borrow.Pure.Experimental.Borrows (Aliases (..), Muts, reborrowings, reviveAliases)
+import Control.Monad.Borrow.Pure.Experimental.Reborrowable (locally)
 import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (EndToken (..))
 import Data.Ref.Linear (Ref)
 import Data.Ref.Linear.Borrow qualified as Ref
@@ -153,6 +158,56 @@ bumpRefAfterAt = Unsafe.toLinear \ref -> Control.do
   spent `lseq` Control.do
     restored <- reviveAlias ref
     Control.pure (restored `lseq` withEnd (UnsafeEnd @α) (After old))
+
+{- | The generic path at 'Mut': 'locally' is what a caller reaches for when the borrow type is a parameter.
+
+Its specification is 'bumpRefAt' — the same one 'reborrowingValueRefAt' meets — so the equality says the generic path costs exactly what the scalar delimiter costs, rather than routing through the @'After'@-returning 'Control.Monad.Borrow.Pure.Experimental.Reborrowable.locally'' and paying a closure for a result it hands back directly.
+-}
+locallyValueRefAt :: Mut α (Ref Int) %1 -> BO α Int
+{-# NOINLINE locallyValueRefAt #-}
+locallyValueRefAt ref =
+  locally
+    ref
+    ( \borrowed -> Control.do
+        (old, spent) <- bumpRef borrowed
+        spent `lseq` Control.pure old
+    )
+    Control.<&> \(old, mut) -> mut `lseq` old
+
+-- | The plural body, shared by the probe and its specification exactly as 'bumpRef' is on the scalar side.
+bumpBundle ::
+  (α >= β) =>
+  Muts α '[Ref Int, Ref Int] %1 ->
+  BO β (Int, Muts α '[Ref Int, Ref Int])
+{-# INLINE bumpBundle #-}
+bumpBundle (left :- right :- BNil) = Control.do
+  (seenLeft, left) <- bumpRef left
+  (seenRight, right) <- bumpRef right
+  Control.pure (seenLeft + seenRight, left :- right :- BNil)
+
+-- | 'reborrowings' over a two-member bundle, with the restored bundle dropped as the scalar probes drop their borrow.
+reborrowingsValueRefAt :: Muts α '[Ref Int, Ref Int] %1 -> BO α Int
+{-# NOINLINE reborrowingsValueRefAt #-}
+reborrowingsValueRefAt bundle =
+  reborrowings
+    bundle
+    ( \borrowed -> Control.do
+        (old, spent) <- bumpBundle borrowed
+        spent `lseq` Control.pure old
+    )
+    Control.<&> \(old, muts) -> muts `lseq` old
+
+{- | The specification 'reborrowingsValueRefAt' must meet: the body on the caller's own bundle, plus the one 'reviveAliases' through which the delimiter restores it.
+
+The plural counterpart of 'bumpRefAt', and it carries the same warning: naming the barrier is what stops this equality from asserting that the delimiter compiles to nothing, which is the property that made the scalar erasure unsound before @ebba572@.
+-}
+bumpBundleAt :: Muts α '[Ref Int, Ref Int] %1 -> BO α Int
+{-# NOINLINE bumpBundleAt #-}
+bumpBundleAt = Unsafe.toLinear \bundle -> Control.do
+  (old, spent) <- bumpBundle bundle
+  spent `lseq` Control.do
+    restored <- reviveAliases bundle
+    Control.pure (restored `lseq` old)
 
 -- | The other 'srunBO' client, on the shared side, with the restored borrow dropped as above.
 sharingRefAt :: Mut α (Ref Int) %1 -> BO α Int
@@ -298,6 +353,34 @@ tests =
              ( ('sharingValueRefAt ==- 'copyRefAt)
                  { testName =
                      Just "sharing costs nothing over the read it delimits"
+                 }
+             )
+         )
+      , $( inspectTest
+             ( ('locallyValueRefAt ==- 'bumpRefAt)
+                 { testName =
+                     Just "locally at Mut costs what the scalar delimiter costs"
+                 }
+             )
+         )
+      , $( inspectTest
+             ( ('reborrowingsValueRefAt ==- 'bumpBundleAt)
+                 { testName =
+                     Just "reborrowings costs nothing over the updates it delimits"
+                 }
+             )
+         )
+      , $( inspectTest
+             ( (hasNoType 'reborrowingsValueRefAt ''Linearly)
+                 { testName =
+                     Just "reborrowings needs no linearity witness"
+                 }
+             )
+         )
+      , $( inspectTest
+             ( (doesNotUse 'reborrowingsValueRefAt 'askLinearly)
+                 { testName =
+                     Just "reborrowings does not reach for the ambient Linearly"
                  }
              )
          )

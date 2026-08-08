@@ -17,6 +17,7 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.BO qualified as BO
 import Control.Monad.Borrow.Pure.Experimental.Borrows qualified as Borrows
+import Control.Monad.Borrow.Pure.Experimental.Reborrowable qualified as Reborrowable
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Functor.Linear qualified as Data
 import Data.HashMap.RobinHood.Mutable.Linear.Borrow qualified as HashMap
@@ -327,8 +328,9 @@ entriesAcrossReborrowingHashMap count =
 
 {- | The plural delimiter, which restores a whole 'Borrows.Muts' bundle.
 
-Like the 'Growable.withContent' kernel this one passes on the broken build, because 'Borrows.reborrowings'' restores through 'reclaim'' inside an @After@ and so picks up 'withEnd'\'s @nospec@ barrier by accident.
-It is here as a guard on that accident: erasing that delimiter the way 'reborrowing'' was erased would remove it, and this kernel is what would then go red.
+This kernel was written as a guard on an accident: before the plural scopes were erased, 'Borrows.reborrowings'' restored through 'reclaim'' inside an @After@ and so picked up 'withEnd'\'s @nospec@ barrier for free, and the comment here predicted that erasing the delimiter the way 'reborrowing'' was erased would remove it and turn this kernel red.
+That erasure has since happened, and the kernel is green because the plural delimiters restore through 'Borrows.reviveAliases' rather than because anything is left of the accident.
+It is now the runtime half of the plural obligation, paired with the Core equality in @pure-borrow-inspection@ that names the barrier.
 -}
 lengthAcrossPluralReborrowing :: Int -> (Int, Int, [Int])
 {-# NOINLINE lengthAcrossPluralReborrowing #-}
@@ -348,6 +350,25 @@ lengthAcrossPluralReborrowing count =
           vector Borrows.:- Borrows.BNil ->
             Growable.size vector & \(Ur after, vector) ->
               vector `lseq` pureAfter (report before after (reclaim lend))
+
+{- | The generic delimiter, reached through 'Reborrowable' rather than by naming 'reborrowing_'.
+
+@locally_@ at 'Mut' is now the erased scalar delimiter rather than a composition over the @After@-returning @locally'@, so it needs its own runtime coverage: a caller who writes generic code over the class must see the same ordering as one who names the combinator.
+-}
+lengthAcrossGenericLocally :: Int -> (Int, Int, [Int])
+{-# NOINLINE lengthAcrossGenericLocally #-}
+lengthAcrossGenericLocally count =
+  unur $ linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
+      Growable.size vector & \(Ur before, vector) -> Control.do
+        vector <-
+          Reborrowable.locally_ vector \short ->
+            consume Data.<$> pushRange 0 count short
+        Growable.size vector & \(Ur after, vector) ->
+          vector `lseq` pureAfter (report before after (reclaim lend))
 
 insertRange ::
   Int ->
@@ -417,6 +438,7 @@ test_scopeRestoresAUsableBorrow =
         | start <- [0, 1, 41]
         ]
     , testGroup "reborrowings (plural)" (cases lengthAcrossPluralReborrowing)
+    , testGroup "locally_ (generic)" (cases lengthAcrossGenericLocally)
     , testGroup
         "RobinHood HashMap"
         [ testCase (show count <> " inserted") do

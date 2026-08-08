@@ -350,6 +350,7 @@ benchmark pure-borrow-bench
     PureBorrow.Bench.HashMap
     PureBorrow.Bench.Ingredients
     PureBorrow.Bench.MultiStoreScan
+    PureBorrow.Bench.ScopeDensity
     PureBorrow.Bench.Unboxed
     PureBorrow.Bench.Worklist.Resume
 

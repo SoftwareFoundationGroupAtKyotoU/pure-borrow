@@ -22,6 +22,32 @@ import Control.Monad.Borrow.Pure.BO.Unsafe (reviveAlias)
 import Data.Kind (Constraint, Type)
 import Prelude.Linear
 
+{- |
+Borrow-like values that can be narrowed to a sublifetime and restored afterwards.
+
+=== The obligation every method carries
+
+An implementation of 'locally'', 'locally' or 'locally_' must not hand the
+caller back the occurrence it was given. It must return it through a barrier
+the optimizer cannot see through and that consumes the 'BO' state token —
+'Control.Monad.Borrow.Pure.BO.Unsafe.reviveAlias' for a scalar borrow,
+'Control.Monad.Borrow.Pure.Experimental.Borrows.reviveAliases' for a bundle.
+
+This is not a performance convention. Reads that project a mutable header do
+not go through the state token, so to GHC two of them on the same borrow
+/variable/ are the same expression, and common-subexpression elimination is
+entitled to serve the second from the first — across every write the scope
+performed. A delimiter that returns its caller's own binder makes a post-scope
+read syntactically identical to a pre-scope one; the result is a stale length
+and a stale buffer, and writing through them runs off the end of the
+allocation. See @Note [Restoring a borrow must break its Core identity]@ in
+"Control.Monad.Borrow.Pure.BO.Internal" for the full argument, and treat it as
+binding on any instance you write.
+
+Each method is separately overridable, so each one owes this independently:
+supplying a fast 'locally' while leaving 'locally'' to the default does not
+discharge it for 'locally'.
+-}
 type Reborrowable :: (k -> Type) -> Constraint
 class (bor ~ WithLifetime bor (LifetimeOf bor)) => Reborrowable bor where
   type LifetimeOf bor :: Lifetime
@@ -57,8 +83,12 @@ class (bor ~ WithLifetime bor (LifetimeOf bor)) => Reborrowable bor where
   {- |
   The result-discarding form.
 
-  The result is consumed strictly before the restored borrow is returned, so a
-  lazily consumed result cannot overlap access through it.
+  The consumption of the result sits /in/ the returned value rather than being
+  sequenced at scope exit, so it runs when the caller forces the restored
+  borrow. That is deliberate: sequencing it at exit would make this stricter
+  than the implementation @+slow@ restores, and the two are required to stay
+  observationally equivalent. Linearity gives the restored borrow exactly one
+  holder, so any use of it forces the consumption exactly once and first.
   -}
   locally_ ::
     (Consumable r) =>

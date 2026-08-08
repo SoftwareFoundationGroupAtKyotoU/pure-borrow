@@ -302,13 +302,23 @@ scopeFreePairLoop iterations = withCounterPair (go iterations)
           rightMut <- RefBorrow.modify (+ 1) rightMut
           go (i - 1) leftMut rightMut leftLend rightLend
 
-{- | The bundled control: the same two mutations, threaded through a 'Muts', no scope.
+{- | A bundle threaded and rebuilt each iteration, crossing no scope.
 
-'scopeFreePairLoop' threads two separate borrows, so comparing it directly with
-a plural arm would charge the delimiter for the bundle as well. This arm
-destructures and rebuilds the bundle each iteration and crosses no scope, so
-the spine cost and the delimiter cost come apart:
-@spine = bundled − direct@, @delimiter = reborrowings_ − direct@.
+This was written to separate the spine cost from the delimiter cost, and it
+does not do that — the arithmetic does not work, and saying so is cheaper than
+letting a reader rederive it. It allocates about 80 bytes per iteration over
+'scopeFreePairLoop' where the delimiter arms allocate 40 before erasure and 0
+after, because its rebuilt spine is loop-carried and genuinely allocated, while
+a delimiter hands back the bundle it was given and never rebuilds one. It is
+not a point between 'scopeFreePairLoop' and the delimiter arms, so
+@delimiter = reborrowings_ − bundled@ would come out negative.
+
+What it does measure is a caller-side cost: what threading and rebuilding a
+bundle per iteration costs someone who writes that. Keep it for that, and
+compare the delimiter arms against 'scopeFreePairLoop' only. That comparison
+charges the delimiter for the bundle destructure as well, so it is an upper
+bound on the delimiter's own cost rather than an estimate — which is the
+conservative direction.
 -}
 bundleThreadedPairLoop :: Int -> Int
 {-# NOINLINE bundleThreadedPairLoop #-}
@@ -337,8 +347,8 @@ bundleThreadedPairLoop iterations =
 
 The continuation consumes its two members individually rather than rebuilding a
 bundle to consume, so this arm measures the delimiter and not the caller's
-@(':-')@ cells. 'reborrowingsRespineLoop' is the same arm with the rebuild put
-back, and the difference between the two is the respine.
+@(':-')@ cells. Compare it against 'scopeFreePairLoop'; see
+'bundleThreadedPairLoop' for why the bundled arm is not the comparator.
 -}
 reborrowingsDiscardingLoop :: Int -> Int
 {-# NOINLINE reborrowingsDiscardingLoop #-}
@@ -365,7 +375,16 @@ reborrowingsDiscardingLoop iterations =
               Control.pure (consume leftScoped `lseq` consume rightScoped)
           go (i - 1) bundle leftLend rightLend
 
--- | 'reborrowingsDiscardingLoop' with the shortened bundle rebuilt before it is consumed.
+{- | 'reborrowingsDiscardingLoop' with the shortened bundle rebuilt before it is consumed.
+
+Measured, this arm is byte-identical to 'reborrowingsDiscardingLoop' in every
+configuration: building a bundle only to consume it is case-of-known-constructor
+and GHC removes it entirely. So it does not measure "the rebuild put back" —
+there is nothing to put back. It is retained as a regression on that
+elimination, since a caller who pattern-matches and rebuilds is the shape most
+plural call sites actually have, and it would be worth knowing if it ever
+started costing something.
+-}
 reborrowingsRespineLoop :: Int -> Int
 {-# NOINLINE reborrowingsRespineLoop #-}
 reborrowingsRespineLoop iterations =

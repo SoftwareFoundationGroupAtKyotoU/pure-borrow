@@ -137,16 +137,29 @@ reviveAliases :: Aliases k xs %1 -> BO α (Aliases k xs)
 reviveAliases as = Control.pure as
 
 {- |
-Retag a bundle's alias kind, leaving its spine, order and payloads untouched.
+Retag a bundle's lifetime, leaving its borrow kind, spine, order and payloads
+untouched.
 
 The plural counterpart of 'Control.Monad.Borrow.Pure.BO.Unsafe.unsafeCastAlias',
 and unlike it this cannot be a @coerceLin@: 'Aliases' is a GADT rather than a
-newtype over its payload, so no 'Data.Coerce.Coercible' relates two alias kinds.
-The caller owes the same obligation either way — the retagged bundle must be a
-lifetime narrowing that the type system would have permitted, and it must not
-escape the scope that narrowed it.
+newtype over its payload, so no 'Data.Coerce.Coercible' relates two alias kinds
+and the coercion has to be a raw one.
+
+Why that raw coercion is representationally sound: @k@ occurs in 'Aliases' only
+inside the @!('Alias' k x)@ field of @(':-')@, and 'Alias' is a newtype over
+@x@, so the alias kind has no runtime witness anywhere in the structure and two
+kinds give the same layout. That is precisely the argument @type role Aliases
+nominal nominal@ declines to make on the caller's behalf, and this function
+punches through it, so the argument has to be made here instead.
+
+The caller's obligation is the narrower one the signature now enforces in part:
+the retagged bundle must be a lifetime narrowing the type system would have
+permitted, and it must not escape the scope that narrowed it. Keeping the
+borrow kind fixed in the type is deliberate — every use in this module narrows
+a lifetime and nothing more, and a future edit that retagged a 'Lends' bundle
+as a 'Muts' one should be a type error rather than a silence.
 -}
-unsafeCastAliases :: Aliases k xs %1 -> Aliases k' xs
+unsafeCastAliases :: Borrows bk α xs %1 -> Borrows bk β xs
 {-# INLINE unsafeCastAliases #-}
 unsafeCastAliases = Unsafe.toLinear unsafeCoerce
 

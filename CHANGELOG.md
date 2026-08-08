@@ -59,7 +59,8 @@
 
 - Delimiting a sublifetime got much cheaper in `srunBO`/`srunBO_`, `sharing`/`sharing'`/`sharing_`, `reborrowing`/`reborrowing'`/`reborrowing_` and `reborrowings`/`reborrowings'`/`reborrowings_`.
   The `slow` flag restores the old, safe-but-slow implementation.
-  Measured on a scope-dominated microbenchmark, the plural scopes went from 40 bytes and 4.5 ns per crossing to 0 bytes and 1.2 ns.
+  Measured on a scope-dominated microbenchmark, the plural scopes went from 40 bytes and 4.5 ns per crossing to 0 bytes and 1.2–1.6 ns.
+  The FFT example picks this up through `iterReborrowing_`, which crosses a plural scope per iteration of its setup phase: −4.8% allocation and −5.6% wall at 2^20 points.
 - `BO` and `After` methods are directly inlinable, and the divide-and-conquer scheduler uses a Chase-Lev deque with half-stealing and weighted victim selection.
   The qsort and FFT examples are written over the unrestricted vectors and specialize to primitive unboxed array operations.
 - A `pure-borrow-inspection` suite pins the optimized Core of the scopes and of the qsort/FFT roots, inverting each obligation under `slow`.

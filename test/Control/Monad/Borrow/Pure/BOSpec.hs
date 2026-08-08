@@ -351,6 +351,110 @@ lengthAcrossPluralReborrowing count =
             Growable.size vector & \(Ur after, vector) ->
               vector `lseq` pureAfter (report before after (reclaim lend))
 
+{- | The plural delimiter over a bundle whose members are grown /unequally/.
+
+'lengthAcrossPluralReborrowing' uses a one-member bundle, which cannot tell
+apart a barrier on the spine from a barrier on each member: with one member the
+two coincide. Here the first member is grown and the second is not, and both
+are read back through the borrows the delimiter restored, so a barrier that
+only broke the spine's identity would serve a stale length for the grown member.
+-}
+lengthsAcrossUnequalPluralReborrowing :: Int -> ((Int, Int), (Int, Int))
+{-# NOINLINE lengthsAcrossUnequalPluralReborrowing #-}
+lengthsAcrossUnequalPluralReborrowing count =
+  unur $ linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    (grownLinear, keptLinear) <- dup ownerLinear
+    runBO runLinear Control.do
+      (grown, grownLend) <-
+        borrowM (Growable.fromVector (V.fromList seeded) grownLinear)
+      (kept, keptLend) <-
+        borrowM (Growable.fromVector (V.fromList seeded) keptLinear)
+      Growable.size grown & \(Ur grownBefore, grown) ->
+        Growable.size kept & \(Ur keptBefore, kept) -> Control.do
+          bundle <-
+            Borrows.reborrowings_
+              (grown Borrows.:- kept Borrows.:- Borrows.BNil)
+              \(shortGrown Borrows.:- shortKept Borrows.:- Borrows.BNil) ->
+                shortKept `lseq` (consume Data.<$> pushRange 0 count shortGrown)
+          case bundle of
+            grown Borrows.:- kept Borrows.:- Borrows.BNil ->
+              Growable.size grown & \(Ur grownAfter, grown) ->
+                Growable.size kept & \(Ur keptAfter, kept) ->
+                  grown `lseq`
+                    kept `lseq`
+                      pureAfter
+                        ( consume (reclaim grownLend) `lseq`
+                            consume (reclaim keptLend) `lseq`
+                              Ur ((grownBefore, grownAfter), (keptBefore, keptAfter))
+                        )
+
+{- | The result-returning plural delimiter.
+
+Since the plural scopes were erased, @reborrowings@, @reborrowings'@ and
+@reborrowings_@ are three independent delimiters rather than one defined
+through another, so each needs its own kernel.
+-}
+lengthAcrossPluralReborrowingValue :: Int -> (Int, Int, [Int])
+{-# NOINLINE lengthAcrossPluralReborrowingValue #-}
+lengthAcrossPluralReborrowingValue count =
+  unur $ linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
+      Growable.size vector & \(Ur before, vector) -> Control.do
+        ((), bundle) <-
+          Borrows.reborrowings
+            (vector Borrows.:- Borrows.BNil)
+            \(short Borrows.:- Borrows.BNil) ->
+              consume Data.<$> pushRange 0 count short
+        case bundle of
+          vector Borrows.:- Borrows.BNil ->
+            Growable.size vector & \(Ur after, vector) ->
+              vector `lseq` pureAfter (report before after (reclaim lend))
+
+-- | The finalizing plural delimiter, whose continuation returns its result @After@ the sublifetime.
+lengthAcrossPluralReborrowingAfter :: Int -> (Int, Int, [Int])
+{-# NOINLINE lengthAcrossPluralReborrowingAfter #-}
+lengthAcrossPluralReborrowingAfter count =
+  unur $ linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
+      Growable.size vector & \(Ur before, vector) -> Control.do
+        ((), bundle) <-
+          Borrows.reborrowings'
+            (vector Borrows.:- Borrows.BNil)
+            \(short Borrows.:- Borrows.BNil) -> Control.do
+              short <- pushRange 0 count short
+              Control.pure (Control.pure (consume short))
+        case bundle of
+          vector Borrows.:- Borrows.BNil ->
+            Growable.size vector & \(Ur after, vector) ->
+              vector `lseq` pureAfter (report before after (reclaim lend))
+
+-- | The generic delimiter at @Muts@, which dispatches to the plural implementation.
+lengthAcrossGenericLocallyPlural :: Int -> (Int, Int, [Int])
+{-# NOINLINE lengthAcrossGenericLocallyPlural #-}
+lengthAcrossGenericLocallyPlural count =
+  unur $ linearly \linear -> DataFlow.do
+    (ownerLinear, runLinear) <- dup linear
+    runBO runLinear Control.do
+      (vector, lend) <-
+        borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
+      Growable.size vector & \(Ur before, vector) -> Control.do
+        bundle <-
+          Reborrowable.locally_
+            (vector Borrows.:- Borrows.BNil)
+            \(short Borrows.:- Borrows.BNil) ->
+              consume Data.<$> pushRange 0 count short
+        case bundle of
+          vector Borrows.:- Borrows.BNil ->
+            Growable.size vector & \(Ur after, vector) ->
+              vector `lseq` pureAfter (report before after (reclaim lend))
+
 {- | The generic delimiter, reached through 'Reborrowable' rather than by naming 'reborrowing_'.
 
 @locally_@ at 'Mut' is now the erased scalar delimiter rather than a composition over the @After@-returning @locally'@, so it needs its own runtime coverage: a caller who writes generic code over the class must see the same ordering as one who names the combinator.
@@ -437,8 +541,18 @@ test_scopeRestoresAUsableBorrow =
             valueAcrossReborrowingRef start @?= (start, start + 1)
         | start <- [0, 1, 41]
         ]
-    , testGroup "reborrowings (plural)" (cases lengthAcrossPluralReborrowing)
-    , testGroup "locally_ (generic)" (cases lengthAcrossGenericLocally)
+    , testGroup "reborrowings_ (plural)" (cases lengthAcrossPluralReborrowing)
+    , testGroup "reborrowings (plural)" (cases lengthAcrossPluralReborrowingValue)
+    , testGroup "reborrowings' (plural)" (cases lengthAcrossPluralReborrowingAfter)
+    , testGroup "locally_ (generic, Mut)" (cases lengthAcrossGenericLocally)
+    , testGroup "locally_ (generic, Muts)" (cases lengthAcrossGenericLocallyPlural)
+    , testGroup
+        "a two-member bundle where only one member grows"
+        [ testCase (show count <> " appended") do
+            lengthsAcrossUnequalPluralReborrowing count
+              @?= ((3, 3 + count), (3, 3))
+        | count <- counts
+        ]
     , testGroup
         "RobinHood HashMap"
         [ testCase (show count <> " inserted") do

@@ -52,6 +52,9 @@
   `Data.HashMap.RobinHood.Mutable.Linear` is the owned table, whose operations are ordinary linear functions; `Data.HashMap.RobinHood.Mutable.Linear.Borrow` keeps one behind a linear `Ref` so that it can be mutated, and grown, through a `Mut` borrow.
   Its keys and values are GC-owned, and it caches a fingerprint per slot so that a key with a cheap hash and an expensive equality is rejected without a full comparison.
   This adds a dependency on `hashable`.
+- `forReborrowingUr_` and `iforReborrowingUr_` loop over a container whose elements are already GC-owned, taking a `Foldable t => t a` and handing the body an unrestricted `a`.
+  `forReborrowing_` binds each element linearly, so such a caller had to `move` it back out — a deep copy per element, for a value nothing owned linearly in the first place.
+  Measured on a three-element list payload, the `move` costs 72 bytes and ~4.7 ns per element; these variants cost neither.
 - `subShare` shortens a `Share` without opening a scope, and `Par` is an applicative for parallel composition inside `BO`, with directly inlinable methods.
 - `BO.Unsafe` exports `unsafeCastAlias`, a `coerceLin` retagging that replaces a bare `unsafeCoerce`.
 

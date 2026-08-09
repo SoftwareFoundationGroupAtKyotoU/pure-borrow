@@ -32,8 +32,10 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
   forReborrowing,
   forReborrowingOf_,
   forReborrowing_,
+  forReborrowingUr_,
   iforReborrowingOf_,
   iforReborrowing_,
+  iforReborrowingUr_,
   Fold,
   Foldable (..),
   IndexedFold,
@@ -57,6 +59,7 @@ import Control.Monad.Borrow.Pure.BO.Unsafe
 import Control.Monad.Borrow.Pure.Experimental.Reborrowable
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Bifunctor.Linear qualified as Bi
+import Data.Foldable qualified as NonLinear
 import Data.Functor.Linear qualified as Data
 import Data.HashMap.Mutable.Linear qualified as LHM
 import Data.List.NonEmpty.Linear (NonEmpty)
@@ -210,6 +213,67 @@ iforReborrowing_ ::
   BO α (bor xs)
 {-# INLINE iforReborrowing_ #-}
 iforReborrowing_ = iforReborrowingOf_ ifoldMap
+
+{- |
+'forReborrowing_' for a container whose elements are already GC-owned.
+
+The elements arrive through an ordinary arrow and reach the body through one
+too, so a caller who already holds unrestricted values does not have to move
+them into linear ownership and back out again. Use this whenever the elements
+come from a source that owns them nonlinearly — a 'NonLinear.Foldable' of
+plain values, the result of a @toList@ — and reserve 'forReborrowing_' for
+elements this loop genuinely takes ownership of.
+
+The distinction is where the caller's elements come from, not which one is
+faster. Feeding GC-owned values to 'forReborrowing_' costs a 'move' per
+element, and for a structured element that 'move' is a deep copy — but the
+reason to avoid it is that the copy buys nothing: a nonlinearly bound value may
+be consumed repeatedly, so there is nothing for the loop to take ownership of.
+
+The bundle is still threaded linearly and still reborrowed once per element;
+only the element multiplicity differs.
+-}
+forReborrowingUr_ ::
+  (NonLinear.Foldable t, Reborrowable bor) =>
+  bor xs %1 ->
+  t a ->
+  ( forall β.
+    WithLifetime bor (β /\ LifetimeOf bor) xs %1 ->
+    a ->
+    BO (β /\ α) ()
+  ) ->
+  BO α (bor xs)
+{-# INLINE forReborrowingUr_ #-}
+forReborrowingUr_ bors as k = go bors (NonLinear.toList as)
+  where
+    -- Direct strict recursion rather than a fold through a monoid: with the
+    -- elements unrestricted there is no linear state to thread but the bundle
+    -- itself, so the @StateT@/@Ap@ tower the linear variants need buys nothing
+    -- here.
+    go bors' [] = Control.pure bors'
+    go bors' (a : rest) = Control.do
+      bors' <- locally_ bors' \short -> k short a
+      go bors' rest
+
+-- | 'iforReborrowing_' for a container whose elements are already GC-owned; see 'forReborrowingUr_'.
+iforReborrowingUr_ ::
+  (NonLinear.Foldable t, Reborrowable bor) =>
+  bor xs %1 ->
+  t a ->
+  ( forall β.
+    WithLifetime bor (β /\ LifetimeOf bor) xs %1 ->
+    Int ->
+    a ->
+    BO (β /\ α) ()
+  ) ->
+  BO α (bor xs)
+{-# INLINE iforReborrowingUr_ #-}
+iforReborrowingUr_ bors as k = go 0 bors (NonLinear.toList as)
+  where
+    go !_ bors' [] = Control.pure bors'
+    go !i bors' (a : rest) = Control.do
+      bors' <- locally_ bors' \short -> k short i a
+      go (i + 1) bors' rest
 
 toListOf :: Fold s a %1 -> s %1 -> [a]
 {-# INLINE toListOf #-}

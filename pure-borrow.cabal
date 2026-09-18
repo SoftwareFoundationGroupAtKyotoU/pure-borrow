@@ -117,6 +117,7 @@ library
     Control.Concurrent.DivideConquer.Linear
     Control.Concurrent.DivideConquer.Linear.Internal
     Control.Concurrent.Queue.ChaseLev
+    Control.Monad.Borrow.Generic.Internal
     Control.Monad.Borrow.Pure
     Control.Monad.Borrow.Pure.Affine
     Control.Monad.Borrow.Pure.Affine.Internal

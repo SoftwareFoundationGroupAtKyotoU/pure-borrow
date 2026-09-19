@@ -10,7 +10,7 @@
 module GrowableContentOwnerReuse where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.BO
 import Data.Vector.Mutable.Growable.Linear.Borrow qualified as Growable
 import Prelude.Linear
 

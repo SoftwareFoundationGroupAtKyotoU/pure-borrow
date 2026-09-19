@@ -42,8 +42,8 @@ import Control.Concurrent.STM.TMQueue (TMQueue, closeTMQueue, isClosedTMQueue, n
 import Control.Monad (forM_)
 import Control.Monad qualified as NonLinear
 import Control.Monad qualified as P
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (..), unsafeSystemIOToBO)
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Unsafe (Alias (..), unsafeSystemIOToBO)
 import Data.Function (fix)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.List qualified as L
@@ -87,10 +87,10 @@ instance Consumable (MasterQueuePool a) where
       closeTMQueue injection
 
 newQueuePool ::
-  forall n a α g.
+  forall n a α g w.
   (KnownNat n, RandomGen g) =>
   g ->
-  BO α (V n (Mut α (QueuePool a)), MasterQueuePool a)
+  BO' w α (V n (Mut α (QueuePool a)), MasterQueuePool a)
 newQueuePool g = unsafeSystemIOToBO do
   let n = theLength @n
 
@@ -116,7 +116,7 @@ newQueuePool g = unsafeSystemIOToBO do
       master = MasterQueuePool {..}
   P.pure (V $ V.fromList $ map UnsafeAlias qs, master)
 
-pushWorkMaster :: Mut α (MasterQueuePool a) %1 -> a %1 -> BO α (Mut α (MasterQueuePool a))
+pushWorkMaster :: forall α a w. Mut α (MasterQueuePool a) %1 -> a %1 -> BO' w α (Mut α (MasterQueuePool a))
 pushWorkMaster = Unsafe.toLinear2 \pool@(UnsafeAlias (MasterQueuePool {pools})) work ->
   case pools of
     (q : _) -> unsafeSystemIOToBO do
@@ -125,7 +125,7 @@ pushWorkMaster = Unsafe.toLinear2 \pool@(UnsafeAlias (MasterQueuePool {pools})) 
     [] -> error "impossible: the length of pools is determined by the type-level nat n and cannot be zero"
 
 -- | Pushes works, the last element is on the front.
-pushWorks :: Mut α (QueuePool a) %1 -> [a] %1 -> BO α (Mut α (QueuePool a))
+pushWorks :: forall α a w. Mut α (QueuePool a) %1 -> [a] %1 -> BO' w α (Mut α (QueuePool a))
 pushWorks = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) works ->
   unsafeSystemIOToBO do
     pushFronts mine works
@@ -150,7 +150,7 @@ pushWorks = Unsafe.toLinear2 \(UnsafeAlias QueuePool {..}) works ->
 
     P.pure $ UnsafeAlias QueuePool {..}
 
-popWork :: Mut α (QueuePool a) %1 -> BO α (Maybe (a, Mut α (QueuePool a)))
+popWork :: forall α a w. Mut α (QueuePool a) %1 -> BO' w α (Maybe (a, Mut α (QueuePool a)))
 popWork = Unsafe.toLinear \qs@(UnsafeAlias QueuePool {..}) ->
   unsafeSystemIOToBO do
     -- num <- estimateSize mine

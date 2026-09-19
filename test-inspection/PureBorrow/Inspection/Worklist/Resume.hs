@@ -8,9 +8,9 @@ module PureBorrow.Inspection.Worklist.Resume (
   openOnceEdgeWorker,
 ) where
 
-import Control.Monad.Borrow.Pure.BO (BO, Borrow, Mut)
-import Control.Monad.Borrow.Pure.Experimental.Borrows (Aliases, reborrowings)
-import Control.Monad.Borrow.Pure.Lifetime (type (>=))
+import Control.Monad.Borrow.BO (BO, Borrow, Mut)
+import Control.Monad.Borrow.Experimental.Borrows (Aliases, reborrowings)
+import Control.Monad.Borrow.Lifetime (type (>=))
 import Data.Int (Int64)
 import Data.Vector qualified as V
 import Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted qualified as Growable

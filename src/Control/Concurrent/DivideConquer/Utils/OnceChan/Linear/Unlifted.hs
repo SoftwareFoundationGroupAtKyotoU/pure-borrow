@@ -14,8 +14,8 @@ module Control.Concurrent.DivideConquer.Utils.OnceChan.Linear.Unlifted (
   take#,
 ) where
 
-import Control.Monad.Borrow.Pure.Lifetime.Token
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
+import Control.Monad.Borrow.Lifetime.Token
+import Control.Monad.Borrow.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )

@@ -57,7 +57,7 @@ module Data.HashMap.RobinHood.Mutable.Linear.Borrow (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure
+import Control.Monad.Borrow.BO
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Bifunctor.Linear qualified as Bi
 import Data.Functor.Linear qualified as Data
@@ -89,11 +89,12 @@ fromList dic l =
 
 -- | \(O(1)\) amortized. Insert an entry, returning the value it displaced.
 insert ::
+  forall k v α w.
   (Hashable k) =>
   k ->
   v ->
   Mut α (HashMap k v) %1 ->
-  BO α (Ur (Maybe v), Mut α (HashMap k v))
+  BO' w α (Ur (Maybe v), Mut α (HashMap k v))
 {-# INLINE insert #-}
 insert key !v !dic = Control.do
   (Ur mval, dic) <-
@@ -104,10 +105,11 @@ insert key !v !dic = Control.do
 
 -- | \(O(1)\) amortized. Remove a key, returning the value it held.
 delete ::
+  forall k α v w.
   (Hashable k) =>
   k ->
   Mut α (HashMap k v) %1 ->
-  BO α (Ur (Maybe v), Mut α (HashMap k v))
+  BO' w α (Ur (Maybe v), Mut α (HashMap k v))
 {-# INLINE delete #-}
 delete key dic = Control.do
   (Ur mval, dic) <-
@@ -118,11 +120,12 @@ delete key dic = Control.do
 
 -- | \(O(1)\) amortized. Insert, update or delete the entry at a key.
 alter ::
+  forall k v α w.
   (Hashable k) =>
   (Maybe v -> Maybe v) ->
   k ->
   Mut α (HashMap k v) %1 ->
-  BO α (Mut α (HashMap k v))
+  BO' w α (Mut α (HashMap k v))
 {-# INLINE alter #-}
 alter f k =
   Control.fmap recoerceBor
@@ -131,11 +134,12 @@ alter f k =
 
 -- | \(O(1)\) amortized. 'alter' with the replacement produced in 'BO'.
 alterF ::
+  forall k v α w.
   (Hashable k) =>
-  (Maybe v -> BO α (Ur (Maybe v))) ->
+  (Maybe v -> BO' w α (Ur (Maybe v))) ->
   k ->
   Mut α (HashMap k v) %1 ->
-  BO α (Mut α (HashMap k v))
+  BO' w α (Mut α (HashMap k v))
 {-# INLINE alterF #-}
 alterF f key dic = Control.do
   ((), dic) <-
@@ -154,11 +158,11 @@ Resume the returned plan with 'unsafeInsertPrepared' to insert without a
 second traversal.
 -}
 lookupForInsert ::
-  forall k v bk α.
+  forall k v bk α w.
   (Hashable k) =>
   k ->
   Borrow bk α (HashMap k v) %1 ->
-  BO α (Ur (Either v (InsertPlan k)), Borrow bk α (HashMap k v))
+  BO' w α (Ur (Either v (InsertPlan k)), Borrow bk α (HashMap k v))
 {-# INLINE lookupForInsert #-}
 lookupForInsert key = askRaw go
   where
@@ -171,10 +175,11 @@ lookupForInsert key = askRaw go
 The table must not have been mutated since the plan was produced.
 -}
 unsafeInsertPrepared ::
+  forall k v α w.
   InsertPlan k ->
   v ->
   Mut α (HashMap k v) %1 ->
-  BO α (Mut α (HashMap k v))
+  BO' w α (Mut α (HashMap k v))
 {-# INLINE unsafeInsertPrepared #-}
 unsafeInsertPrepared (InsertPlan plan) !v =
   Control.fmap recoerceBor
@@ -192,26 +197,29 @@ that a sequence of queries against a single @'Mut' α@ needs no reborrowing.
 
 -- | \(O(1)\). The number of live entries.
 size ::
+  forall bk α k v w.
   Borrow bk α (HashMap k v) %1 ->
-  BO α (Ur Int, Borrow bk α (HashMap k v))
+  BO' w α (Ur Int, Borrow bk α (HashMap k v))
 {-# INLINE size #-}
 size = askRaw Raw.size
 
 -- | \(O(1)\) amortized. The value stored at a key, if any.
 lookup ::
+  forall k bk α v w.
   (Hashable k) =>
   k ->
   Borrow bk α (HashMap k v) %1 ->
-  BO α (Ur (Maybe v), Borrow bk α (HashMap k v))
+  BO' w α (Ur (Maybe v), Borrow bk α (HashMap k v))
 {-# INLINE lookup #-}
 lookup !key !dic = askRaw (Raw.lookup key) dic
 
 -- | \(O(1)\) amortized. Whether a key is present.
 member ::
+  forall k bk α v w.
   (Hashable k) =>
   k ->
   Borrow bk α (HashMap k v) %1 ->
-  BO α (Ur Bool, Borrow bk α (HashMap k v))
+  BO' w α (Ur Bool, Borrow bk α (HashMap k v))
 {-# INLINE member #-}
 member key = askRaw (Raw.member key)
 
@@ -219,8 +227,9 @@ member key = askRaw (Raw.member key)
 
 -- | \(O(n)\). The table's entries, in unspecified order.
 toList ::
+  forall bk α k v w.
   Borrow bk α (HashMap k v) %1 ->
-  BO α (Ur [(k, v)], Borrow bk α (HashMap k v))
+  BO' w α (Ur [(k, v)], Borrow bk α (HashMap k v))
 {-# INLINE toList #-}
 toList = askRawUr Raw.toList
 
@@ -228,10 +237,10 @@ toList = askRawUr Raw.toList
 
 -- | \(O(1)\). Replace a borrowed table with another, returning the old one.
 swap ::
-  forall k v α.
+  forall k v α w.
   HashMap k v %1 ->
   Mut α (HashMap k v) %1 ->
-  BO α (HashMap k v, Mut α (HashMap k v))
+  BO' w α (HashMap k v, Mut α (HashMap k v))
 {-# INLINE swap #-}
 swap new dic = asksLinearlyM \lin -> Control.do
   Bi.second recoerceBor
@@ -240,17 +249,17 @@ swap new dic = asksLinearlyM \lin -> Control.do
       (coerceBor dic)
 
 -- | \(O(1)\). Take every entry out of a borrowed table, leaving it empty.
-take :: forall k v α. Mut α (HashMap k v) %1 -> BO α (HashMap k v, Mut α (HashMap k v))
+take :: forall k v α w. Mut α (HashMap k v) %1 -> BO' w α (HashMap k v, Mut α (HashMap k v))
 take dic = Control.do
   Bi.second recoerceBor Control.<$> Ref.update go (coerceBor dic)
   where
-    go :: Raw.HashMap k v %1 -> BO α (HashMap k v, Raw.HashMap k v)
+    go :: Raw.HashMap k v %1 -> BO' w α (HashMap k v, Raw.HashMap k v)
     go s = asksLinearlyM \lin ->
       dup lin & \(refLinear, tableLinear) ->
         Control.pure (HashMap $! Ref.new s refLinear, Raw.new 16 tableLinear)
 
 -- | \(O(1)\). A borrow-discarding variant of 'take'.
-take_ :: forall k v α. Mut α (HashMap k v) %1 -> BO α (HashMap k v)
+take_ :: forall k v α w. Mut α (HashMap k v) %1 -> BO' w α (HashMap k v)
 {-# INLINE take_ #-}
 take_ dic = Control.fmap (uncurry $ flip lseq) $ take dic
 
@@ -266,7 +275,7 @@ union (HashMap ref1) (HashMap ref2) = DataFlow.do
   HashMap $! Ref.new (Raw.union (Ref.free ref1) (Ref.free ref2)) l
 
 -- | \(O(n)\) amortized. Insert every entry of an owned table into a borrowed one.
-extend :: (Hashable k) => HashMap k v %1 -> Mut α (HashMap k v) %1 -> BO α (Mut α (HashMap k v))
+extend :: forall k v α w. (Hashable k) => HashMap k v %1 -> Mut α (HashMap k v) %1 -> BO' w α (Mut α (HashMap k v))
 {-# INLINE extend #-}
 extend donor dic = Control.do
   let %1 !donor' = Ref.free (inner donor)

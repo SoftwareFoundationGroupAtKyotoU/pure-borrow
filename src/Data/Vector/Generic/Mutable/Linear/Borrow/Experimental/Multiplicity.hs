@@ -21,6 +21,7 @@ module Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity (
   KnownMultiplicity,
   GetResult,
   UpdateAction,
+  UpdateAction',
   Bound,
   PossiblyConsumable,
   PossiblyMovable,

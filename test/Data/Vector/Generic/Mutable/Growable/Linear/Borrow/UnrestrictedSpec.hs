@@ -11,10 +11,10 @@ module Data.Vector.Generic.Mutable.Growable.Linear.Borrow.UnrestrictedSpec (
 
 import Control.Exception qualified as Exception
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (UnsafeAlias))
-import Control.Monad.Borrow.Pure.Clone (Clone (clone))
-import Control.Monad.Borrow.Pure.Copyable (Copyable (copy))
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Clone (Clone (clone))
+import Control.Monad.Borrow.Copyable (Copyable (copy))
+import Control.Monad.Borrow.Unsafe (Alias (UnsafeAlias))
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import Data.List qualified as List

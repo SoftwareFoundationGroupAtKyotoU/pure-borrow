@@ -26,7 +26,7 @@ module Data.Unique.Linear (
   split5,
 ) where
 
-import Control.Monad.Borrow.Pure.Lifetime.Token (Linearly)
+import Control.Monad.Borrow.Lifetime.Token (Linearly)
 import Data.Proxy (Proxy (Proxy))
 import Data.V.Linear.Internal hiding (consume)
 import Data.Vector qualified as V

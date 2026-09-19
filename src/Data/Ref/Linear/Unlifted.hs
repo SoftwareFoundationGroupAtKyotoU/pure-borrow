@@ -16,9 +16,9 @@ module Data.Ref.Linear.Unlifted (
   atomicModify#,
 ) where
 
-import Control.Monad.Borrow.Pure.Lifetime.Token
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (LinearOnly (..), LinearOnlyWitness (..))
-import Control.Monad.Borrow.Pure.Utils (lseq#)
+import Control.Monad.Borrow.Lifetime.Token
+import Control.Monad.Borrow.Lifetime.Token.Unsafe (LinearOnly (..), LinearOnlyWitness (..))
+import Control.Monad.Borrow.Utils (lseq#)
 import GHC.Exts
 import GHC.Exts qualified as GHC
 import Prelude.Linear

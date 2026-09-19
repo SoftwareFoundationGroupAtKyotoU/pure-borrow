@@ -46,12 +46,12 @@ module PureBorrow.Internal.Bench.Worklist.Resume (
 import Control.DeepSeq (NFData)
 import Control.Functor.Linear qualified as Control
 import Control.Monad (when)
-import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Experimental.Borrows (
+import Control.Monad.Borrow.Experimental.Borrows (
   Aliases (..),
   Muts,
   reborrowings,
  )
+import Control.Monad.Borrow.Pure
 import Control.Monad.ST.Strict (ST, runST)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Int (Int64)

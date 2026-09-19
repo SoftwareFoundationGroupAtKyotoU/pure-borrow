@@ -28,8 +28,8 @@ module Control.Concurrent.DivideConquer.Utils.Semaphore (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.BO.Unsafe (unsafeSystemIOToBO)
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Unsafe (unsafeSystemIOToBO)
 import Control.Monad.Primitive (RealWorld)
 import Data.Functor qualified as P
 import Data.Primitive.PrimVar (PrimVar)
@@ -41,18 +41,18 @@ import Prelude qualified as P
 data Semaphore a = Semaphore !a {-# UNPACK #-} !(PrimVar RealWorld Int)
 
 -- | Create a semaphore with initial capacity 1.
-newSemaphore :: a %1 -> BO α (Semaphore a)
+newSemaphore :: forall a α w. a %1 -> BO' w α (Semaphore a)
 newSemaphore a = Semaphore a Control.<$> unsafeSystemIOToBO (PVar.newPrimVar 1)
 
 -- | Returns 'Just' and original resource if the capacity becomes @0@, otherwise returns 'Nothing'.
-release :: Semaphore a %1 -> BO α (Maybe a)
+release :: forall a α w. Semaphore a %1 -> BO' w α (Maybe a)
 release = Unsafe.toLinear \(Semaphore a var) -> unsafeSystemIOToBO do
   i <- PVar.fetchSubInt var 1
   if i P.== 1
     then P.pure (Just a)
     else P.pure Nothing
 
-retain :: Semaphore a %1 -> BO α (Semaphore a, Semaphore a)
+retain :: forall a α w. Semaphore a %1 -> BO' w α (Semaphore a, Semaphore a)
 retain = Unsafe.toLinear \sem@(Semaphore _ var) -> unsafeSystemIOToBO do
   P.void $ PVar.fetchAddInt var 1
   P.pure (sem, sem)

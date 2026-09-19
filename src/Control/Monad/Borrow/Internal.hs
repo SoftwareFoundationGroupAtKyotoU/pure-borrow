@@ -27,8 +27,8 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# OPTIONS_HADDOCK hide #-}
 
-module Control.Monad.Borrow.Generic.Internal (
-  module Control.Monad.Borrow.Generic.Internal,
+module Control.Monad.Borrow.Internal (
+  module Control.Monad.Borrow.Internal,
 ) where
 
 import Control.Applicative qualified as NonLinear
@@ -37,11 +37,11 @@ import Control.Exception (evaluate)
 import Control.Exception qualified as SystemIO
 import Control.Functor.Linear qualified as Control
 import Control.Monad qualified as NonLinear
-import Control.Monad.Borrow.Pure.Affine.Internal
-import Control.Monad.Borrow.Pure.Lifetime
-import Control.Monad.Borrow.Pure.Lifetime.Token
-import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
-import Control.Monad.Borrow.Pure.Utils (coerceLin)
+import Control.Monad.Borrow.Affine.Internal
+import Control.Monad.Borrow.Lifetime
+import Control.Monad.Borrow.Lifetime.Token
+import Control.Monad.Borrow.Lifetime.Token.Internal
+import Control.Monad.Borrow.Utils (coerceLin)
 import Control.Monad.IO.Class.Linear (MonadIO (..))
 import Control.Monad.ST.Strict (ST)
 import Control.Syntax.DataFlow qualified as DataFlow
@@ -71,11 +71,11 @@ import Unsafe.Linear qualified as Unsafe
 -- NOTE: NOINLINE here is REALLY important, otherwise GHC will inline 'UnsafeLinearly' and common subexpression elimination
 -- causes severe soundness bug that the same expression reuses the same
 -- linear resource and sometimes SEGV.
-askLinearly :: BO' w α Linearly
+askLinearly :: forall α w. BO' w α Linearly
 {-# NOINLINE askLinearly #-}
 askLinearly = GHC.noinline $ Control.pure UnsafeLinearly
 
-asksLinearlyM :: (Linearly %1 -> BO' w α r) %1 -> BO' w α r
+asksLinearlyM :: forall α r w. (Linearly %1 -> BO' w α r) %1 -> BO' w α r
 {-# INLINE asksLinearlyM #-}
 asksLinearlyM k = Control.do
   lin <- askLinearly
@@ -90,26 +90,41 @@ data ForBO α
 {- |
 Computation returning @a@ that can be performed only during the lifetime @α@ living in a /world/ @w@.
 A lifetime @α@ stands for the duration where resources will live for.
-A world @w@
+The world @w@ records which effects and thread invariants a computation may use.
 Internally it is a linear 'ST' or 'L.IO' monad.
 -}
 type BO' :: Type -> Lifetime -> Type -> Type
+
+type role BO' nominal nominal representational
+
 newtype BO' w α a = BO' (State# (ForBO α) %1 -> (# State# (ForBO α), a #))
 
-data UnsafeImpure a = UnsafeImpure
+{- | A world that can sequence linear IO.
 
--- | Marker class for impure computation mode.
-class Impure a where
-  isImpure :: UnsafeImpure a
+The method is the capability itself: a missing method must fail when lifting an action, rather than granting permission through an unused witness.
+A world author must ensure that its runners sequence these effects in IO and preserve any additional world invariants.
+This grants arbitrary linear IO, including IO that blocks or forks; the world index does not enforce a protocol for those raw effects.
+-}
+class Impure w where
+  liftLinIO :: forall a α. L.IO a %1 -> BO' w α a
 
--- | Pure computation.
+-- | The pure world, whose computations can be eliminated without IO.
 data Pure
 
-instance (Unsatisfiable ('Text "Pure is not impure")) => Impure Pure where
-  isImpure = unsatisfiable
-
 instance Impure RealWorld where
-  isImpure = UnsafeImpure
+  liftLinIO = unsafeLinIOToBO
+  {-# INLINE liftLinIO #-}
+
+{- | A world whose computations may run unchanged on an unbound worker thread.
+
+Declaring an instance asserts this semantic obligation; it does not make thread-affine effects safe.
+Worlds with thread-affine invariants should reject this class and provide their own fork-join delimiter.
+-}
+class Forkable w
+
+instance Forkable Pure
+
+instance Forkable RealWorld
 
 -- | Pure borrow monad.
 type BO = BO' Pure
@@ -117,27 +132,27 @@ type BO = BO' Pure
 -- | Impure borrow monad, which can be run within 'L.IO'.
 type BIO = BO' RealWorld
 
-instance (Semigroup w) => Semigroup (BO' w α w) where
+instance (Semigroup a) => Semigroup (BO' w α a) where
   (<>) = Control.liftA2 (<>)
   {-# INLINE (<>) #-}
 
-instance (Monoid w) => Monoid (BO' w α w) where
+instance (Monoid a) => Monoid (BO' w α a) where
   mempty = Control.pure mempty
   {-# INLINE mempty #-}
 
-unsafeUnBO :: BO' w α a %1 -> State# (ForBO α) %1 -> (# State# (ForBO α), a #)
+unsafeUnBO :: forall α a w. BO' w α a %1 -> State# (ForBO α) %1 -> (# State# (ForBO α), a #)
 {-# INLINE unsafeUnBO #-}
 unsafeUnBO (BO' f) = f
 
-assocRBO :: BO' w ((α /\ β) /\ γ) a %1 -> BO' w (α /\ (β /\ γ)) a
+assocRBO :: forall α β γ a w. BO' w ((α /\ β) /\ γ) a %1 -> BO' w (α /\ (β /\ γ)) a
 {-# INLINE assocRBO #-}
 assocRBO = unsafeCastBO
 
-assocLBO :: BO' w (α /\ (β /\ γ)) a %1 -> BO' w ((α /\ β) /\ γ) a
+assocLBO :: forall α β γ a w. BO' w (α /\ (β /\ γ)) a %1 -> BO' w ((α /\ β) /\ γ) a
 {-# INLINE assocLBO #-}
 assocLBO = unsafeCastBO
 
-assocBOEq :: forall α β γ w a. BO' w ((α /\ β) /\ γ) a :~: BO' w (α /\ (β /\ γ)) a
+assocBOEq :: forall α β γ a w. BO' w ((α /\ β) /\ γ) a :~: BO' w (α /\ (β /\ γ)) a
 {-# INLINE assocBOEq #-}
 assocBOEq = Unsafe.coerce $ Refl @(BO' w (α /\ β /\ γ) a)
 
@@ -186,23 +201,23 @@ instance Control.Monad (BO' w α) where
     (# s', () #) -> fb s'
   {-# INLINE (>>) #-}
 
--- | Unsafely converts a 'BO' w' computation to linear 'L.IO'.
-unsafeBOToLinIO :: BO' w α a %1 -> L.IO a
+-- | Unsafely converts a 'BO'' computation to linear 'L.IO'.
+unsafeBOToLinIO :: forall α a w. BO' w α a %1 -> L.IO a
 {-# INLINE unsafeBOToLinIO #-}
 unsafeBOToLinIO (BO' f) = L.IO (Unsafe.coerce f)
 
 {- |
-Unsafely performs a linear 'L.IO' computation in 'BO' w' monad.
+Unsafely performs a linear 'L.IO' computation in 'BO'' monad.
 
 This is really, really unsafe. If you don't know what you are doing,
 you MUST NOT use this function, otherwise you can break purity in a hard way.
 -}
-unsafeLinIOToBO :: L.IO a %1 -> BO' w α a
+unsafeLinIOToBO :: forall a α w. L.IO a %1 -> BO' w α a
 {-# INLINE unsafeLinIOToBO #-}
 unsafeLinIOToBO (L.IO f) = BO' (Unsafe.coerce f)
 
 instance (Impure w) => MonadIO (BO' w α) where
-  liftIO = unsafeLinIOToBO
+  liftIO = liftLinIO
   {-# INLINE liftIO #-}
 
 runBO# :: forall {rep} α (o :: TYPE rep). (State# (ForBO α) %1 -> o) %1 -> o
@@ -210,19 +225,36 @@ runBO# :: forall {rep} α (o :: TYPE rep). (State# (ForBO α) %1 -> o) %1 -> o
 runBO# = Unsafe.toLinear \f -> runRW# \s ->
   f (unsafeCoerce# s)
 
-execBO :: (w ~ Pure) => BO' w α a %1 -> Now α %1 -> (Now α, a)
+execBO :: BO α a %1 -> Now α %1 -> (Now α, a)
 {-# INLINE execBO #-}
 execBO (BO' f) !now =
   case runBO# f of
     (# s, !a #) -> dropState# s `PL.lseq` (now, a)
 
-execBIO :: (Impure w, MonadIO m) => BO' w α a %1 -> Now α %1 -> m (Now α, a)
+{- | Execute an IO-world action while retaining its lifetime token.
+
+The source world and target monad are fixed so this operation cannot bypass a custom world's runner or scope invariant.
+-}
+execBIO :: forall α a. BIO α a %1 -> Now α %1 -> L.IO (Now α, a)
 {-# INLINE execBIO #-}
-execBIO (BO' f) !now =
-  liftIO $
-    (now,) Control.<$> L.IO \s ->
-      case f (unsafeCoerceState# s) of
-        (# s, a #) -> (# unsafeCoerceState# s, a #)
+execBIO (BO' f) !now = L.IO \s ->
+  case f (unsafeCoerceState# s) of
+    (# s, !a #) -> (# unsafeCoerceState# s, (now, a) #)
+
+{- | Embed a pure computation without changing its lifetime or result.
+The state token sequences the computation in the destination world.
+-}
+liftBO :: forall α a w. BO α a %1 -> BO' w α a
+{-# INLINE liftBO #-}
+liftBO = Unsafe.coerce
+
+{- | Change an IO computation's world without establishing the destination world's invariants.
+The caller must establish those invariants, including any thread-affinity or scope requirements, before running the result.
+The destination must remain impure.
+-}
+unsafeLiftBIO :: forall α a w. (Impure w) => BIO α a %1 -> BO' w α a
+{-# INLINE unsafeLiftBIO #-}
+unsafeLiftBIO = liftLinIO . unsafeBOToLinIO
 
 unsafeCoerceState# :: State# a %1 -> State# b
 {-# INLINE unsafeCoerceState# #-}
@@ -232,58 +264,64 @@ dropState# :: State# a %1 -> ()
 {-# INLINE dropState# #-}
 dropState# = Unsafe.toLinear \ !_ -> ()
 
--- | See also 'Control.Monad.Borrow.Pure.scope'.
-sexecBO :: BO' w (α /\ β) a %1 -> Now α %1 -> BO' w β (Now α, a)
+-- | See also 'Control.Monad.Borrow.scope'.
+sexecBO :: forall α β a w. BO' w (α /\ β) a %1 -> Now α %1 -> BO' w β (Now α, a)
 {-# INLINE sexecBO #-}
 sexecBO f now = unsafeCastBO ((now,) PL.. Unsafe.toLinear (\ !a -> a) Control.<$> f)
 
 {- |
-Coerces lifetime in 'BO' w' computation usafely and brutally.
+Coerces lifetime in 'BO'' computation usafely and brutally.
 
 This is really, really unsafe. If you don't know what you are doing,
 you MUST NOT use this function, otherwise you will break the soundness of the type system.
 -}
-unsafeCastBO :: BO' w α a %1 -> BO' w β a
+unsafeCastBO :: forall α a β w. BO' w α a %1 -> BO' w β a
 {-# INLINE unsafeCastBO #-}
 unsafeCastBO = Unsafe.coerce
 
--- | Unsafely peforms a 'ST' computation in 'BO' w' monad.
-unsafeSTToBO :: ST s a %1 -> BO' w α a
+-- | Unsafely peforms a 'ST' computation in 'BO'' monad.
+unsafeSTToBO :: forall s a α w. ST s a %1 -> BO' w α a
 {-# INLINE unsafeSTToBO #-}
 unsafeSTToBO (ST.ST f) = BO' (Unsafe.coerce f)
 
 {- |
-Unsafely peforms a 'BO' w' computation in 'ST' monad.
+Unsafely peforms a 'BO'' computation in 'ST' monad.
 
 This is really unsafe. If you don't know what you are doing, you MUST NOT use this function, otherwise you can break purity in a hard way.
 -}
-unsafeBOToST :: BO' w α a %1 -> ST s a
+unsafeBOToST :: forall α a s w. BO' w α a %1 -> ST s a
 {-# INLINE unsafeBOToST #-}
 unsafeBOToST (BO' f) = ST.ST (Unsafe.coerce f)
 
 {- |
-Unsafely performs a standard, non-linear 'IO' computation in 'BO' w' monad.
+Unsafely performs a standard, non-linear 'IO' computation in 'BO'' monad.
 
 This is really, really unsafe. If you don't know what you are doing,
 you MUST NOT use this function, otherwise you can break purity in a hard way.
 -}
-unsafeSystemIOToBO :: IO a %1 -> BO' w α a
+unsafeSystemIOToBO :: forall a α w. IO a %1 -> BO' w α a
 {-# INLINE unsafeSystemIOToBO #-}
 unsafeSystemIOToBO (GHC.IO a) = BO' (Unsafe.coerce a)
 
--- | Unsafely performs a 'BO' w' in the standard, non-linear 'IO' monad.
-unsafeBOToSystemIO :: BO' w α a %1 -> IO a
+-- | Unsafely performs a 'BO'' in the standard, non-linear 'IO' monad.
+unsafeBOToSystemIO :: forall α a w. BO' w α a %1 -> IO a
 {-# INLINE unsafeBOToSystemIO #-}
 unsafeBOToSystemIO (BO' f) = GHC.IO (Unsafe.coerce f)
 
-unsafePerformEvaluateUndupableBO :: BO' w α a %1 -> a
+unsafePerformEvaluateUndupableBO :: BO α a %1 -> a
 unsafePerformEvaluateUndupableBO (BO' f) = runBO# \s ->
   case Unsafe.toLinear GHC.noDuplicate# s of
     s -> case f s of
       (# s, !a #) -> dropState# s `PL.lseq` a
 
--- | Run two computations in parallel, returning their results as a tuple.
-parBO :: BO' w α a %1 -> BO' w α b %1 -> BO' w α (a, b)
+{- | Run two computations on unbound worker threads and return both results.
+
+Both branches finish before the result is returned normally.
+An exception in a child is not propagated to the parent and can leave the parent waiting indefinitely.
+Interrupting the parent does not cancel or join its children, whose effects may continue.
+Parallel IO effects are not generally deterministic, even though exclusive borrows remain disjoint.
+-}
+parBO :: forall α a b w. (Forkable w) => BO' w α a %1 -> BO' w α b %1 -> BO' w α (a, b)
 parBO = Unsafe.toLinear2 \a b -> unsafeSystemIOToBO do
   aVar <- newEmptyMVar
   bVar <- newEmptyMVar
@@ -297,7 +335,7 @@ parBO = Unsafe.toLinear2 \a b -> unsafeSystemIOToBO do
   !b' <- takeMVar bVar
   NonLinear.pure (a', b')
 
-evaluateBO :: a %1 -> BO' w α a
+evaluateBO :: forall a α w. a %1 -> BO' w α a
 {-# INLINE evaluateBO #-}
 evaluateBO a = unsafeSystemIOToBO (Unsafe.toLinear SystemIO.evaluate a)
 
@@ -369,7 +407,7 @@ Any delimiter that runs a continuation and then hands the caller back the borrow
 Returning the caller's own occurrence instead lets common-subexpression elimination serve a post-scope read of the resource from a pre-scope one, across every write the scope performed.
 See Note [Restoring a borrow must break its Core identity] for why, and for why the @OPAQUE@ and the state token are both load-bearing.
 -}
-reviveAlias :: Alias ak a %1 -> BO' w α (Alias ak a)
+reviveAlias :: forall ak a α w. Alias ak a %1 -> BO' w α (Alias ak a)
 {-# OPAQUE reviveAlias #-}
 reviveAlias a = BO' \s -> (# s, a #)
 
@@ -474,7 +512,7 @@ instance (α <= β, a <: b) => Lend α a <: Lend β b where
 {- |
 Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim the resource to lend at the 'End' of the lifetime.
 
-For typical usage, you should use 'Control.Monad.Borrow.Pure.borrowM' to avoid type ambiguity.
+For typical usage, you should use 'Control.Monad.Borrow.borrowM' to avoid type ambiguity.
 -}
 borrow :: forall α a. a %1 -> Linearly %1 -> (Mut α a, Lend α a)
 borrow = Unsafe.toLinear2 \ !a !_ ->
@@ -488,9 +526,12 @@ share = Unsafe.toLinear \(UnsafeAlias !a) -> Ur (UnsafeAlias a)
 reclaim' :: Lend α a %1 -> After α a
 reclaim' l = After (reclaim l)
 
--- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
-reclaim :: (End α) => Lend α a %1 -> a
-reclaim = \(UnsafeAlias !a) -> a
+{- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
+See Note [Forged capability instances] in the lifetime token internals.
+-}
+reclaim :: forall α a. (End α) => Lend α a %1 -> a
+reclaim (UnsafeAlias !a) = case endToken @α of
+  UnsafeEnd -> a
 
 -- | Reborrow a mutable borrow into a sublifetime.
 reborrow :: forall β α a. (α >= β) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
@@ -515,7 +556,7 @@ The borrow is handed back through 'reviveAlias' rather than returned directly;
 see Note [Restoring a borrow must break its Core identity] there.
 -}
 unsafeBorrowScope_ ::
-  forall bk w α α' a r.
+  forall bk α α' a r w.
   (Consumable r) =>
   Mut α a %1 ->
   (forall β. Borrow bk (β /\ α) a %(BorrowMultiplicity bk) -> BO' w (β /\ α') r) %1 ->
@@ -540,7 +581,7 @@ discharged here in the same way. The result type is fixed by the caller, so it
 cannot mention the private @β@ and no borrow at @β@ escapes in it.
 -}
 unsafeBorrowScope ::
-  forall bk w α α' a r.
+  forall bk α α' a r w.
   Mut α a %1 ->
   (forall β. Borrow bk (β /\ α) a %(BorrowMultiplicity bk) -> BO' w (β /\ α') r) %1 ->
   BO' w α' (r, Mut α a)
@@ -557,12 +598,12 @@ restoring the original mutable borrow.
 
 Beyond the obligations of 'unsafeBorrowScope', the 'EndToken' supplied to
 'withEnd' is the runtime-erased one. That is sound for the same reason it is in
-'Control.Monad.Borrow.Pure.BO' w.srunBO': the continuation has already returned, so
+'Control.Monad.Borrow.BO.srunBO': the continuation has already returned, so
 the sublifetime it was typechecked in is over by the time the token is applied,
 and the caller-fixed result type cannot mention that lifetime.
 -}
 unsafeBorrowScope' ::
-  forall bk w α α' a r.
+  forall bk α α' a r w.
   Mut α a %1 ->
   (forall β. Borrow bk (β /\ α) a %(BorrowMultiplicity bk) -> BO' w (β /\ α') (After β r)) %1 ->
   BO' w α' (r, Mut α a)
@@ -578,19 +619,19 @@ type family BorrowMultiplicity bk where
   BorrowMultiplicity 'Share = Many
 
 {- |
-Run a rank-2 'BO' w' action in a statically delimited fresh sublifetime without
+Run a rank-2 'BO'' action in a statically delimited fresh sublifetime without
 constructing a runtime lifetime token.
 
 The action is typechecked parametrically for every private lifetime, so it
 cannot rely on the implementation's erased instantiation at the ambient
 lifetime or return a borrow at a caller-nameable lifetime. Existentially hiding
 the private lifetime supplies no evidence needed to use such a borrow in an
-ambient 'BO' w'. The state-token coercion executes the action exactly once. This
+ambient 'BO''. The state-token coercion executes the action exactly once. This
 is the non-finalizing analogue of 'srunBO'; it cannot eliminate 'After' or
 provide 'End' evidence.
 -}
 unsafeSrunBO_ ::
-  forall w β a.
+  forall β a w.
   (forall α. BO' w (α /\ β) a) %1 ->
   BO' w β a
 {-# INLINE unsafeSrunBO_ #-}

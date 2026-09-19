@@ -11,9 +11,9 @@ module Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity.Typin
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (UnsafeAlias))
-import Control.Monad.Borrow.Pure.Clone (Clone (clone))
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Clone (Clone (clone))
+import Control.Monad.Borrow.Unsafe (Alias (UnsafeAlias))
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Vector qualified as V
 import Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity qualified as Vector

@@ -11,8 +11,8 @@ module Control.Monad.Borrow.Pure.Experimental.BorrowsSpec (
 
 import Control.Exception qualified as Exception
 import Control.Functor.Linear qualified as Control
+import Control.Monad.Borrow.Experimental.Borrows
 import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Experimental.Borrows
 import Control.Monad.Borrow.Pure.Experimental.Borrows.TypingCases
 import Data.List qualified as List
 import Prelude.Linear

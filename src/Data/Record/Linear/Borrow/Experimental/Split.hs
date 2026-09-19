@@ -45,8 +45,8 @@ module Data.Record.Linear.Borrow.Experimental.Split (
   (!#),
 ) where
 
-import Control.Monad.Borrow.Pure.BO (Lifetime)
-import Control.Monad.Borrow.Pure.BO.Internal
+import Control.Monad.Borrow.BO (Lifetime)
+import Control.Monad.Borrow.Internal
 import Data.Kind (Constraint)
 import GHC.Base (Multiplicity (..), TYPE, Type)
 import GHC.OverloadedLabels (IsLabel (..))

@@ -24,7 +24,7 @@ import Control.Concurrent.DivideConquer.Linear (fftDC)
 import Control.DeepSeq (NFData (..), force)
 import Control.Exception (evaluate)
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.BO
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Bits (popCount)
 import Data.Complex

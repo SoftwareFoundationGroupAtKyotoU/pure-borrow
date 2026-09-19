@@ -9,7 +9,7 @@ module PureBorrow.Inspection.GenericGrowableUnrestricted (
   unboxedPush,
 ) where
 
-import Control.Monad.Borrow.Pure.BO (BO, Mut)
+import Control.Monad.Borrow.BO (BO, Mut)
 import Data.Vector qualified as Boxed
 import Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted qualified as Growable
 import Data.Vector.Mutable qualified as BoxedMutable

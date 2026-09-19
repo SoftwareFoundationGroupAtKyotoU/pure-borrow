@@ -14,10 +14,10 @@ module Control.Monad.Borrow.Pure.BOSpec (
 ) where
 
 import Control.Functor.Linear qualified as Control
+import Control.Monad.Borrow.BO qualified as BO
+import Control.Monad.Borrow.Experimental.Borrows qualified as Borrows
+import Control.Monad.Borrow.Experimental.Reborrowable qualified as Reborrowable
 import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.BO qualified as BO
-import Control.Monad.Borrow.Pure.Experimental.Borrows qualified as Borrows
-import Control.Monad.Borrow.Pure.Experimental.Reborrowable qualified as Reborrowable
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Functor.Linear qualified as Data
 import Data.HashMap.RobinHood.Mutable.Linear.Borrow qualified as HashMap
@@ -65,7 +65,7 @@ The kernels below share one shape: read the length through a borrow, hand that b
 The second read must observe the growth.
 
 They live here rather than with the growable vector's own tests because the growable vector is the instrument, not the subject.
-What is under test is the delimiter -- see Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Pure.BO.Internal" -- and a growable vector is simply the resource this package ships whose length and buffer are read outside the state token, so a delimiter that hands back the caller's own binder lets common-subexpression elimination serve the second read from the first.
+What is under test is the delimiter -- see Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Internal" -- and a growable vector is simply the resource this package ships whose length and buffer are read outside the state token, so a delimiter that hands back the caller's own binder lets common-subexpression elimination serve the second read from the first.
 
 Two details are load-bearing, and both were established by measuring variants against the pre-fix delimiter rather than by reasoning.
 

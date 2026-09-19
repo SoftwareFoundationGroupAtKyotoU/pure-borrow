@@ -74,9 +74,9 @@ module PureBorrow.Bench.ScopeDensity (
 ) where
 
 import Control.Functor.Linear qualified as Control
+import Control.Monad.Borrow.Experimental.Borrows
+import Control.Monad.Borrow.Experimental.Reborrowable (locally_)
 import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Experimental.Borrows
-import Control.Monad.Borrow.Pure.Experimental.Reborrowable (locally_)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Ref.Linear qualified as Ref
 import Data.Ref.Linear.Borrow qualified as RefBorrow

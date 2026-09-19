@@ -199,10 +199,13 @@ The public entry point is `Control.Monad.Borrow.Pure`.
 - **`Utils` / `Utils/**` = truly private** (`other-modules`, not exposed).
 - **`Experimental.*`** modules are exposed but unstable (`Borrows`, `Loop`, `Reborrowable`, and `Data.Record.Linear.Borrow.Experimental.*` record-splitting).
 
-### Core: the `BO` monad — `src/Control/Monad/Borrow/Pure/BO/Internal.hs`
+### Core: the `BO` monad — `src/Control/Monad/Borrow/Internal.hs`
 
-`BO α a` is morally a **linear `ST` monad** whose phantom state token is indexed by a *lifetime* `α` (kind `Lifetime`) instead of `ST`'s `s`.
-Run with `runBO`/`runBO_`/`srunBO`, which require a `Linearly` witness.
+`BO α a = BO' Pure α a` is morally a **linear `ST` monad** whose phantom state token is indexed by a *lifetime* `α` (kind `Lifetime`) instead of `ST`'s `s`.
+The canonical world-polymorphic definitions live under `Control.Monad.Borrow`; `Control.Monad.Borrow.Pure` remains the pure prelude.
+`BIO α a = BO' RealWorld α a` sequences effects through `Impure` and is eliminated only in IO; pure runners remain fixed to `Pure`.
+Parallel operations require `Forkable w`, which asserts that the world can move to an unbound worker thread.
+Run pure computations with `runBO`/`runBO_`, which require a `Linearly` witness, or delimit a sublifetime with `srunBO`.
 Purity of parallelism (`parBO`) is provided by trusted `unsafe*` primitives that fork real IO and `evaluate` into `MVar`s — observationally pure thanks to the phantom-state + linearity discipline.
 
 Borrow types are all one zero-cost representation, `Alias ak α a`:
@@ -211,7 +214,7 @@ Borrow types are all one zero-cost representation, `Alias ak α a`:
 - `Lend α a` — the capability to `reclaim` the original once the lifetime ends.
 - Intro/elim: `borrow`, `share`, `reborrow`, `reclaim`/`reclaim'`, plus `split*` machinery (generic, via `Generics.Linear`) that turns a borrow of a structure into a structure of borrows.
 
-### Lifetimes — `src/Control/Monad/Borrow/Pure/Lifetime/`
+### Lifetimes — `src/Control/Monad/Borrow/Lifetime/`
 
 - `Lifetime/Internal.hs` — the type-level algebra: `Lifetime = Al Nat | (:/\) | Static`, a free bounded lower-semilattice; `/\` is meet.
   The outlives relation `(<=)`/`(>=)` is a layered class hierarchy with explicit GADT witnesses and `INCOHERENT` instances that hand-implement transitivity/associativity of subtyping (no typechecker plugin).

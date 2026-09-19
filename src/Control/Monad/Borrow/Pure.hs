@@ -13,13 +13,16 @@
 
 {- |
 This module is meant to be the prelude module of /Pure Borrow/, a Rust-style borrow realization in Linear Haskell.
-This module provides only the basic pieces of the API, and you may want to import other modules, e.g. "Control.Monad.Borrow.Pure.BO", "Data.Ref.Linear.Borrow", or "Data.Vector.Mutable.Linear.Borrow", for more utilities.
+This module provides only the basic pieces of the API, and you may want to import other modules, e.g. "Control.Monad.Borrow.BO", "Data.Ref.Linear.Borrow", or "Data.Vector.Mutable.Linear.Borrow", for more utilities.
 -}
 module Control.Monad.Borrow.Pure (
   -- $header
 
   -- * Core 'BO' monad
   BO (),
+  BO',
+  Pure,
+  Forkable,
   runBO,
   runBOLend,
   runBO_,
@@ -128,9 +131,9 @@ module Control.Monad.Borrow.Pure (
   Ur (..),
 ) where
 
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.Clone
-import Control.Monad.Borrow.Pure.Copyable
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Clone
+import Control.Monad.Borrow.Copyable
 import Control.Optics.Linear (Traversal, traverseOf)
 import Data.Unrestricted.Linear (Consumable (..), Dupable (..), Movable (..), Ur (..), dup, dup3)
 import Prelude.Linear ((.))
@@ -158,6 +161,13 @@ The core idea is that mutable resources are accessed through lifetime-indexed bo
     * @'Share' α a@ is an immutable borrow of an @a@ valid during @α@.
     * @'Lend' α a@ is the capability to recover the original @a@ after @α@ ends.
     * @'After' α a@ describes post-processing that runs after @α@ ends, such as reclaiming a 'Lend'.
+
+== Effectful worlds
+
+The shared core is @'BO'' w α a@, where the nominal world @w@ records the permitted effects.
+'BO' specializes it to 'Pure', and the runners in this module remain pure.
+"Control.Monad.Borrow.IO" provides @BIO@ and runners that sequence effects in linear or ordinary IO.
+Use "Control.Monad.Borrow" for the world-generic API; 'Par' now carries the world explicitly as @Par w α a@.
 
 == Examples
 
@@ -385,7 +395,7 @@ Analogously, you can reborrow mutable borrows into sublifetimes using the 'rebor
   'BO' α' (r, 'Mut' α a)
 @
 
-There is an experimental interface abstracting the reborrowable borrows in "Control.Monad.Borrow.Pure.Experimental.Reborrowable".
+There is an experimental interface abstracting the reborrowable borrows in "Control.Monad.Borrow.Experimental.Reborrowable".
 
 == Borrow polymorphism
 
@@ -400,7 +410,7 @@ type 'Lend' α a = 'Alias' 'Lend α a
 
 Hence, if you see @'Borrow' bk α a@ in a function, it can be either 'Mut' or 'Share'. If you see @'Alias' ak α a@, it may also be a 'Lend'.
 
-"Control.Monad.Borrow.Pure.Experimental.Borrows" provides an experimental API for treating a bundle of multiple borrows in the same lifetime at once.
+"Control.Monad.Borrow.Experimental.Borrows" provides an experimental API for treating a bundle of multiple borrows in the same lifetime at once.
 
 == Which combinator should I use?
 

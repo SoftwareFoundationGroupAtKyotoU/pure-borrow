@@ -6,8 +6,8 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# OPTIONS_HADDOCK hide #-}
 
-module Control.Monad.Borrow.Pure.Lifetime.Internal (
-  module Control.Monad.Borrow.Pure.Lifetime.Internal,
+module Control.Monad.Borrow.Lifetime.Internal (
+  module Control.Monad.Borrow.Lifetime.Internal,
 ) where
 
 import Control.DeepSeq (NFData (..))
@@ -28,7 +28,7 @@ data Lifetime = Al Nat | Lifetime :/\ Lifetime | Static
 
 type Al = 'Al
 
--- | 'Static' lifetime, which lives forever and 'Control.Monad.Borrow.Pure.Lifetime.Token.neverEnds'.
+-- | 'Static' lifetime, which lives forever and 'Control.Monad.Borrow.Lifetime.Token.neverEnds'.
 type Static = 'Static
 
 infix 2 <=, <=!, <=!!

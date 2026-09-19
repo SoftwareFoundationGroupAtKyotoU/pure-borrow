@@ -16,15 +16,15 @@ module Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow.Internal (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.Affine (aff, pop)
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Internal (unsafeSrunBO_)
-import Control.Monad.Borrow.Pure.BO.Unsafe
-import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
+import Control.Monad.Borrow.Affine (aff, pop)
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Copyable
+import Control.Monad.Borrow.Internal (unsafeSrunBO_)
+import Control.Monad.Borrow.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )
+import Control.Monad.Borrow.Unsafe
 import Data.Ref.Linear qualified as Ref
 import Data.Ref.Linear.Borrow qualified as RefBorrow
 import Data.Unrestricted.Linear qualified as Ur
@@ -290,10 +290,11 @@ fromRefMut =
     (Unsafe.toLinear GrowableVector)
 
 withHeader ::
+  forall α β a result w.
   (α >= β) =>
-  (Header a %1 -> BO β (result, Header a)) %1 ->
+  (Header a %1 -> BO' w β (result, Header a)) %1 ->
   Mut α (GrowableVector a) %1 ->
-  BO β (result, Mut α (GrowableVector a))
+  BO' w β (result, Mut α (GrowableVector a))
 {-# INLINE withHeader #-}
 withHeader action vector = Control.do
   (result, ref) <- RefBorrow.update action (toRefMut vector)
@@ -325,10 +326,11 @@ capacity =
 
 -- | Borrow an initialized element at an index.
 get ::
+  forall a α β bk w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
   Borrow bk α (GrowableVector a) %1 ->
-  BO β (Borrow bk α a)
+  BO' w β (Borrow bk α a)
 {-# INLINE get #-}
 get index vector =
   case size vector of
@@ -346,10 +348,11 @@ get index vector =
 
 -- | Unchecked 'get'. The index must satisfy @0 <= index < size@.
 unsafeGet ::
+  forall a α β bk w.
   (U.Unbox a, α >= β) =>
   Int ->
   Borrow bk α (GrowableVector a) %1 ->
-  BO β (Borrow bk α a)
+  BO' w β (Borrow bk α a)
 {-# INLINE unsafeGet #-}
 unsafeGet =
   Unsafe.toLinear2 \index (UnsafeAlias (GrowableVector ref)) ->
@@ -361,25 +364,28 @@ unsafeGet =
 
 -- | Borrow the first initialized element.
 head ::
+  forall a α β bk w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Borrow bk α (GrowableVector a) %1 ->
-  BO β (Borrow bk α a)
+  BO' w β (Borrow bk α a)
 {-# INLINE head #-}
 head = get 0
 
 -- | Unchecked 'head'. The vector must be non-empty.
 unsafeHead ::
+  forall a α β bk w.
   (U.Unbox a, α >= β) =>
   Borrow bk α (GrowableVector a) %1 ->
-  BO β (Borrow bk α a)
+  BO' w β (Borrow bk α a)
 {-# INLINE unsafeHead #-}
 unsafeHead = unsafeGet 0
 
 -- | Borrow the last initialized element.
 last ::
+  forall a α β bk w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Borrow bk α (GrowableVector a) %1 ->
-  BO β (Borrow bk α a)
+  BO' w β (Borrow bk α a)
 {-# INLINE last #-}
 last vector =
   case size vector of
@@ -390,9 +396,10 @@ last vector =
 
 -- | Unchecked 'last'. The vector must be non-empty.
 unsafeLast ::
+  forall a α β bk w.
   (U.Unbox a, α >= β) =>
   Borrow bk α (GrowableVector a) %1 ->
-  BO β (Borrow bk α a)
+  BO' w β (Borrow bk α a)
 {-# INLINE unsafeLast #-}
 unsafeLast vector =
   case size vector of
@@ -400,10 +407,11 @@ unsafeLast vector =
 
 -- | Copy an initialized element through a shared borrow.
 copyAt ::
+  forall a α β w.
   (HasCallStack, U.Unbox a, Copyable a, α >= β) =>
   Int ->
   Share α (GrowableVector a) ->
-  BO β (Ur a)
+  BO' w β (Ur a)
 {-# INLINE copyAt #-}
 copyAt index vector = Control.do
   Ur !value <- move Control.<$> get index vector
@@ -411,10 +419,11 @@ copyAt index vector = Control.do
 
 -- | Copy an initialized element and retain the mutable borrow.
 copyAtMut ::
+  forall a α β w.
   (HasCallStack, U.Unbox a, Copyable a, α >= β) =>
   Int ->
   Mut α (GrowableVector a) %1 ->
-  BO β (Ur a, Mut α (GrowableVector a))
+  BO' w β (Ur a, Mut α (GrowableVector a))
 {-# INLINE copyAtMut #-}
 copyAtMut =
   Unsafe.toLinear2 \index vector@(UnsafeAlias (GrowableVector ref)) ->
@@ -437,11 +446,12 @@ copyAtMut =
 
 -- | Replace an initialized element and return the displaced value.
 set ::
+  forall a α β w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
   a %1 ->
   Mut α (GrowableVector a) %1 ->
-  BO β (a, Mut α (GrowableVector a))
+  BO' w β (a, Mut α (GrowableVector a))
 {-# INLINE set #-}
 set index value vector =
   case size vector of
@@ -460,11 +470,12 @@ set index value vector =
 
 -- | Unchecked 'set'. The index must satisfy @0 <= index < size@.
 unsafeSet ::
+  forall a α β w.
   (U.Unbox a, α >= β) =>
   Int ->
   a %1 ->
   Mut α (GrowableVector a) %1 ->
-  BO β (a, Mut α (GrowableVector a))
+  BO' w β (a, Mut α (GrowableVector a))
 {-# INLINE unsafeSet #-}
 unsafeSet =
   Unsafe.toLinear3 \index !value vector@(UnsafeAlias (GrowableVector ref)) ->
@@ -477,11 +488,12 @@ unsafeSet =
 
 -- | Linearly transform an initialized element and return an auxiliary result.
 update ::
+  forall a α β result w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
-  (a %1 -> BO β (result, a)) %1 ->
+  (a %1 -> BO' w β (result, a)) %1 ->
   Mut α (GrowableVector a) %1 ->
-  BO β (result, Mut α (GrowableVector a))
+  BO' w β (result, Mut α (GrowableVector a))
 {-# INLINE update #-}
 update index action vector =
   case size vector of
@@ -504,11 +516,12 @@ The callback must return exactly one replacement before the growable borrow is
 restored. No exceptional owner recovery is claimed.
 -}
 unsafeUpdate ::
+  forall a α β result w.
   (U.Unbox a, α >= β) =>
   Int ->
-  (a %1 -> BO β (result, a)) %1 ->
+  (a %1 -> BO' w β (result, a)) %1 ->
   Mut α (GrowableVector a) %1 ->
-  BO β (result, Mut α (GrowableVector a))
+  BO' w β (result, Mut α (GrowableVector a))
 {-# INLINE unsafeUpdate #-}
 unsafeUpdate index =
   Unsafe.toLinear2 \action vector@(UnsafeAlias (GrowableVector ref)) ->
@@ -524,11 +537,12 @@ unsafeUpdate index =
 
 -- | Linearly transform an initialized element.
 modify ::
+  forall a α β w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
   (a %1 -> a) %1 ->
   Mut α (GrowableVector a) %1 ->
-  BO β (Mut α (GrowableVector a))
+  BO' w β (Mut α (GrowableVector a))
 {-# INLINE modify #-}
 modify index function vector = Control.do
   ((), vector) <-
@@ -540,11 +554,12 @@ modify index function vector = Control.do
 
 -- | Swap two initialized elements.
 swap ::
+  forall a α β w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Mut α (GrowableVector a) %1 ->
   Int ->
   Int ->
-  BO β (Mut α (GrowableVector a))
+  BO' w β (Mut α (GrowableVector a))
 {-# INLINE swap #-}
 swap vector first second =
   case size vector of
@@ -569,11 +584,12 @@ swap vector first second =
 
 -- | Unchecked 'swap'. Both indices must satisfy @0 <= index < size@.
 unsafeSwap ::
+  forall a α β w.
   (U.Unbox a, α >= β) =>
   Mut α (GrowableVector a) %1 ->
   Int ->
   Int ->
-  BO β (Mut α (GrowableVector a))
+  BO' w β (Mut α (GrowableVector a))
 {-# INLINE unsafeSwap #-}
 unsafeSwap =
   Unsafe.toLinear3 \vector@(UnsafeAlias (GrowableVector ref)) first second ->
@@ -586,10 +602,11 @@ unsafeSwap =
 
 -- | Ensure at least the requested absolute capacity.
 reserve ::
+  forall a α β w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
   Mut α (GrowableVector a) %1 ->
-  BO β (Mut α (GrowableVector a))
+  BO' w β (Mut α (GrowableVector a))
 {-# INLINE reserve #-}
 reserve requested vector
   | requested < 0 =
@@ -606,10 +623,11 @@ reserve requested vector
 
 -- | Ensure capacity for at least current size plus the requested amount.
 reserveAdditional ::
+  forall a α β w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
   Mut α (GrowableVector a) %1 ->
-  BO β (Mut α (GrowableVector a))
+  BO' w β (Mut α (GrowableVector a))
 {-# INLINE reserveAdditional #-}
 reserveAdditional additional vector
   | additional < 0 =
@@ -631,10 +649,11 @@ reserveAdditional additional vector
 
 -- | Append one linearly supplied element.
 push ::
+  forall a α β w.
   (HasCallStack, U.Unbox a, α >= β) =>
   a %1 ->
   Mut α (GrowableVector a) %1 ->
-  BO β (Mut α (GrowableVector a))
+  BO' w β (Mut α (GrowableVector a))
 {-# INLINE push #-}
 push =
   Unsafe.toLinear2 \ !value vector -> Control.do
@@ -653,10 +672,11 @@ push =
 
 -- | Append copies of all elements of an immutable unboxed vector.
 extend ::
+  forall a α β w.
   (HasCallStack, U.Unbox a, α >= β) =>
   U.Vector a ->
   Mut α (GrowableVector a) %1 ->
-  BO β (Mut α (GrowableVector a))
+  BO' w β (Mut α (GrowableVector a))
 {-# INLINE extend #-}
 extend source vector = Control.do
   ((), vector) <-
@@ -684,11 +704,12 @@ copyImmutable source offset target =
   U.copy (UM.unsafeSlice offset (U.length source) target) source
 
 copyImmutableInto ::
+  forall a β w.
   (U.Unbox a) =>
   U.Vector a ->
   Int ->
   UM.IOVector a %1 ->
-  BO β (UM.IOVector a)
+  BO' w β (UM.IOVector a)
 {-# INLINE copyImmutableInto #-}
 copyImmutableInto source offset =
   Unsafe.toLinear \target -> unsafeSystemIOToBO do
@@ -696,11 +717,12 @@ copyImmutableInto source offset =
     NonLinear.pure target
 
 writeAt ::
+  forall a β w.
   (U.Unbox a) =>
   Int ->
   a %1 ->
   UM.IOVector a %1 ->
-  BO β (UM.IOVector a)
+  BO' w β (UM.IOVector a)
 {-# INLINE writeAt #-}
 writeAt =
   Unsafe.toLinear3 \index value target -> unsafeSystemIOToBO do
@@ -708,11 +730,12 @@ writeAt =
     NonLinear.pure target
 
 growTo ::
+  forall a β w.
   (U.Unbox a) =>
   Int ->
   Int ->
   UM.IOVector a %1 ->
-  BO β (UM.IOVector a)
+  BO' w β (UM.IOVector a)
 {-# INLINE growTo #-}
 growTo =
   Unsafe.toLinear3 \logicalSize requested buffer ->
@@ -767,30 +790,32 @@ getContents =
 
 -- | Borrow the fixed initialized prefix in a rank-2 no-growth scope.
 withContent ::
+  forall a bk α result w.
   (U.Unbox a) =>
   Borrow bk α (GrowableVector a) %1 ->
   ( forall β.
     Borrow bk (β /\ α) (Fixed.Vector a) %1 ->
-    BO (β /\ α) result
+    BO' w (β /\ α) result
   ) %1 ->
-  BO α (result, Borrow bk α (GrowableVector a))
+  BO' w α (result, Borrow bk α (GrowableVector a))
 {-# INLINE withContent #-}
 withContent =
   Unsafe.toLinear2 \vector action ->
-    -- The growable borrow is handed back through `reviveAlias`, as the scalar delimiters do: see Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Pure.BO.Internal".
+    -- The growable borrow is handed back through `reviveAlias`, as the scalar delimiters do: see Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Internal".
     unsafeSrunBO_ Control.do
       result <- action (getContents (Unsafe.coerce vector))
       (result,) Control.<$> reviveAlias vector
 
 -- | A result-discarding variant of 'withContent'.
 withContent_ ::
+  forall a result bk α w.
   (U.Unbox a, Consumable result) =>
   Borrow bk α (GrowableVector a) %1 ->
   ( forall β.
     Borrow bk (β /\ α) (Fixed.Vector a) %1 ->
-    BO (β /\ α) result
+    BO' w (β /\ α) result
   ) %1 ->
-  BO α (Borrow bk α (GrowableVector a))
+  BO' w α (Borrow bk α (GrowableVector a))
 {-# INLINE withContent_ #-}
 withContent_ vector action =
   withContent vector action Control.<&> \(result, vector) ->

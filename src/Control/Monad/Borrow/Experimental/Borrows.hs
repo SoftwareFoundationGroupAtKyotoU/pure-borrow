@@ -23,7 +23,7 @@
 {- |
 The module provides 'Aliases', which is a heterogeneous list of 'Alias'es in the same lifetime.
 -}
-module Control.Monad.Borrow.Pure.Experimental.Borrows (
+module Control.Monad.Borrow.Experimental.Borrows (
   Aliases (..),
   Muts,
   Shares,
@@ -38,12 +38,12 @@ module Control.Monad.Borrow.Pure.Experimental.Borrows (
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad qualified as NonLinear
-import Control.Monad.Borrow.Pure.Affine
-import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Internal
-import Control.Monad.Borrow.Pure.Experimental.Reborrowable
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe qualified as Unsafe.Token
+import Control.Monad.Borrow.Affine
+import Control.Monad.Borrow.Affine.Unsafe (unsafeAff)
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Experimental.Reborrowable
+import Control.Monad.Borrow.Internal
+import Control.Monad.Borrow.Lifetime.Token.Unsafe qualified as Unsafe.Token
 import Data.Coerce.Directed.Unsafe
 import Data.Kind
 import Prelude.Linear hiding (foldMap)
@@ -123,8 +123,8 @@ reborrows = Unsafe.toLinear \v -> (unsafeCoerce v, unsafeCoerce v)
 
 {- | Return a bundle of borrows to the caller of a delimiter, through a barrier the optimizer cannot see through.
 
-This is the plural counterpart of 'Control.Monad.Borrow.Pure.BO.Unsafe.reviveAlias', and it exists for the same reason.
-See Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Pure.BO.Internal".
+This is the plural counterpart of 'Control.Monad.Borrow.Unsafe.reviveAlias', and it exists for the same reason.
+See Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Internal".
 
 'reborrowings'' would otherwise restore the caller's own occurrence, since 'reborrows' hands the same value out as both borrow and lender and 'reclaim' is a newtype unwrap.
 It happens not to misbehave today, because 'reclaim'' is reached through 'withEnd', whose @withDict@ desugars through the wired-in @nospec@ and survives every Core-to-Core pass — but that is a coincidence of one desugaring, and it is exactly the kind of accident the Note argues a delimiter must not rest on.
@@ -132,7 +132,7 @@ It happens not to misbehave today, because 'reclaim'' is reached through 'withEn
 This is exported so that the Core obligations in @pure-borrow-inspection@ can state what the erased plural delimiters must compile to, barrier included.
 Exporting it weakens nothing: it is 'Control.Functor.Linear.pure' behind an @OPAQUE@, so the worst a caller can do with it is add a barrier that was not needed.
 -}
-reviveAliases :: Aliases k xs %1 -> BO α (Aliases k xs)
+reviveAliases :: forall k xs α w. Aliases k xs %1 -> BO' w α (Aliases k xs)
 {-# OPAQUE reviveAliases #-}
 reviveAliases as = Control.pure as
 
@@ -140,7 +140,7 @@ reviveAliases as = Control.pure as
 Retag a bundle's lifetime, leaving its borrow kind, spine, order and payloads
 untouched.
 
-The plural counterpart of 'Control.Monad.Borrow.Pure.BO.Unsafe.unsafeCastAlias',
+The plural counterpart of 'Control.Monad.Borrow.Unsafe.unsafeCastAlias',
 and unlike it this cannot be a @coerceLin@: 'Aliases' is a GADT rather than a
 newtype over its payload, so no 'Data.Coerce.Coercible' relates two alias kinds
 and the coercion has to be a raw one.
@@ -189,13 +189,13 @@ obligations, and `Experimental.Borrows` is a documented module rather than an
 The plural non-finalizing delimiter, restoring the bundle on normal return.
 
 See Note [The plural delimiters are separate functions] and the obligations on
-'Control.Monad.Borrow.Pure.BO.Unsafe.unsafeBorrowScope'.
+'Control.Monad.Borrow.Unsafe.unsafeBorrowScope'.
 -}
 unsafeBorrowsScope ::
-  forall α α' xs r.
+  forall α α' xs r w.
   Muts α xs %1 ->
-  (forall β. Muts (β /\ α) xs %1 -> BO (β /\ α') r) %1 ->
-  BO α' (r, Muts α xs)
+  (forall β. Muts (β /\ α) xs %1 -> BO' w (β /\ α') r) %1 ->
+  BO' w α' (r, Muts α xs)
 {-# INLINE unsafeBorrowsScope #-}
 unsafeBorrowsScope = Unsafe.toLinear2 \muts k ->
   unsafeSrunBO_ Control.do
@@ -209,11 +209,11 @@ The result is consumed in the returned value rather than at scope exit, so this
 stays observationally equivalent to the implementation @+slow@ restores.
 -}
 unsafeBorrowsScope_ ::
-  forall α α' xs r.
+  forall α α' xs r w.
   (Consumable r) =>
   Muts α xs %1 ->
-  (forall β. Muts (β /\ α) xs %1 -> BO (β /\ α') r) %1 ->
-  BO α' (Muts α xs)
+  (forall β. Muts (β /\ α) xs %1 -> BO' w (β /\ α') r) %1 ->
+  BO' w α' (Muts α xs)
 {-# INLINE unsafeBorrowsScope_ #-}
 unsafeBorrowsScope_ = Unsafe.toLinear2 \muts k ->
   unsafeSrunBO_ Control.do
@@ -226,15 +226,15 @@ The plural finalizing delimiter, whose continuation returns its result 'After'
 the sublifetime.
 
 The 'EndToken' is the runtime-erased one, sound for the reason given on
-'Control.Monad.Borrow.Pure.BO.Unsafe.unsafeBorrowScope'': the continuation has
+'Control.Monad.Borrow.Unsafe.unsafeBorrowScope'': the continuation has
 returned by the time it is applied, so the sublifetime it was typechecked in is
 over, and the caller-fixed result type cannot mention it.
 -}
 unsafeBorrowsScope' ::
-  forall α α' xs r.
+  forall α α' xs r w.
   Muts α xs %1 ->
-  (forall β. Muts (β /\ α) xs %1 -> BO (β /\ α') (After β r)) %1 ->
-  BO α' (r, Muts α xs)
+  (forall β. Muts (β /\ α) xs %1 -> BO' w (β /\ α') (After β r)) %1 ->
+  BO' w α' (r, Muts α xs)
 {-# INLINE unsafeBorrowsScope' #-}
 unsafeBorrowsScope' = Unsafe.toLinear2 \muts k ->
   unsafeSrunBO_ Control.do
@@ -243,9 +243,10 @@ unsafeBorrowsScope' = Unsafe.toLinear2 \muts k ->
 
 -- | A plural form of 'reborrowing''.
 reborrowings' ::
+  forall α a α' r w.
   Muts α a %1 ->
-  (forall β. Muts (β /\ α) a %1 -> BO (β /\ α') (After β r)) %1 ->
-  BO α' (r, Muts α a)
+  (forall β. Muts (β /\ α) a %1 -> BO' w (β /\ α') (After β r)) %1 ->
+  BO' w α' (r, Muts α a)
 {-# INLINE reborrowings' #-}
 #ifdef PURE_BORROW_SLOW_SCOPES
 reborrowings' v k = Control.do
@@ -261,9 +262,10 @@ reborrowings' = unsafeBorrowsScope'
 
 -- | A plural form of 'reborrowing'.
 reborrowings ::
+  forall α a α' r w.
   Muts α a %1 ->
-  (forall β. Muts (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
-  BO α' (r, Muts α a)
+  (forall β. Muts (β /\ α) a %1 -> BO' w (β /\ α') r) %1 ->
+  BO' w α' (r, Muts α a)
 {-# INLINE reborrowings #-}
 #ifdef PURE_BORROW_SLOW_SCOPES
 reborrowings mutα k = reborrowings' mutα (\mut -> Control.pure Control.<$> k mut)
@@ -273,10 +275,11 @@ reborrowings = unsafeBorrowsScope
 
 -- | A plural form of 'reborrowing_'.
 reborrowings_ ::
+  forall r α a α' w.
   (Consumable r) =>
   Muts α a %1 ->
-  (forall β. Muts (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
-  BO α' (Muts α a)
+  (forall β. Muts (β /\ α) a %1 -> BO' w (β /\ α') r) %1 ->
+  BO' w α' (Muts α a)
 {-# INLINE reborrowings_ #-}
 #ifdef PURE_BORROW_SLOW_SCOPES
 reborrowings_ mutα k = reborrowings mutα (Control.fmap consume . k) Control.<&> \((), a) -> a

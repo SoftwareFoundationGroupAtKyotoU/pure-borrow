@@ -14,8 +14,8 @@ module Control.Concurrent.DivideConquer.LinearSpec (
 import Control.Concurrent.DivideConquer.Linear
 import Control.Concurrent.DivideConquer.Linear qualified as DC
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.Copyable
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Copyable
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Complex (Complex (..), magnitude)
 import Data.List qualified as List

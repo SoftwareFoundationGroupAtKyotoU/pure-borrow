@@ -13,8 +13,8 @@ module Data.Vector.Mutable.Growable.Linear.TypingCases (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.Copyable (Copyable (copy))
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Copyable (Copyable (copy))
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce (coerce)
 import Data.Vector qualified as V

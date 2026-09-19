@@ -53,10 +53,10 @@ module Data.Vector.Mutable.Linear.Borrow (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe
-import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Utils
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Copyable
+import Control.Monad.Borrow.Unsafe
+import Control.Monad.Borrow.Utils
 import Control.Monad.ST.Strict (ST)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Function qualified as NonLinear
@@ -195,7 +195,7 @@ size =
 @'set' i a v@ sets the @i@-th element of @v@ to @a@, and returns the old value alongside.
 Note that @a@ is bound linearly.
 -}
-set :: (HasCallStack, α >= β) => Int -> a %1 -> Mut α (Vector a) %1 -> BO β (a, Mut α (Vector a))
+set :: forall α β a w. (HasCallStack, α >= β) => Int -> a %1 -> Mut α (Vector a) %1 -> BO' w β (a, Mut α (Vector a))
 {-# INLINE set #-}
 set i a v = DataFlow.do
   (len, v) <- size v
@@ -206,14 +206,14 @@ set i a v = DataFlow.do
         else unsafeSet i a v
 
 -- | 'set' without bound check.
-unsafeSet :: (α >= β) => Int -> a %1 -> Mut α (Vector a) %1 -> BO β (a, Mut α (Vector a))
+unsafeSet :: forall α β a w. (α >= β) => Int -> a %1 -> Mut α (Vector a) %1 -> BO' w β (a, Mut α (Vector a))
 unsafeSet = Unsafe.toLinear3 \i !a mut@(UnsafeAlias (Vector v)) -> unsafeSystemIOToBO do
   !old <- MV.unsafeRead v i
   MV.unsafeWrite v i a
   NonLinear.pure (old, mut)
 
 -- | 'get' without bounds check.
-unsafeGet :: (α >= β) => Int -> Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
+unsafeGet :: forall α β bk a w. (α >= β) => Int -> Borrow bk α (Vector a) %1 -> BO' w β (Borrow bk α a)
 {-# INLINE unsafeGet #-}
 unsafeGet i =
   Unsafe.toLinear \v ->
@@ -222,22 +222,22 @@ unsafeGet i =
         UnsafeAlias
           Control.<$> unsafeSystemIOToBO (MV.unsafeRead v i)
 
-head :: (HasCallStack, α >= β) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
+head :: forall α β bk a w. (HasCallStack, α >= β) => Borrow bk α (Vector a) %1 -> BO' w β (Borrow bk α a)
 {-# INLINE head #-}
 head = get 0
 
-unsafeHead :: (α >= β) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
+unsafeHead :: forall α β bk a w. (α >= β) => Borrow bk α (Vector a) %1 -> BO' w β (Borrow bk α a)
 {-# INLINE unsafeHead #-}
 unsafeHead = unsafeGet 0
 
-unsafeLast :: (α >= β) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
+unsafeLast :: forall α β bk a w. (α >= β) => Borrow bk α (Vector a) %1 -> BO' w β (Borrow bk α a)
 {-# INLINE unsafeLast #-}
 unsafeLast v = DataFlow.do
   (len, v) <- size v
   case len of
     Ur len -> unsafeGet (len - 1) v
 
-last :: (HasCallStack, α >= β) => Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
+last :: forall α β bk a w. (HasCallStack, α >= β) => Borrow bk α (Vector a) %1 -> BO' w β (Borrow bk α a)
 {-# INLINE last #-}
 last v = DataFlow.do
   (len, v) <- size v
@@ -247,8 +247,9 @@ last v = DataFlow.do
       | otherwise -> error ("last: empty vector") v
 
 get ::
+  forall α β bk a w.
   (HasCallStack, α >= β) =>
-  Int -> Borrow bk α (Vector a) %1 -> BO β (Borrow bk α a)
+  Int -> Borrow bk α (Vector a) %1 -> BO' w β (Borrow bk α a)
 {-# INLINE get #-}
 get i v = DataFlow.do
   (len, v) <- size v
@@ -258,14 +259,14 @@ get i v = DataFlow.do
         then error ("get: index " <> show i <> " out of bound: " <> show len) v
         else unsafeGet i v
 
-unsafeUpdate :: (α >= β) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))
+unsafeUpdate :: forall α β a b w. (α >= β) => Int -> (a %1 -> BO' w β (b, a)) %1 -> Mut α (Vector a) %1 -> BO' w β (b, Mut α (Vector a))
 unsafeUpdate i = Unsafe.toLinear2 \k (UnsafeAlias v) -> Control.do
   a <- unsafeSystemIOToBO $ MV.unsafeRead (content v) i
   (!b, !a') <- k a
   () <- unsafeSystemIOToBO $ Unsafe.toLinear3 MV.unsafeWrite (content v) i a'
   Control.pure $ (b, UnsafeAlias v)
 
-update :: (α >= β) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))
+update :: forall α β a b w. (α >= β) => Int -> (a %1 -> BO' w β (b, a)) %1 -> Mut α (Vector a) %1 -> BO' w β (b, Mut α (Vector a))
 update i k v = DataFlow.do
   (len, v) <- size v
   case len of
@@ -274,7 +275,7 @@ update i k v = DataFlow.do
         then error ("set: index " <> show i <> " out of bound: " <> show len) v k
         else unsafeUpdate i k v
 
-modify :: (α >= β) => Int -> (a %1 -> a) %1 -> Mut α (Vector a) %1 -> BO β (Mut α (Vector a))
+modify :: forall α β a w. (α >= β) => Int -> (a %1 -> a) %1 -> Mut α (Vector a) %1 -> BO' w β (Mut α (Vector a))
 modify i f v = Control.do
   ((), ma) <- update i (Control.pure . ((),) . f) v
   Control.pure ma
@@ -282,13 +283,13 @@ modify i f v = Control.do
 {- | Get multiple elements at the given indices without bounds and duplication check.
 For more safety, use 'indicesMut'.
 -}
-unsafeIndicesMut :: (α >= β) => Mut α (Vector a) %1 -> [Int] %1 -> BO β [Mut α a]
+unsafeIndicesMut :: forall α β a w. (α >= β) => Mut α (Vector a) %1 -> [Int] %1 -> BO' w β [Mut α a]
 unsafeIndicesMut = Unsafe.toLinear \v is ->
   Data.traverse
     (\i -> move i & \(Ur i) -> unsafeGet i v)
     is
 
-indicesMut :: (HasCallStack, α >= β) => Mut α (Vector a) %1 -> [Int] %1 -> BO β [Mut α a]
+indicesMut :: forall α β a w. (HasCallStack, α >= β) => Mut α (Vector a) %1 -> [Int] %1 -> BO' w β [Mut α a]
 indicesMut = Unsafe.toLinear2 \v is ->
   case size v of
     (Ur len, v) ->
@@ -305,12 +306,12 @@ splitAt = Unsafe.toLinear2 \i (UnsafeAlias (Vector v)) ->
   let (v1, v2) = MV.splitAt i v
    in (UnsafeAlias (Vector v1), UnsafeAlias (Vector v2))
 
-unsafeSwap :: (α >= β) => Mut α (Vector a) %1 -> Int -> Int -> BO β (Mut α (Vector a))
+unsafeSwap :: forall α β a w. (α >= β) => Mut α (Vector a) %1 -> Int -> Int -> BO' w β (Mut α (Vector a))
 unsafeSwap = Unsafe.toLinear3 \(UnsafeAlias v) i j -> Control.do
   () <- unsafeSystemIOToBO $ MV.unsafeSwap v.content i j
   Control.pure $ UnsafeAlias v
 
-swap :: (HasCallStack, α >= β) => Mut α (Vector a) %1 -> Int -> Int -> BO β (Mut α (Vector a))
+swap :: forall α β a w. (HasCallStack, α >= β) => Mut α (Vector a) %1 -> Int -> Int -> BO' w β (Mut α (Vector a))
 swap v i j = DataFlow.do
   (len, v) <- size v
   case len of
@@ -319,13 +320,14 @@ swap v i j = DataFlow.do
         then error ("swap: index out of bound: " <> show (i, j) <> " for length " <> show len) v
         else unsafeSwap v i j
 
-copyAt :: (Copyable a, α >= β) => Int -> Share α (Vector a) -> BO β (Ur a)
+copyAt :: forall a α β w. (Copyable a, α >= β) => Int -> Share α (Vector a) -> BO' w β (Ur a)
 copyAt i v = Control.do Ur !s <- move Control.<$> get i v; Control.pure $! Ur $! copy s
 
-copyAtMut :: forall a α β. (Copyable a, α >= β) => Int -> Mut α (Vector a) %1 -> BO β (Ur a, Mut α (Vector a))
+copyAtMut :: forall a α β w. (Copyable a, α >= β) => Int -> Mut α (Vector a) %1 -> BO' w β (Ur a, Mut α (Vector a))
 {-# INLINE copyAtMut #-}
 #ifdef PURE_BORROW_SLOW_SCOPES
-copyAtMut i v = upcast $ sharing @_ @α v $ copyAt i
+copyAtMut i v =
+  upcast @(BO' w α (Ur a, Mut α (Vector a))) $ sharing @_ @α v $ copyAt i
 #else
 copyAtMut = Unsafe.toLinear2 \i mut@(UnsafeAlias (Vector v)) ->
   let !len = MV.length v
@@ -342,10 +344,11 @@ copyAtMut = Unsafe.toLinear2 \i mut@(UnsafeAlias (Vector v)) ->
 
 -- | Applies an in-place mutation on 'V.MVector' from @vector@ package.
 unsafeInplace ::
+  forall α β a w.
   (α >= β) =>
   (forall s. V.MVector s a -> ST s ()) %1 ->
   Mut α (Vector a) %1 ->
-  BO β (Mut α (Vector a))
+  BO' w β (Mut α (Vector a))
 {-# INLINE unsafeInplace #-}
 unsafeInplace = Unsafe.toLinear2 \f (UnsafeAlias v) -> Control.do
   !() <- unsafeSTToBO $ f $ content $ coerceLin v
@@ -378,17 +381,17 @@ not practical - you need a genuine parallel scheduler
 to scale this up.
 -}
 qsort ::
-  forall a α β.
-  (Ord a, Copyable a, α >= β) =>
+  forall a α β w.
+  (Ord a, Copyable a, α >= β, Forkable w) =>
   {- | Cost for using parallelism. Halved after each recursive call,
   and stops parallelizing when it reaches 1.
   -}
   Word ->
   Mut α (Vector a) %1 ->
-  BO β ()
+  BO' w β ()
 qsort = go
   where
-    go :: Word -> Mut α (Vector a) %1 -> BO β ()
+    go :: Word -> Mut α (Vector a) %1 -> BO' w β ()
     go budget v = case size v of
       (Ur 0, v) -> Control.pure $ consume v
       (Ur 1, v) -> Control.pure $ consume v
@@ -399,17 +402,18 @@ qsort = go
         let b' = budget `quot` 2
         Control.void $ parIf (b' NonLinear.> 0) (go b' lo) (go b' hi)
 
-parIf :: Bool %1 -> BO α a %1 -> BO α b %1 -> BO α (a, b)
+parIf :: forall α a b w. (Forkable w) => Bool %1 -> BO' w α a %1 -> BO' w α b %1 -> BO' w α (a, b)
 {-# INLINE parIf #-}
 parIf p = if p then parBO else Control.liftA2 (,)
 
 divide ::
+  forall a α β w.
   (Ord a, Copyable a, α >= β) =>
   a ->
   Mut α (Vector a) %1 ->
   Int ->
   Int ->
-  BO β (Mut α (Vector a), Mut α (Vector a))
+  BO' w β (Mut α (Vector a), Mut α (Vector a))
 divide pivot = partUp
   where
     partUp v l u

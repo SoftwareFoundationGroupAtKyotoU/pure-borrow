@@ -12,13 +12,13 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# OPTIONS_HADDOCK hide #-}
 
-module Control.Monad.Borrow.Pure.Lifetime.Token.Internal (
-  module Control.Monad.Borrow.Pure.Lifetime.Token.Internal,
+module Control.Monad.Borrow.Lifetime.Token.Internal (
+  module Control.Monad.Borrow.Lifetime.Token.Internal,
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.Affine.Internal
-import Control.Monad.Borrow.Pure.Lifetime.Internal
+import Control.Monad.Borrow.Affine.Internal
+import Control.Monad.Borrow.Lifetime.Internal
 import Data.Coerce.Directed.Unsafe
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Constraint)
@@ -67,7 +67,22 @@ instance (α >= β) => EndToken α <: EndToken β where
 endLifetime :: Now (Al i) %1 -> (Ur (EndToken (Al i)))
 endLifetime UnsafeNow = Ur UnsafeEnd
 
--- | Witness that the lifetime @α@ has ended.
+{-
+Note [Forged capability instances]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+A class constraint alone is not evidence that its capability exists.
+Haskell permits an instance declaration with no method definitions, supplying a bottoming implementation for each omitted method.
+If an operation ignores that dictionary, such an instance can release a borrowed resource while its lifetime is still ongoing.
+Every operation that discharges an `End` constraint must therefore evaluate its `EndToken` before exposing the protected value.
+Likewise, `withEnd` must evaluate the token supplied by its caller even when the `After` payload does not use the resulting dictionary.
+A forged, bodiless instance then fails before a resource is released, while genuine tokens remain zero-cost after inlining.
+-}
+
+{- | Witness that the lifetime @α@ has ended.
+
+Operations that use this capability evaluate its token before releasing their result.
+See Note [Forged capability instances].
+-}
 class End (α :: Lifetime) where
   endToken :: EndToken α
 
@@ -85,13 +100,15 @@ newtype After α a = After ((End α) => a)
 instance (α <= β, a <: b) => After α a <: After β b where
   subtype = UnsafeSubtype
 
-unAfter :: (End α) => After α a %1 -> a
+unAfter :: forall α a. (End α) => After α a %1 -> a
 {-# INLINE unAfter #-}
-unAfter (After r) = r
+unAfter (After r) = case endToken @α of
+  UnsafeEnd -> r
 
 withEnd :: forall α r. EndToken α -> After α r %1 -> r
 {-# INLINE withEnd #-}
-withEnd end (After a) = Unsafe.toLinear (withDict @(End α) end) a
+withEnd end (After a) = case end of
+  UnsafeEnd -> Unsafe.toLinear (withDict @(End α) end) a
 
 instance Data.Functor (After α) where
   fmap f (After r) = After (f r)

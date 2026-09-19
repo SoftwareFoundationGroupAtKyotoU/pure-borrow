@@ -16,11 +16,17 @@
 This module provides all the safe API of 'BO' monad, including the advanced, low-level combinators that are not meant to be used by most users.
 For the conceptual overview, please refer to "Control.Monad.Borrow.Pure", which is the prelude of this package.
 -}
-module Control.Monad.Borrow.Pure.BO (
+module Control.Monad.Borrow.BO (
   -- $header
 
   -- * Core 'BO' monad
-  BO (),
+  BO',
+  BO,
+  BIO,
+  Pure,
+  Impure (..),
+  Forkable,
+  liftBO,
   execBO,
   runBO,
   runBOLend,
@@ -102,16 +108,16 @@ module Control.Monad.Borrow.Pure.BO (
   assocLendEq,
 
   -- * Re-exports
-  module Control.Monad.Borrow.Pure.Lifetime,
-  module Control.Monad.Borrow.Pure.Lifetime.Token,
+  module Control.Monad.Borrow.Lifetime,
+  module Control.Monad.Borrow.Lifetime.Token,
   module Data.Coerce.Directed,
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO.Internal
-import Control.Monad.Borrow.Pure.Lifetime
-import Control.Monad.Borrow.Pure.Lifetime.Token
-import Control.Monad.Borrow.Pure.Utils (coerceLin)
+import Control.Monad.Borrow.Internal
+import Control.Monad.Borrow.Lifetime
+import Control.Monad.Borrow.Lifetime.Token
+import Control.Monad.Borrow.Utils (coerceLin)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Coerce (Coercible)
 import Data.Coerce.Directed
@@ -121,7 +127,7 @@ import Data.Type.Coercion (Coercion (..))
 import Prelude.Linear
 
 #ifndef PURE_BORROW_SLOW_SCOPES
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe qualified as Unsafe
+import Control.Monad.Borrow.Lifetime.Token.Unsafe qualified as Unsafe
 #endif
 
 {- |
@@ -153,7 +159,7 @@ runBO_ lin bo = runBO lin Control.do
   pureAfter a
 
 -- | Flipped version of 'sexecBO'.
-scope_ :: Now α %1 -> BO (α /\ β) a %1 -> BO β (Now α, a)
+scope_ :: forall α β a w. Now α %1 -> BO' w (α /\ β) a %1 -> BO' w β (Now α, a)
 {-# INLINE scope_ #-}
 scope_ = flip sexecBO
 
@@ -169,11 +175,11 @@ There is also a flipped infix version '(<$=)'.
 See also: 'sharing'. For 'Mut'able borrows, see 'reborrowing_'.
 -}
 sharing_ ::
-  forall α α' a r.
+  forall α α' a r w.
   (Consumable r) =>
   Mut α a %1 ->
-  (forall β. Share (β /\ α) a -> BO (β /\ α') r) %1 ->
-  BO α' (Mut α a)
+  (forall β. Share (β /\ α) a -> BO' w (β /\ α') r) %1 ->
+  BO' w α' (Mut α a)
 {-# INLINE sharing_ #-}
 #ifdef PURE_BORROW_SLOW_SCOPES
 sharing_ v k = uncurry lseq Control.<$> sharing v k
@@ -183,9 +189,10 @@ sharing_ = unsafeBorrowScope_
 
 -- | Flipped infix version of 'sharing_', smoewhat analgous to '(Control.<$>)' and @(<%=)@ in @lens@ package.
 (<$=) ::
-  (forall β. Share (β /\ α) a -> BO (β /\ α') ()) %1 ->
+  forall α a α' w.
+  (forall β. Share (β /\ α) a -> BO' w (β /\ α') ()) %1 ->
   Mut α a %1 ->
-  BO α' (Mut α a)
+  BO' w α' (Mut α a)
 {-# INLINE (<$=) #-}
 (<$=) = flip sharing_
 
@@ -195,10 +202,10 @@ There is also a flipped infix version '(<$~)'.
 See also: 'sharing_'. For 'Mut'able borrows, see 'reborrowing'.
 -}
 sharing ::
-  forall α α' a r.
+  forall α α' a r w.
   Mut α a %1 ->
-  (forall β. Share (β /\ α) a -> BO (β /\ α') r) %1 ->
-  BO α' (r, Mut α a)
+  (forall β. Share (β /\ α) a -> BO' w (β /\ α') r) %1 ->
+  BO' w α' (r, Mut α a)
 {-# INLINE sharing #-}
 #ifdef PURE_BORROW_SLOW_SCOPES
 sharing v k = sharing' v (\mut -> Control.pure Control.<$> k mut)
@@ -208,9 +215,10 @@ sharing = unsafeBorrowScope
 
 -- | Flipped infix version of 'sharing', smoewhat analgous to '(Control.<$>)' and @(<%~)@ in @lens@ package.
 (<$~) ::
-  (forall β. Share (β /\ α) a -> BO (β /\ α') r) %1 ->
+  forall α a α' r w.
+  (forall β. Share (β /\ α) a -> BO' w (β /\ α') r) %1 ->
   Mut α a %1 ->
-  BO α' (r, Mut α a)
+  BO' w α' (r, Mut α a)
 {-# INLINE (<$~) #-}
 (<$~) = flip sharing
 
@@ -222,9 +230,10 @@ You may need @-XImpredicativeTypes@ extension to use this function.
 See also: 'sharing' and 'sharing_'. For 'Mut'able borrows, see 'reborrowing''.
 -}
 sharing' ::
+  forall α a α' r w.
   Mut α a %1 ->
-  (forall β. Share (β /\ α) a -> BO (β /\ α') (After β r)) %1 ->
-  BO α' (r, Mut α a)
+  (forall β. Share (β /\ α) a -> BO' w (β /\ α') (After β r)) %1 ->
+  BO' w α' (r, Mut α a)
 {-# INLINE sharing' #-}
 #ifdef PURE_BORROW_SLOW_SCOPES
 sharing' v k = DataFlow.do
@@ -242,9 +251,10 @@ You may need @-XImpredicativeTypes@ extension to use this function.
 See also: 'reborrowing', and 'reborrowing_'. For 'Share'd borrows, see 'sharing', 'sharing'', and 'sharing_'.
 -}
 reborrowing' ::
+  forall α a α' r w.
   Mut α a %1 ->
-  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') (After β r)) %1 ->
-  BO α' (r, Mut α a)
+  (forall β. Mut (β /\ α) a %1 -> BO' w (β /\ α') (After β r)) %1 ->
+  BO' w α' (r, Mut α a)
 {-# INLINE reborrowing' #-}
 #ifdef PURE_BORROW_SLOW_SCOPES
 reborrowing' v k = srunBO DataFlow.do
@@ -262,9 +272,10 @@ There is also a flipped infix version '(<%~)'.
 See also: 'reborrowing_' and 'sharing'.
 -}
 reborrowing ::
+  forall α a α' r w.
   Mut α a %1 ->
-  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
-  BO α' (r, Mut α a)
+  (forall β. Mut (β /\ α) a %1 -> BO' w (β /\ α') r) %1 ->
+  BO' w α' (r, Mut α a)
 {-# INLINE reborrowing #-}
 #ifdef PURE_BORROW_SLOW_SCOPES
 reborrowing mutα k = reborrowing' mutα (\mut -> Control.pure Control.<$> k mut)
@@ -274,9 +285,10 @@ reborrowing = unsafeBorrowScope
 
 -- | Flipped infix version of 'reborrowing', smoewhat analgous to '(Control.<$>)' and @(<%~)@ in @lens@ package.
 (<%~) ::
-  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
+  forall α a α' r w.
+  (forall β. Mut (β /\ α) a %1 -> BO' w (β /\ α') r) %1 ->
   Mut α a %1 ->
-  BO α' (r, Mut α a)
+  BO' w α' (r, Mut α a)
 {-# INLINE (<%~) #-}
 (<%~) = flip reborrowing
 
@@ -289,10 +301,11 @@ There is also a flipped infix version '(<%=)'.
 See also: 'reborrowing' and 'sharing_'.
 -}
 reborrowing_ ::
+  forall r α a α' w.
   (Consumable r) =>
   Mut α a %1 ->
-  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') r) %1 ->
-  BO α' (Mut α a)
+  (forall β. Mut (β /\ α) a %1 -> BO' w (β /\ α') r) %1 ->
+  BO' w α' (Mut α a)
 {-# INLINE reborrowing_ #-}
 #ifdef PURE_BORROW_SLOW_SCOPES
 reborrowing_ mutα k = reborrowing mutα (Control.fmap consume . k) Control.<&> \((), a) -> a
@@ -302,9 +315,10 @@ reborrowing_ = unsafeBorrowScope_
 
 -- | Flipped infix version of 'reborrowing_', smoewhat analgous to '(Control.<$>)' and @(<%=)@ in @lens@ package.
 (<%=) ::
-  (forall β. Mut (β /\ α) a %1 -> BO (β /\ α') ()) %1 ->
+  forall α a α' w.
+  (forall β. Mut (β /\ α) a %1 -> BO' w (β /\ α') ()) %1 ->
   Mut α a %1 ->
-  BO α' (Mut α a)
+  BO' w α' (Mut α a)
 {-# INLINE (<%=) #-}
 (<%=) = flip reborrowing_
 
@@ -366,11 +380,11 @@ modifyLinearOnlyBO_ v k = DataFlow.do
     k mut
     Control.pure (reclaim' lend)
 
-asksLinearly :: (Linearly %1 -> r) %1 -> BO α r
+asksLinearly :: forall r α w. (Linearly %1 -> r) %1 -> BO' w α r
 {-# INLINE asksLinearly #-}
 asksLinearly k = asksLinearlyM $ Control.pure . k
 
-pureAfter :: ((End α) => a) %1 -> BO α (After α a)
+pureAfter :: forall α a w. ((End α) => a) %1 -> BO' w α (After α a)
 {-# INLINE pureAfter #-}
 pureAfter a = Control.pure (After a)
 
@@ -400,17 +414,17 @@ See also 'borrowLinearlyM'.
 
 If you want to borrow a resource indepdendent of the ambient lifetime, you can use 'borrow' instead.
 -}
-borrowM :: a %1 -> BO α (Mut α a, Lend α a)
+borrowM :: forall a α w. a %1 -> BO' w α (Mut α a, Lend α a)
 {-# INLINE borrowM #-}
 borrowM !a = asksLinearly \lin -> borrow a lin
 
 -- | A variant of 'borrowM' that does linear allocation first.
-borrowLinearlyM :: (Linearly %1 -> a) %1 -> BO α (Mut α a, Lend α a)
+borrowLinearlyM :: forall a α w. (Linearly %1 -> a) %1 -> BO' w α (Mut α a, Lend α a)
 {-# INLINE borrowLinearlyM #-}
 borrowLinearlyM k = asksLinearlyM $ borrowM . k
 
 -- | Runs a 'BO' computation within the ephemeral sublifetime and returns the result.
-srunBO :: (forall α. BO (α /\ β) (After α a)) %1 -> BO β a
+srunBO :: forall β a w. (forall α. BO' w (α /\ β) (After α a)) %1 -> BO' w β a
 {-# INLINE srunBO #-}
 #ifdef PURE_BORROW_SLOW_SCOPES
 srunBO bo = asksLinearlyM \lin ->
@@ -425,7 +439,7 @@ srunBO bo = Control.do
 #endif
 
 -- | A variant of 'srunBO' that returns the direct value of 'BO' computation.
-srunBO_ :: (forall α. BO (α /\ β) a) %1 -> BO β a
+srunBO_ :: forall β a w. (forall α. BO' w (α /\ β) a) %1 -> BO' w β a
 {-# INLINE srunBO_ #-}
 #ifdef PURE_BORROW_SLOW_SCOPES
 srunBO_ k = srunBO Control.do a <- k; Control.pure $ After a
@@ -436,14 +450,14 @@ srunBO_ = \bo -> unsafeCastBO bo
 {- | A parallel comoutation applicative functor for 'BO' monad.
 All the computations chained by '<*>' or 'liftA2' will be executed in parallel.
 -}
-newtype Par α a = Par (BO α a)
+newtype Par w α a = Par (BO' w α a)
   deriving newtype (Data.Functor, Control.Functor)
 
-runPar :: Par α a %1 -> BO α a
+runPar :: forall α a w. Par w α a %1 -> BO' w α a
 runPar = coerceLin
 {-# INLINE runPar #-}
 
-instance Data.Applicative (Par α) where
+instance (Forkable w) => Data.Applicative (Par w α) where
   pure = Par NonLinear.. Data.pure
   {-# INLINE pure #-}
   Par f <*> Par x = Par Control.do
@@ -455,7 +469,7 @@ instance Data.Applicative (Par α) where
     Control.pure $ f x y
   {-# INLINE liftA2 #-}
 
-instance Control.Applicative (Par α) where
+instance (Forkable w) => Control.Applicative (Par w α) where
   pure = Par . Control.pure
   {-# INLINE pure #-}
   Par f <*> Par x = Par Control.do

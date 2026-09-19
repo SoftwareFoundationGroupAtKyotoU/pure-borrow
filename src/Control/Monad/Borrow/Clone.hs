@@ -9,7 +9,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 
-module Control.Monad.Borrow.Pure.Clone (
+module Control.Monad.Borrow.Clone (
   Clone (..),
   genericClone,
   AsCopyable (..),
@@ -21,9 +21,9 @@ module Control.Monad.Borrow.Pure.Clone (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO.Internal
-import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Utils (coerceLin)
+import Control.Monad.Borrow.Copyable
+import Control.Monad.Borrow.Internal
+import Control.Monad.Borrow.Utils (coerceLin)
 import Data.Coerce (Coercible, coerce)
 import Data.Data (Proxy)
 import Data.Int
@@ -45,8 +45,8 @@ This is because we can leak @'Share' α a@ via 'Prelude.Linear.Movable' instance
 hence it can outlive the original @'BO' α@ lifetime, which allows leaking mutable states inside @a@ into /unrestricted/ contexts, which destroys the soundness severly.
 -}
 class Clone a where
-  clone :: Share α a %1 -> BO α a
-  default clone :: (GenericClone a) => Share α a %1 -> BO α a
+  clone :: forall α w. Share α a %1 -> BO' w α a
+  default clone :: forall α w. (GenericClone a) => Share α a %1 -> BO' w α a
   clone = genericClone
 
 newtype AsCopyable a = AsCopyable a
@@ -92,13 +92,13 @@ deriving via AsCopyable () instance Clone ()
 
 type GenericClone a = (Generic a, GClone (Rep a))
 
-genericClone :: (GenericClone a) => Share α a %1 -> BO α a
+genericClone :: forall a α w. (GenericClone a) => Share α a %1 -> BO' w α a
 {-# INLINE genericClone #-}
 genericClone (UnsafeAlias x) = to Control.<$> gclone (UnsafeAlias (from x))
 
 type GClone :: forall {k}. (k -> Type) -> Constraint
 class GClone f where
-  gclone :: Share α (f x) %1 -> BO α (f x)
+  gclone :: forall α x w. Share α (f x) %1 -> BO' w α (f x)
 
 instance (Clone a) => GClone (K1 i a) where
   gclone = coerceLin $ clone @a
@@ -166,22 +166,22 @@ deriving via Generically (NonEmpty a) instance (Clone a) => Clone (NonEmpty a)
 
 -- | Lifting of the 'Clone' operation to unary type constructors.
 class Clone1 f where
-  liftClone :: (Share α a %1 -> BO α b) -> Share α (f a) %1 -> BO α (f b)
-  default liftClone :: (GenericClone1 f) => (Share α a %1 -> BO α b) -> Share α (f a) %1 -> BO α (f b)
+  liftClone :: forall α a b w. (Share α a %1 -> BO' w α b) -> Share α (f a) %1 -> BO' w α (f b)
+  default liftClone :: forall α a b w. (GenericClone1 f) => (Share α a %1 -> BO' w α b) -> Share α (f a) %1 -> BO' w α (f b)
   liftClone = genericLiftClone
 
-clone1 :: (Clone1 f, Clone a) => Share α (f a) %1 -> BO α (f a)
+clone1 :: forall f a α w. (Clone1 f, Clone a) => Share α (f a) %1 -> BO' w α (f a)
 {-# INLINE clone1 #-}
 clone1 = liftClone clone
 
 type GenericClone1 f = (Clone1 (Rep1 @Type f), Generic1 f)
 
-genericLiftClone :: forall f a b α. (GenericClone1 f) => (Share α a %1 -> BO α b) -> Share α (f a) %1 -> BO α (f b)
+genericLiftClone :: forall f a b α w. (GenericClone1 f) => (Share α a %1 -> BO' w α b) -> Share α (f a) %1 -> BO' w α (f b)
 {-# INLINE genericLiftClone #-}
 genericLiftClone f (UnsafeAlias x) =
   to1 Control.<$> liftClone f (UnsafeAlias $ from1 x)
 
-genericClone1 :: forall f a α. (GenericClone1 f, Clone a) => Share α (f a) %1 -> BO α (f a)
+genericClone1 :: forall f a α w. (GenericClone1 f, Clone a) => Share α (f a) %1 -> BO' w α (f a)
 {-# INLINE genericClone1 #-}
 genericClone1 = genericLiftClone clone
 

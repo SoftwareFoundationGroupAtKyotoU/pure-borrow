@@ -28,7 +28,7 @@ once outside the loop, capture the resulting 'Share', and use 'subShare' inside
 the iteration. Keep the loop worker @INLINE@ or @INLINABLE@ so 'Ur'-boxed reads
 can be eliminated by the optimiser.
 -}
-module Control.Monad.Borrow.Pure.Experimental.Loop (
+module Control.Monad.Borrow.Experimental.Loop (
   forReborrowing,
   forReborrowingOf_,
   forReborrowing_,
@@ -52,10 +52,10 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.BO.Unsafe
-import Control.Monad.Borrow.Pure.Experimental.Reborrowable
-import Control.Monad.Borrow.Pure.Utils (coerceLin)
+import Control.Monad.Borrow
+import Control.Monad.Borrow.Experimental.Reborrowable
+import Control.Monad.Borrow.Unsafe
+import Control.Monad.Borrow.Utils (coerceLin)
 import Data.Bifunctor.Linear qualified as Bi
 import Data.Functor.Linear qualified as Data
 import Data.HashMap.Mutable.Linear qualified as LHM
@@ -73,15 +73,16 @@ import Unsafe.Linear qualified as Unsafe
 inside the delimited sublifetime, reborrowing the 'Borrows' in @bors@ for that sublifetime.
 -}
 forReborrowing ::
+  forall t bor xs b α c w.
   (Data.Traversable t, Reborrowable bor) =>
   bor xs %1 ->
   t b %1 ->
   ( forall β.
     WithLifetime bor (β /\ LifetimeOf bor) xs %1 ->
     b %1 ->
-    BO (β /\ α) c
+    BO' w (β /\ α) c
   ) ->
-  BO α (t c, bor xs)
+  BO' w α (t c, bor xs)
 {-# INLINE forReborrowing #-}
 forReborrowing bors tb k =
   flip Control.runStateT bors $
@@ -148,6 +149,7 @@ unAp (Ap m) = m
 {-# INLINE unAp #-}
 
 forReborrowingOf_ ::
+  forall bor s a xs α w.
   (Reborrowable bor) =>
   Fold s a %1 ->
   bor xs %1 ->
@@ -155,9 +157,9 @@ forReborrowingOf_ ::
   ( forall β.
     WithLifetime bor (β /\ LifetimeOf bor) xs %1 ->
     a %1 ->
-    BO (β /\ α) ()
+    BO' w (β /\ α) ()
   ) ->
-  BO α (bor xs)
+  BO' w α (bor xs)
 {-# INLINE forReborrowingOf_ #-}
 forReborrowingOf_ fld bors s k =
   flip Control.execStateT bors $
@@ -166,19 +168,21 @@ forReborrowingOf_ fld bors s k =
         Ap . \a -> Control.StateT \bors -> locally bors (\bors -> k bors a)
 
 forReborrowing_ ::
+  forall t bor xs a α w.
   (Foldable t, Reborrowable bor) =>
   bor xs %1 ->
   t a %1 ->
   ( forall β.
     WithLifetime bor (β /\ LifetimeOf bor) xs %1 ->
     a %1 ->
-    BO (β /\ α) ()
+    BO' w (β /\ α) ()
   ) ->
-  BO α (bor xs)
+  BO' w α (bor xs)
 {-# INLINE forReborrowing_ #-}
 forReborrowing_ = forReborrowingOf_ foldMap
 
 iforReborrowingOf_ ::
+  forall bor i s a xs α w.
   (Reborrowable bor) =>
   IndexedFold i s a %1 ->
   bor xs %1 ->
@@ -187,9 +191,9 @@ iforReborrowingOf_ ::
     WithLifetime bor (β /\ LifetimeOf bor) xs %1 ->
     i %1 ->
     a %1 ->
-    BO (β /\ α) ()
+    BO' w (β /\ α) ()
   ) ->
-  BO α (bor xs)
+  BO' w α (bor xs)
 {-# INLINE iforReborrowingOf_ #-}
 iforReborrowingOf_ fld bors s k =
   flip Control.execStateT bors $
@@ -198,6 +202,7 @@ iforReborrowingOf_ fld bors s k =
         Ap $ Control.StateT \bors -> locally bors (\bors -> k bors i a)
 
 iforReborrowing_ ::
+  forall i t bor xs a α w.
   (FoldableWithIndex i t, Reborrowable bor) =>
   bor xs %1 ->
   t a %1 ->
@@ -205,9 +210,9 @@ iforReborrowing_ ::
     WithLifetime bor (β /\ LifetimeOf bor) xs %1 ->
     i %1 ->
     a %1 ->
-    BO (β /\ α) ()
+    BO' w (β /\ α) ()
   ) ->
-  BO α (bor xs)
+  BO' w α (bor xs)
 {-# INLINE iforReborrowing_ #-}
 iforReborrowing_ = iforReborrowingOf_ ifoldMap
 
@@ -321,21 +326,21 @@ instance FoldableWithIndex k (LHM.HashMap k) where
   ifoldMap f = foldMap (uncurry f) . unur . LHM.toList
 
 iterReborrowing_ ::
-  forall bor α xs.
+  forall bor α xs w.
   (Reborrowable bor) =>
   Int ->
   bor xs %1 ->
   ( forall β.
     Int ->
     WithLifetime bor (β /\ LifetimeOf bor) xs %1 ->
-    BO (β /\ α) ()
+    BO' w (β /\ α) ()
   ) ->
-  BO α (bor xs)
+  BO' w α (bor xs)
 {-# INLINE iterReborrowing_ #-}
 iterReborrowing_ n bor k = go bor 0
   where
     {-# INLINE go #-}
-    go :: bor xs %1 -> Int -> BO α (bor xs)
+    go :: bor xs %1 -> Int -> BO' w α (bor xs)
     go !bor !i
       | i < n = Control.do
           bor <- locally_ bor \bor -> k i bor

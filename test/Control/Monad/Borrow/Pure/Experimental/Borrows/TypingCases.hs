@@ -18,9 +18,9 @@ module Control.Monad.Borrow.Pure.Experimental.Borrows.TypingCases (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.Affine
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.Experimental.Borrows
+import Control.Monad.Borrow.Affine
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Experimental.Borrows
 import Prelude.Linear
 
 -- | A bundle of lenders is not 'Affine', so it cannot be popped away.

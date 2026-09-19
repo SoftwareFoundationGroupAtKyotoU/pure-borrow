@@ -20,6 +20,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Control.Concurrent.DivideConquer.Linear (
   divideAndConquer,
@@ -57,12 +58,12 @@ import Control.Concurrent.DivideConquer.Utils.QueuePool (QueuePool, newQueuePool
 import Control.Concurrent.DivideConquer.Utils.Semaphore (Semaphore)
 import Control.Concurrent.DivideConquer.Utils.Semaphore qualified as Semaphore
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.Affine (Affine, GenericallyAffine (..))
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe
-import Control.Monad.Borrow.Pure.Copyable ()
-import Control.Monad.Borrow.Pure.Experimental.Borrows
-import Control.Monad.Borrow.Pure.Experimental.Loop (iterReborrowing_)
+import Control.Monad.Borrow.Affine (Affine, GenericallyAffine (..))
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Copyable ()
+import Control.Monad.Borrow.Experimental.Borrows
+import Control.Monad.Borrow.Experimental.Loop (iterReborrowing_)
+import Control.Monad.Borrow.Unsafe
 import Data.Bifunctor.Linear qualified as BiL
 import Data.Bits (bit, popCount, shiftR)
 import Data.Complex (Complex (..))
@@ -90,7 +91,7 @@ import Prelude qualified as P
 {- $example-internals
 
 The worked examples above expose these because they appear in their own
-signatures: 'fftDC'' returns a @'DivideConquer' 'FftCoe' α 'Pair' …@, so a caller
+signatures: 'fftDC'' returns a @'DivideConquer' 'FftCoe' α w 'Pair' …@, so a caller
 cannot so much as write its type without them.
 'combineLoop' is the FFT butterfly, exposed so that a benchmark or
 inspection test can specialize it at a concrete backend.
@@ -98,15 +99,15 @@ inspection test can specialize it at a concrete backend.
 
 data Result c β t a r = Done !r | Continue !(t (Ur c, Mut β a))
 
-data DivideConquer c α t a r = DivideConquer
-  { initialise :: forall β. (α >= β) => Mut β a %1 -> BO β (Ur c)
-  , divide :: forall β. (α >= β) => c -> Mut β a %1 -> BO β (Result c β t a r)
-  , conquer :: Conquer c α t a r
+data DivideConquer c α w t a r = DivideConquer
+  { initialise :: forall β. (α >= β) => Mut β a %1 -> BO' w β (Ur c)
+  , divide :: forall β. (α >= β) => c -> Mut β a %1 -> BO' w β (Result c β t a r)
+  , conquer :: Conquer c α w t a r
   }
 
-data Conquer c α t a r where
-  NoConquer :: Conquer c α t a ()
-  Conquer :: (forall β. (α >= β) => c -> Mut β a %1 -> t r %1 -> BO β r) -> Conquer c α t a r
+data Conquer c α w t a r where
+  NoConquer :: Conquer c α w t a ()
+  Conquer :: (forall β. (α >= β) => c -> Mut β a %1 -> t r %1 -> BO' w β r) -> Conquer c α w t a r
 
 data Switch r a
   = Switch
@@ -114,28 +115,29 @@ data Switch r a
       !(Sink r)
 
 release ::
+  forall r a α w.
   r %1 ->
   Switch r a %1 ->
-  BO α (Maybe a)
+  BO' w α (Maybe a)
 release r (Switch sem dest) = Control.do
   Once.put dest r
   Semaphore.release sem
 
-newRootSwitch :: BO α (Switch r (BO α ()), Source r)
+newRootSwitch :: forall α r w. BO' w α (Switch r (BO' w α ()), Source r)
 newRootSwitch = Control.do
   (sink, source) <- asksLinearly Once.new
   sem <- Semaphore.newSemaphore $ Control.pure ()
   Control.pure (Switch sem sink, source)
 
-data Work c α a (t :: Type -> Type) r where
+data Work c α w a (t :: Type -> Type) r where
   Process ::
     !c ->
     !(Mut α a) %1 ->
-    !(Switch r (BO α ())) %1 ->
-    Work c α a t r
+    !(Switch r (BO' w α ())) %1 ->
+    Work c α w a t r
   Resume ::
-    !(BO α ()) %1 ->
-    Work c α a t r
+    !(BO' w α ()) %1 ->
+    Work c α w a t r
 
 newtype Thread = Thread ThreadId
 
@@ -157,43 +159,52 @@ toListD :: DList a %1 -> [a]
 toListD (DList f) = f []
 {-# INLINE toListD #-}
 
-newtype QState c α a t r = Idle (Mut α (QueuePool (Work c α a t r)))
+newtype QState c α w a t r = Idle (Mut α (QueuePool (Work c α w a t r)))
 
 popQState ::
-  QState c α a t r %1 ->
-  BO α (Maybe (Work c α a t r, QState c α a t r))
+  forall c α a t r w.
+  QState c α w a t r %1 ->
+  BO' w α (Maybe (Work c α w a t r, QState c α w a t r))
 popQState = \case
   Idle q -> Control.do
     Data.fmap (BiL.second Idle) Control.<$> popWork q
 
-enqueues :: QState c α a t r %1 -> [Work c α a t r] %1 -> BO α (QState c α a t r)
+enqueues :: forall c α a t r w. QState c α w a t r %1 -> [Work c α w a t r] %1 -> BO' w α (QState c α w a t r)
 enqueues q work = case q of
   Idle q -> Idle Control.<$> pushWorks q work
 
+{- | Run a divide-and-conquer workload on unbound worker threads.
+
+The world must permit computations to move between threads.
+Effects in an impure world may interleave nondeterministically.
+A worker exception is not propagated to the caller and may leave it waiting indefinitely.
+Cancelling the caller does not cancel or join workers, so their effects may continue afterwards.
+-}
 divideAndConquer ::
-  forall c α β t a g.
-  (Data.Traversable t, α >= β, RandomGen g) =>
+  forall c α β t a g w.
+  (Forkable w, Data.Traversable t, α >= β, RandomGen g) =>
   g ->
   -- | The # of workers.
   Int ->
-  DivideConquer c α t a () ->
+  DivideConquer c α w t a () ->
   Mut α a %1 ->
-  BO β (Mut α a)
+  BO' w β (Mut α a)
 divideAndConquer g n dc = Control.fmap (uncurry lseq) . divideAndConquer' g n dc
 
+-- | The result-returning variant of 'divideAndConquer', with the same exception and cancellation limitations.
 divideAndConquer' ::
-  forall c α β t a r g.
-  (Data.Traversable t, α >= β, RandomGen g) =>
+  forall c α β t a r g w.
+  (Forkable w, Data.Traversable t, α >= β, RandomGen g) =>
   g ->
   -- | The # of workers.
   Int ->
-  DivideConquer c α t a r ->
+  DivideConquer c α w t a r ->
   Mut α a %1 ->
-  BO β (r, Mut α a)
+  BO' w β (r, Mut α a)
 divideAndConquer' g n DivideConquer {..} ini
   | n == 0 = error ("divideAndConquer: # of workers must be positive, but got: " <> show n) ini
   | otherwise =
-      upcast @(BO _ (r, Mut _ a)) @(BO β (r, Mut α a)) $
+      upcast @(BO' w _ (r, Mut _ a)) @(BO' w β (r, Mut α a)) $
         reborrowing' ini \(ini :: Mut γ a) ->
           someNatVal (fromIntegral n) & \(SomeNat (_ :: Proxy n)) -> Control.do
             (workers, master) <- newQueuePool @n g
@@ -208,7 +219,7 @@ divideAndConquer' g n DivideConquer {..} ini
 
             Control.pure (upcast $ r Control.<$ reclaim' @γ masterLend)
   where
-    worker :: (α >= α') => Mut α' (QueuePool (Work c α' a t r)) %1 -> BO α' ()
+    worker :: (α >= α') => Mut α' (QueuePool (Work c α' w a t r)) %1 -> BO' w α' ()
     worker q = Control.do
       whileJust_ (Idle q) popQState \q -> \case
         Resume k -> Control.do
@@ -254,25 +265,25 @@ divideAndConquer' g n DivideConquer {..} ini
                     unsafeLeak tasks `lseq` enqueues q [Resume k]
 
 sequentialDivideAndConquer ::
-  forall c α t a.
+  forall c α t a w.
   (Data.Traversable t, Consumable (t ())) =>
-  DivideConquer c α t a () ->
+  DivideConquer c α w t a () ->
   Mut α a %1 ->
-  BO α (Mut α a)
+  BO' w α (Mut α a)
 sequentialDivideAndConquer conq =
   Control.fmap (uncurry lseq) . sequentialDivideAndConquer' conq
 
 sequentialDivideAndConquer' ::
-  forall c α t a r.
+  forall c α t a r w.
   (Data.Traversable t, Consumable (t ())) =>
-  DivideConquer c α t a r ->
+  DivideConquer c α w t a r ->
   Mut α a %1 ->
-  BO α (r, Mut α a)
+  BO' w α (r, Mut α a)
 sequentialDivideAndConquer' DivideConquer {..} ini = reborrowing ini \ini -> Control.do
   (Ur c, ini) <- initialise <%~ ini
   loop c ini
   where
-    loop :: c -> Mut (γ /\ α) a %1 -> BO (γ /\ α) r
+    loop :: c -> Mut (γ /\ α) a %1 -> BO' w (γ /\ α) r
     loop c x = Control.do
       (resl, x) <- reborrowing x \x -> Control.do
         resl <- divide c (x)
@@ -287,26 +298,28 @@ sequentialDivideAndConquer' DivideConquer {..} ini = reborrowing ini \ini -> Con
           NoConquer -> Control.pure $ consume (x, rs)
           Conquer conq -> conq c x rs
 
+-- | Run the workload using nested 'parBO' calls, with the exception and cancellation limitations of 'parBO'.
 naiveDivideAndConquer ::
-  forall c α t a.
-  (Data.Traversable t, Consumable (t ())) =>
-  DivideConquer c α t a () ->
+  forall c α t a w.
+  (Forkable w, Data.Traversable t, Consumable (t ())) =>
+  DivideConquer c α w t a () ->
   Mut α a %1 ->
-  BO α (Mut α a)
+  BO' w α (Mut α a)
 naiveDivideAndConquer conq =
   Control.fmap (uncurry lseq) . naiveDivideAndConquer' conq
 
+-- | The result-returning variant of 'naiveDivideAndConquer'.
 naiveDivideAndConquer' ::
-  forall c α t a r.
-  (Data.Traversable t, Consumable (t ())) =>
-  DivideConquer c α t a r ->
+  forall c α t a r w.
+  (Forkable w, Data.Traversable t, Consumable (t ())) =>
+  DivideConquer c α w t a r ->
   Mut α a %1 ->
-  BO α (r, Mut α a)
+  BO' w α (r, Mut α a)
 naiveDivideAndConquer' DivideConquer {..} ini = reborrowing ini \ini -> Control.do
   (Ur c, ini) <- initialise <%~ ini
   loop c ini
   where
-    loop :: c -> Mut (γ /\ α) a %1 -> BO (γ /\ α) r
+    loop :: c -> Mut (γ /\ α) a %1 -> BO' w (γ /\ α) r
     loop c x = Control.do
       (resl, x) <- reborrowing x \x -> Control.do
         resl <- divide c (x)
@@ -326,16 +339,18 @@ unsafeLeak :: a %1 -> ()
 unsafeLeak = Unsafe.toLinear \ !_ -> ()
 
 concurrentMap_ ::
-  forall n a α.
-  (a %1 -> BO α ()) ->
+  forall n a α w.
+  (Forkable w) =>
+  (a %1 -> BO' w α ()) ->
   V n a %1 ->
-  BO α ()
+  BO' w α ()
 concurrentMap_ k = Unsafe.toLinear \(V ts) -> unsafeSystemIOToBO do
   V.mapM_
     (\a -> unsafeBOToSystemIO $ forkBO (k a))
     ts
 
-forkBO :: BO α () %1 -> BO α Thread
+-- The marker constraint authorizes thread transfer even though it has no runtime method to call.
+forkBO :: forall α w. (Forkable w) => BO' w α () %1 -> BO' w α Thread
 forkBO = Unsafe.toLinear \bo ->
   unsafeSystemIOToBO (Thread NonLinear.<$> forkIO (unsafeBOToSystemIO bo))
 
@@ -400,18 +415,18 @@ A zero budget is sequential. At every recursive split a positive budget is
 halved, bounding the depth at which 'parBO' is used.
 -}
 qsort ::
-  forall v a α β.
-  (G.Vector v a, Ord a, α >= β) =>
+  forall v a α β w.
+  (Forkable w, G.Vector v a, Ord a, α >= β) =>
   Word ->
   Mut α (Vector.Vector v a) %1 ->
-  BO β ()
+  BO' w β ()
 {-# INLINEABLE qsort #-}
 qsort = go
   where
     go ::
       Word ->
       Mut α (Vector.Vector v a) %1 ->
-      BO β ()
+      BO' w β ()
     go budget vector =
       case Vector.size vector of
         (Ur 0, vector) -> Control.pure (consume vector)
@@ -430,12 +445,14 @@ qsort = go
               (go nextBudget upper)
 
 partitionVector ::
+  forall v a α β w.
   (G.Vector v a, Ord a, α >= β) =>
   a ->
   Mut α (Vector.Vector v a) %1 ->
   Int ->
   Int ->
-  BO
+  BO'
+    w
     β
     ( Mut α (Vector.Vector v a)
     , Mut α (Vector.Vector v a)
@@ -466,7 +483,7 @@ partitionVector pivot = partitionUp
       | otherwise =
           Control.pure (Vector.splitAt lower vector)
 
-parIf :: Bool %1 -> BO α a %1 -> BO α b %1 -> BO α (a, b)
+parIf :: forall α a b w. (Forkable w) => Bool %1 -> BO' w α a %1 -> BO' w α b %1 -> BO' w α (a, b)
 {-# INLINE parIf #-}
 parIf condition =
   if condition
@@ -479,12 +496,13 @@ The worker count must be positive. Subvectors no longer than the threshold are
 sorted sequentially.
 -}
 qsortDC ::
-  (G.Vector v a, Ord a, α >= β, RandomGen g) =>
+  forall v a α β g w.
+  (Forkable w, G.Vector v a, Ord a, α >= β, RandomGen g) =>
   g ->
   Int ->
   Int ->
   Mut α (Vector.Vector v a) %1 ->
-  BO β (Mut α (Vector.Vector v a))
+  BO' w β (Mut α (Vector.Vector v a))
 {-# INLINE qsortDC #-}
 qsortDC generator workers threshold =
   divideAndConquer
@@ -494,11 +512,13 @@ qsortDC generator workers threshold =
 
 -- | Construct a quicksort workload with the given sequential cutoff.
 qsortDC' ::
+  forall v a α w.
   (G.Vector v a, Ord a) =>
   Int ->
   DivideConquer
     ()
     α
+    w
     Pair
     (Vector.Vector v a)
     ()
@@ -512,7 +532,7 @@ qsortDC' threshold =
             | length_ <= 1 ->
                 vector `lseq` Control.pure (Done ())
             | length_ <= threshold -> Control.do
-                !() <- qsort 0 vector
+                !() <- liftBO (qsort 0 vector)
                 Control.pure (Done ())
             | otherwise -> Control.do
                 let pivotIndex = length_ `quot` 2
@@ -535,7 +555,9 @@ be a power of two. Subvectors no longer than the threshold are transformed
 sequentially.
 -}
 fftDC ::
-  ( G.Vector v (Complex Double)
+  forall v α β g w.
+  ( Forkable w
+  , G.Vector v (Complex Double)
   , α >= β
   , RandomGen g
   , HasCallStack
@@ -544,7 +566,7 @@ fftDC ::
   Int ->
   Int ->
   Mut α (Vector.Vector v (Complex Double)) %1 ->
-  BO β (Mut α (Vector.Vector v (Complex Double)))
+  BO' w β (Mut α (Vector.Vector v (Complex Double)))
 {-# INLINE fftDC #-}
 fftDC generator workers threshold vector =
   case Vector.size vector of
@@ -570,12 +592,13 @@ run with the returned workload must have power-of-two length; use 'fftDC' when
 that check should be performed by the API.
 -}
 fftDC' ::
-  forall v α.
+  forall v α w.
   (G.Vector v (Complex Double)) =>
   Int ->
   DivideConquer
     FftCoe
     α
+    w
     Pair
     (Vector.Vector v (Complex Double))
     ()
@@ -620,7 +643,8 @@ fftDC' threshold =
     step ::
       FftCoe ->
       Mut β (Vector.Vector v (Complex Double)) %1 ->
-      BO
+      BO'
+        w
         β
         ( Ur FftCoe
         , Mut β (Vector.Vector v (Complex Double))
@@ -646,7 +670,7 @@ fftDC' threshold =
     sequential ::
       FftCoe ->
       Mut β (Vector.Vector v (Complex Double)) %1 ->
-      BO β ()
+      BO' w β ()
     sequential coefficient vector =
       case Vector.size vector of
         (Ur length_, vector)
@@ -664,17 +688,17 @@ fftDC' threshold =
     combine ::
       FftCoe ->
       Mut β (Vector.Vector v (Complex Double)) %1 ->
-      BO β ()
+      BO' w β ()
     combine FftCoe {..} vector = Control.do
       let !half = size `quot` 2
           !root = cosθ :+ sinθ
       combineLoop half root 0 1 vector
 
 reverseBit ::
-  forall v a α.
+  forall v a α w.
   (G.Vector v a) =>
   Mut α (Vector.Vector v a) %1 ->
-  BO α ()
+  BO' w α ()
 {-# INLINEABLE reverseBit #-}
 reverseBit vector =
   Vector.size vector
@@ -729,7 +753,7 @@ reverseBit vector =
     buildTable ::
       Int ->
       Mut β (LV.Vector Int) %1 ->
-      BO β ()
+      BO' w β ()
     buildTable bits table =
       fix
         ( \loop !high !low table ->

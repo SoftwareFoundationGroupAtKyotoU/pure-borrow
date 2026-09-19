@@ -47,11 +47,11 @@ module PureBorrow.Inspection.Sublifetime (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe (reviveAlias)
-import Control.Monad.Borrow.Pure.Experimental.Borrows (Aliases (..), Muts, reborrowings, reviveAliases)
-import Control.Monad.Borrow.Pure.Experimental.Reborrowable (locally)
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (EndToken (..))
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Experimental.Borrows (Aliases (..), Muts, reborrowings, reviveAliases)
+import Control.Monad.Borrow.Experimental.Reborrowable (locally)
+import Control.Monad.Borrow.Lifetime.Token.Unsafe (EndToken (..))
+import Control.Monad.Borrow.Unsafe (reviveAlias)
 import Data.Ref.Linear (Ref)
 import Data.Ref.Linear.Borrow qualified as Ref
 import Prelude.Linear
@@ -134,7 +134,7 @@ reborrowingValueRefAt ref =
 {- | The specification 'reborrowingValueRefAt' must meet: 'bumpRef' on the caller's own borrow, plus the one 'reviveAlias' through which the delimiter restores that borrow.
 
 Note the signature — no rank-2 argument and no @/\\@ — so an equality says the reborrow left no sublifetime residue at all, not merely that it allocated no token.
-The 'reviveAlias' is not residue of the sublifetime; it is the delimiter's entire remaining cost, and it is load-bearing rather than incidental — see Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Pure.BO.Internal".
+The 'reviveAlias' is not residue of the sublifetime; it is the delimiter's entire remaining cost, and it is load-bearing rather than incidental — see Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Internal".
 Naming it here is what keeps these equalities honest: an earlier revision of this module asserted equality with the bare body, which said the delimiter compiled to nothing at all, and that was exactly the property that made it unsound.
 
 The specification has to reach for 'Unsafe.toLinear' because it mentions the caller's borrow twice, once to bump through and once to restore, which is precisely what the delimiter does with 'Unsafe.toLinear2'.

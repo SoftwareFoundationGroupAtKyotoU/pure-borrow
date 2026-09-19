@@ -14,8 +14,8 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# OPTIONS_HADDOCK hide #-}
 
-module Control.Monad.Borrow.Pure.Affine.Internal (
-  module Control.Monad.Borrow.Pure.Affine.Internal,
+module Control.Monad.Borrow.Affine.Internal (
+  module Control.Monad.Borrow.Affine.Internal,
 ) where
 
 import Data.Comonad.Linear qualified as Data

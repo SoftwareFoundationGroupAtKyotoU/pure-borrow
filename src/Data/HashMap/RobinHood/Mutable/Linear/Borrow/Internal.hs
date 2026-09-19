@@ -13,11 +13,11 @@ module Data.HashMap.RobinHood.Mutable.Linear.Borrow.Internal (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe
-import Control.Monad.Borrow.Pure.Clone
-import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Utils (coerceLin, unsafeLeak)
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Clone
+import Control.Monad.Borrow.Copyable
+import Control.Monad.Borrow.Unsafe
+import Control.Monad.Borrow.Utils (coerceLin, unsafeLeak)
 import Data.HashMap.RobinHood.Mutable.Linear qualified as Raw
 import Data.Ref.Linear (Ref)
 import Data.Ref.Linear qualified as Ref
@@ -103,9 +103,10 @@ The query must not replace the table's backing array. See
 Note [Reading through a borrow leaks an alias].
 -}
 askRaw ::
+  forall k v a bk α w.
   (Raw.HashMap k v %1 -> (a, Raw.HashMap k v)) %1 ->
   Borrow bk α (HashMap k v) %1 ->
-  BO α (a, Borrow bk α (HashMap k v))
+  BO' w α (a, Borrow bk α (HashMap k v))
 {-# INLINE askRaw #-}
 askRaw = Unsafe.toLinear2 \f borrow ->
   case borrow of
@@ -120,9 +121,10 @@ The query must not replace the table's backing array. See
 Note [Reading through a borrow leaks an alias].
 -}
 askRawUr ::
+  forall k v a bk α w.
   (Raw.HashMap k v %1 -> Ur a) %1 ->
   Borrow bk α (HashMap k v) %1 ->
-  BO α (Ur a, Borrow bk α (HashMap k v))
+  BO' w α (Ur a, Borrow bk α (HashMap k v))
 {-# INLINE askRawUr #-}
 askRawUr = Unsafe.toLinear2 \f borrow ->
   case borrow of

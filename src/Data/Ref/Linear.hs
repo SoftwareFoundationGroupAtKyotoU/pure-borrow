@@ -19,16 +19,16 @@ module Data.Ref.Linear (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.Affine
-import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (..))
-import Control.Monad.Borrow.Pure.Clone
-import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Lifetime.Token.Internal (
+import Control.Monad.Borrow.Affine
+import Control.Monad.Borrow.Affine.Unsafe (unsafeAff)
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Clone
+import Control.Monad.Borrow.Copyable
+import Control.Monad.Borrow.Lifetime.Token.Internal (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )
+import Control.Monad.Borrow.Unsafe (Alias (..))
 import Data.Ref.Linear.Unlifted
 import GHC.TypeError
 import Prelude.Linear (Consumable (..), Dupable (..))

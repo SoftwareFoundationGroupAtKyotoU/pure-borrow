@@ -1,5 +1,33 @@
 # Revision history for pure-borrow
 
+## Unreleased
+
+### Breaking changes
+
+- Generalize the borrow monad to `BO' w α a`, retaining `BO α a` as the pure specialization `BO' Pure α a`.
+  Borrowing, container operations, and scope callbacks now support arbitrary worlds; pure runners and ST adapters still accept only pure computations.
+- Add a world parameter to `Par`, `DivideConquer`, and `Conquer`.
+  Existing pure annotations become `Par Pure α a`, `DivideConquer c α Pure t a r`, and `Conquer c α Pure t a r`.
+- Replace modules beneath `Control.Monad.Borrow.Pure.*` with `Control.Monad.Borrow.*`, without compatibility imports.
+  In particular, `.Pure.BO.Internal` becomes `.Internal` and `.Pure.BO.Unsafe` becomes `.Unsafe`; its trusted `BO` constructor becomes `BO'`.
+  The `Control.Monad.Borrow.Pure` umbrella and tutorial remain available.
+- Generalize `Clone` and experimental `Reborrowable` methods over the world.
+  Downstream instance implementations with helpers specialized to `BO` must generalize those helpers or lift their pure actions with `liftBO`.
+
+### New
+
+- Add `BIO` for borrowing computations with linear IO effects.
+  `Control.Monad.Borrow.IO` provides `runBIO`, `runBIOLend`, `runBIO_`, `withBIO`, and `execBIO`.
+  `liftBO` embeds a pure borrowing computation into any world.
+- Add the `Control.Monad.Borrow` umbrella for world-generic borrowing operations.
+- Add `UpdateAction' p α result a w` for world-generic element update callbacks in `Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity`.
+  `UpdateAction p α result a` remains its pure specialization.
+
+### Fixed
+
+- Prevent an `End` instance with a missing or undefined token from reclaiming a resource early.
+  `reclaim`, `unAfter`, and `withEnd` now check the lifetime-end token before exposing their result.
+
 ## 0.1.0.0 - 2026-09-19
 
 ### Breaking changes

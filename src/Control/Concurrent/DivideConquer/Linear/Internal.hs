@@ -24,7 +24,7 @@ module Control.Concurrent.DivideConquer.Linear.Internal (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.BO
 import Data.Complex (Complex)
 import Data.Vector.Generic qualified as G
 import Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted qualified as Vector
@@ -32,13 +32,14 @@ import Prelude.Linear
 import Prelude qualified as P
 
 combineLoop ::
+  forall v α w.
   (G.Vector v (Complex Double)) =>
   Int ->
   Complex Double ->
   Int ->
   Complex Double ->
   Mut α (Vector.Vector v (Complex Double)) %1 ->
-  BO α ()
+  BO' w α ()
 {-# INLINEABLE combineLoop #-}
 combineLoop !half !root !index !weight vector
   | index >= half =

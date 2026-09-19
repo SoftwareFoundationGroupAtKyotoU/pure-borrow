@@ -21,8 +21,8 @@ module Data.HashMap.RobinHood.Mutable.Linear.Internal (
 
 import Control.Functor.Linear (asks, runReader)
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.Lifetime.Token (Linearly, withLinearly)
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
+import Control.Monad.Borrow.Lifetime.Token (Linearly, withLinearly)
+import Control.Monad.Borrow.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )

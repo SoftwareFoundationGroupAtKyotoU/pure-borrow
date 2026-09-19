@@ -50,11 +50,10 @@ module Data.Record.Linear.Borrow.Experimental.PatternMatch (
   RecordLabel' (..),
 ) where
 
-import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Affine (Affine (..), AsAffine (..))
-import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Internal
+import Control.Monad.Borrow.Affine (Affine (..), AsAffine (..))
+import Control.Monad.Borrow.Affine.Unsafe (unsafeAff)
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Internal
 import Data.Kind (Constraint)
 import GHC.Base (TYPE, Type, proxy#)
 import GHC.OverloadedLabels (IsLabel (..))
@@ -66,7 +65,7 @@ import Unsafe.Linear qualified as Unsafe
 
 {- $setup
 
->>> import Control.Monad.Borrow.Pure.BO.Internal (BorrowKind(..))
+>>> import Control.Monad.Borrow.Internal (BorrowKind(..))
 -}
 
 {- |
@@ -91,7 +90,7 @@ Consider the following:
 
 >>> import Data.Ref.Linear (Ref)
 >>> import Data.Vector.Mutable.Linear.Borrow (Vector)
->>> import Control.Monad.Borrow.Pure.BO
+>>> import Control.Monad.Borrow.BO
 >>> data MyRecord = MyRecord { int :: Ref Int, strs :: Vector String, bool :: Ref Bool }
 
 Suppose we have a mutable borrow of some @MyRecord@:

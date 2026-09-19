@@ -1,7 +1,7 @@
 {-# LANGUAGE MagicHash #-}
 
-module Control.Monad.Borrow.Pure.Utils (
-  module Control.Monad.Borrow.Pure.Utils,
+module Control.Monad.Borrow.Utils (
+  module Control.Monad.Borrow.Utils,
 ) where
 
 import Data.Coerce (Coercible)

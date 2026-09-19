@@ -16,10 +16,10 @@ module Control.Concurrent.DivideConquer.Utils.OnceChan.Linear (
 ) where
 
 import Control.Concurrent.DivideConquer.Utils.OnceChan.Linear.Unlifted
-import Control.Monad.Borrow.Pure.Affine
-import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
+import Control.Monad.Borrow.Affine
+import Control.Monad.Borrow.Affine.Unsafe (unsafeAff)
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )
@@ -58,10 +58,10 @@ instance Consumable (Source a) where
 instance Affine (Source a) where
   aff = unsafeAff
 
-take :: Source a %1 -> BO α a
+take :: forall a α w. Source a %1 -> BO' w α a
 {-# INLINE take #-}
 take (Source v) = evaluateBO $ take# v
 
-put :: Sink a %1 -> a %1 -> BO α ()
+put :: forall a α w. Sink a %1 -> a %1 -> BO' w α ()
 {-# INLINE put #-}
 put (Sink v) !a = evaluateBO $ put# v a

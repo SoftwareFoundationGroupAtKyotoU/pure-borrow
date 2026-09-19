@@ -11,7 +11,7 @@ module Control.Monad.Borrow.Pure.Lifetime.TypingCases (
   module Control.Monad.Borrow.Pure.Lifetime.TypingCases,
 ) where
 
-import Control.Monad.Borrow.Pure.Lifetime.Internal
+import Control.Monad.Borrow.Lifetime.Internal
 
 data Dict c where
   MkDict :: (c) => Dict c

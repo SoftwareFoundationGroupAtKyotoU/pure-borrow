@@ -21,6 +21,10 @@ extra-doc-files:
   CHANGELOG.md
   README.md
 
+extra-source-files:
+  test/typing-fail/**/*.hs
+  test/typing-fail/check-worlds.sh
+
 data-files: scripts/genplot.gnuplot
 tested-with: ghc ==9.10.3 || ==9.12.4 || ==9.14.1
 
@@ -117,24 +121,25 @@ library
     Control.Concurrent.DivideConquer.Linear
     Control.Concurrent.DivideConquer.Linear.Internal
     Control.Concurrent.Queue.ChaseLev
-    Control.Monad.Borrow.Generic.Internal
+    Control.Monad.Borrow
+    Control.Monad.Borrow.Affine
+    Control.Monad.Borrow.Affine.Internal
+    Control.Monad.Borrow.Affine.Unsafe
+    Control.Monad.Borrow.BO
+    Control.Monad.Borrow.Clone
+    Control.Monad.Borrow.Copyable
+    Control.Monad.Borrow.Experimental.Borrows
+    Control.Monad.Borrow.Experimental.Loop
+    Control.Monad.Borrow.Experimental.Reborrowable
+    Control.Monad.Borrow.IO
+    Control.Monad.Borrow.Internal
+    Control.Monad.Borrow.Lifetime
+    Control.Monad.Borrow.Lifetime.Internal
+    Control.Monad.Borrow.Lifetime.Token
+    Control.Monad.Borrow.Lifetime.Token.Internal
+    Control.Monad.Borrow.Lifetime.Token.Unsafe
     Control.Monad.Borrow.Pure
-    Control.Monad.Borrow.Pure.Affine
-    Control.Monad.Borrow.Pure.Affine.Internal
-    Control.Monad.Borrow.Pure.Affine.Unsafe
-    Control.Monad.Borrow.Pure.BO
-    Control.Monad.Borrow.Pure.BO.Internal
-    Control.Monad.Borrow.Pure.BO.Unsafe
-    Control.Monad.Borrow.Pure.Clone
-    Control.Monad.Borrow.Pure.Copyable
-    Control.Monad.Borrow.Pure.Experimental.Borrows
-    Control.Monad.Borrow.Pure.Experimental.Loop
-    Control.Monad.Borrow.Pure.Experimental.Reborrowable
-    Control.Monad.Borrow.Pure.Lifetime
-    Control.Monad.Borrow.Pure.Lifetime.Internal
-    Control.Monad.Borrow.Pure.Lifetime.Token
-    Control.Monad.Borrow.Pure.Lifetime.Token.Internal
-    Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe
+    Control.Monad.Borrow.Unsafe
     Control.Syntax.DataFlow
     Data.Coerce.Directed
     Data.Coerce.Directed.Internal
@@ -171,7 +176,7 @@ library
     Control.Concurrent.DivideConquer.Utils.OnceChan.Linear.Unlifted
     Control.Concurrent.DivideConquer.Utils.QueuePool
     Control.Concurrent.DivideConquer.Utils.Semaphore
-    Control.Monad.Borrow.Pure.Utils
+    Control.Monad.Borrow.Utils
 
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0
   build-depends:
@@ -185,10 +190,14 @@ test-suite pure-borrow-test
   -- cabal-gild: discover test --exclude=test/Main.hs --exclude=test/typing-fail/**
   other-modules:
     Control.Concurrent.DivideConquer.LinearSpec
+    Control.Monad.Borrow.IO.ForgedImpureSpec
+    Control.Monad.Borrow.IO.TypingCases
+    Control.Monad.Borrow.IOSpec
     Control.Monad.Borrow.Pure.BOSpec
     Control.Monad.Borrow.Pure.CopyableSpec
     Control.Monad.Borrow.Pure.Experimental.Borrows.TypingCases
     Control.Monad.Borrow.Pure.Experimental.BorrowsSpec
+    Control.Monad.Borrow.Pure.Lifetime.TokenSpec
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
     Data.HashMap.RobinHood.Mutable.Linear.BorrowSpec

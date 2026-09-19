@@ -9,7 +9,7 @@ module PureBorrow.Inspection.Fft (
 ) where
 
 import Control.Concurrent.DivideConquer.Linear (combineLoop)
-import Control.Monad.Borrow.Pure.BO (BO, Mut)
+import Control.Monad.Borrow.BO (BO, Mut)
 import Data.Complex (Complex)
 import Data.Vector.Generic.Mutable qualified as Generic
 import Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted qualified as Vector

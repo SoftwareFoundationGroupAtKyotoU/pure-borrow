@@ -26,7 +26,7 @@
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
-module Control.Monad.Borrow.Pure.Copyable (
+module Control.Monad.Borrow.Copyable (
   Copyable (..),
   copyMut,
   genericCopy,
@@ -39,8 +39,8 @@ module Control.Monad.Borrow.Pure.Copyable (
   genericLiftCopy,
 ) where
 
-import Control.Monad.Borrow.Pure.BO.Internal
-import Control.Monad.Borrow.Pure.Utils (coerceLin)
+import Control.Monad.Borrow.Internal
+import Control.Monad.Borrow.Utils (coerceLin)
 import Data.Array.Mutable.Linear (Array)
 import Data.Complex
 import Data.Int

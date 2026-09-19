@@ -14,7 +14,7 @@ import Control.Concurrent.DivideConquer.Linear (
   qsortDC',
  )
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.BO
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Proxy (Proxy (..))
 import Data.Vector.Algorithms.Intro qualified as AI

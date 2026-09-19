@@ -13,9 +13,9 @@ module Data.Vector.Mutable.Linear.BorrowSpec (
 
 import Control.Exception qualified as Exception
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (UnsafeAlias))
-import Control.Monad.Borrow.Pure.Copyable
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Copyable
+import Control.Monad.Borrow.Unsafe (Alias (UnsafeAlias))
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Bifunctor.Linear qualified as Bi
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)

@@ -16,14 +16,14 @@ module Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity.Inter
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe
-import Control.Monad.Borrow.Pure.Clone
-import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Clone
+import Control.Monad.Borrow.Copyable
+import Control.Monad.Borrow.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )
+import Control.Monad.Borrow.Unsafe
 import Data.Kind (Constraint, Type)
 import Data.Vector.Generic qualified as G
 import Data.Vector.Generic.Mutable qualified as GM
@@ -80,10 +80,14 @@ type family GetResult p bk α v a where
   GetResult Many bk α v a =
     (Ur a, Borrow bk α (Vector Many v a))
 
--- | Mode-indexed element update callback.
+-- | Pure specialization of 'UpdateAction'', retaining the original callback type.
 type UpdateAction :: Multiplicity -> Lifetime -> Type -> Type -> Type
-type UpdateAction p β result a =
-  a %p -> BO β (Bound p result, Bound p a)
+type UpdateAction p β result a = UpdateAction' p β result a Pure
+
+-- | Mode-indexed element update callback in an arbitrary world.
+type UpdateAction' :: Multiplicity -> Lifetime -> Type -> Type -> Type -> Type
+type UpdateAction' p β result a w =
+  a %p -> BO' w β (Bound p result, Bound p a)
 
 -- | Construct a fixed-size view over a raw mutable-vector slice.
 unsafeFromMutableSlice ::
@@ -253,19 +257,19 @@ class KnownMultiplicity p where
     Ur (v a)
 
   mUnsafeWrite ::
-    forall v a α β.
+    forall v a α β w.
     (G.Vector v a, α >= β, PossiblyConsumable p a) =>
     Int ->
     a %p ->
     Mut α (Vector p v a) %1 ->
-    BO β (Mut α (Vector p v a))
+    BO' w β (Mut α (Vector p v a))
 
   mUnsafeGet ::
-    forall bk α β v a.
+    forall bk α β v a w.
     (G.Vector v a, α >= β) =>
     Int ->
     Borrow bk α (Vector p v a) %1 ->
-    BO β (GetResult p bk α v a)
+    BO' w β (GetResult p bk α v a)
 
 instance KnownMultiplicity Many where
   {-# SPECIALIZE instance KnownMultiplicity Many #-}
@@ -357,13 +361,14 @@ toList (v :: Vector p v a) = mMove @p (unsafeToList v)
 borrow.
 -}
 copyToVector ::
+  forall v a α β p bk w.
   ( G.Vector v a
   , α >= β
   , KnownMultiplicity p
   , PossiblyCopyable p a
   ) =>
   Borrow bk α (Vector p v a) %1 ->
-  BO β (Ur (v a), Borrow bk α (Vector p v a))
+  BO' w β (Ur (v a), Borrow bk α (Vector p v a))
 {-# INLINE copyToVector #-}
 copyToVector =
   Unsafe.toLinear \vectorBorrow@(UnsafeAlias (Vector vector) :: Borrow bk α (Vector p v a)) ->
@@ -384,10 +389,11 @@ size =
 
 -- | Read the element at an index and thread the vector borrow.
 get ::
+  forall v a α β p bk w.
   (HasCallStack, G.Vector v a, α >= β, KnownMultiplicity p) =>
   Int ->
   Borrow bk α (Vector p v a) %1 ->
-  BO β (GetResult p bk α v a)
+  BO' w β (GetResult p bk α v a)
 {-# INLINE get #-}
 get index vector =
   case size vector of
@@ -404,35 +410,38 @@ get index vector =
 
 -- | Unchecked 'get'. The index must satisfy @0 <= index < size@.
 unsafeGet ::
-  forall p v a α β bk.
+  forall p v a α β bk w.
   (G.Vector v a, α >= β, KnownMultiplicity p) =>
   Int ->
   Borrow bk α (Vector p v a) %1 ->
-  BO β (GetResult p bk α v a)
+  BO' w β (GetResult p bk α v a)
 {-# INLINE unsafeGet #-}
 unsafeGet = mUnsafeGet @p
 
 -- | Read the first element and thread the vector borrow.
 head ::
+  forall v a α β p bk w.
   (HasCallStack, G.Vector v a, α >= β, KnownMultiplicity p) =>
   Borrow bk α (Vector p v a) %1 ->
-  BO β (GetResult p bk α v a)
+  BO' w β (GetResult p bk α v a)
 {-# INLINE head #-}
 head = get 0
 
 -- | Unchecked 'head'. The vector must be non-empty.
 unsafeHead ::
+  forall v a α β p bk w.
   (G.Vector v a, α >= β, KnownMultiplicity p) =>
   Borrow bk α (Vector p v a) %1 ->
-  BO β (GetResult p bk α v a)
+  BO' w β (GetResult p bk α v a)
 {-# INLINE unsafeHead #-}
 unsafeHead = unsafeGet 0
 
 -- | Read the last element and thread the vector borrow.
 last ::
+  forall v a α β p bk w.
   (HasCallStack, G.Vector v a, α >= β, KnownMultiplicity p) =>
   Borrow bk α (Vector p v a) %1 ->
-  BO β (GetResult p bk α v a)
+  BO' w β (GetResult p bk α v a)
 {-# INLINE last #-}
 last vector =
   case size vector of
@@ -442,9 +451,10 @@ last vector =
 
 -- | Unchecked 'last'. The vector must be non-empty.
 unsafeLast ::
+  forall v a α β p bk w.
   (G.Vector v a, α >= β, KnownMultiplicity p) =>
   Borrow bk α (Vector p v a) %1 ->
-  BO β (GetResult p bk α v a)
+  BO' w β (GetResult p bk α v a)
 {-# INLINE unsafeLast #-}
 unsafeLast vector =
   case size vector of
@@ -452,6 +462,7 @@ unsafeLast vector =
 
 -- | Read an element through a shared borrow.
 copyAt ::
+  forall v a α β p w.
   ( HasCallStack
   , G.Vector v a
   , α >= β
@@ -460,7 +471,7 @@ copyAt ::
   ) =>
   Int ->
   Share α (Vector p v a) ->
-  BO β (Bound p a)
+  BO' w β (Bound p a)
 {-# INLINE copyAt #-}
 copyAt =
   Unsafe.toLinear2 \index vector@(UnsafeAlias (Vector buffer) :: Share α (Vector p v a)) ->
@@ -481,6 +492,7 @@ copyAt =
 
 -- | Read an element and retain the mutable vector borrow.
 copyAtMut ::
+  forall v a α β p w.
   ( HasCallStack
   , G.Vector v a
   , α >= β
@@ -489,7 +501,7 @@ copyAtMut ::
   ) =>
   Int ->
   Mut α (Vector p v a) %1 ->
-  BO β (Bound p a, Mut α (Vector p v a))
+  BO' w β (Bound p a, Mut α (Vector p v a))
 {-# INLINE copyAtMut #-}
 copyAtMut = Unsafe.toLinear2 \i mut@(UnsafeAlias (Vector v) :: Mut α (Vector p v a)) ->
   let !len = GM.length v
@@ -502,11 +514,12 @@ copyAtMut = Unsafe.toLinear2 \i mut@(UnsafeAlias (Vector v) :: Mut α (Vector p 
 
 -- | Replace an element and return the displaced value.
 set ::
+  forall v a α β p w.
   (HasCallStack, G.Vector v a, α >= β, KnownMultiplicity p) =>
   Int ->
   a %p ->
   Mut α (Vector p v a) %1 ->
-  BO β (Bound p a, Mut α (Vector p v a))
+  BO' w β (Bound p a, Mut α (Vector p v a))
 {-# INLINE set #-}
 set index value array =
   case size array of
@@ -524,12 +537,12 @@ set index value array =
 
 -- | Unchecked 'set'. The index must satisfy @0 <= index < size@.
 unsafeSet ::
-  forall p v a α β.
+  forall p v a α β w.
   (G.Vector v a, α >= β, KnownMultiplicity p) =>
   Int ->
   a %p ->
   Mut α (Vector p v a) %1 ->
-  BO β (Bound p a, Mut α (Vector p v a))
+  BO' w β (Bound p a, Mut α (Vector p v a))
 {-# INLINE unsafeSet #-}
 unsafeSet =
   Unsafe.toLinear3 \index !value array@(UnsafeAlias (Vector vector) :: Mut α (Vector p v a)) ->
@@ -539,6 +552,7 @@ unsafeSet =
 
 -- | Replace an element and consume the displaced value.
 write ::
+  forall v a α β p w.
   ( HasCallStack
   , G.Vector v a
   , α >= β
@@ -548,7 +562,7 @@ write ::
   Int ->
   a %p ->
   Mut α (Vector p v a) %1 ->
-  BO β (Mut α (Vector p v a))
+  BO' w β (Mut α (Vector p v a))
 {-# INLINE write #-}
 write index value array =
   case size array of
@@ -566,7 +580,7 @@ write index value array =
 
 -- | Unchecked 'write'. The index must satisfy @0 <= index < size@.
 unsafeWrite ::
-  forall p v a α β.
+  forall p v a α β w.
   ( G.Vector v a
   , α >= β
   , KnownMultiplicity p
@@ -575,7 +589,7 @@ unsafeWrite ::
   Int ->
   a %p ->
   Mut α (Vector p v a) %1 ->
-  BO β (Mut α (Vector p v a))
+  BO' w β (Mut α (Vector p v a))
 {-# INLINE unsafeWrite #-}
 unsafeWrite = mUnsafeWrite @p
 
@@ -588,12 +602,12 @@ written. This is a normal-return guarantee; no owner recovery is promised
 after an exception.
 -}
 update ::
-  forall p v a α β result.
+  forall p v a α β result w.
   (HasCallStack, G.Vector v a, α >= β, KnownMultiplicity p) =>
   Int ->
-  UpdateAction p β result a %p ->
+  UpdateAction' p β result a w %p ->
   Mut α (Vector p v a) %1 ->
-  BO β (Bound p result, Mut α (Vector p v a))
+  BO' w β (Bound p result, Mut α (Vector p v a))
 {-# INLINE update #-}
 update index action array =
   case size array of
@@ -615,12 +629,12 @@ update index action array =
 The ownership guarantees are the same as for 'update'.
 -}
 unsafeUpdate ::
-  forall p v a α β result.
+  forall p v a α β result w.
   (G.Vector v a, α >= β, KnownMultiplicity p) =>
   Int ->
-  UpdateAction p β result a %p ->
+  UpdateAction' p β result a w %p ->
   Mut α (Vector p v a) %1 ->
-  BO β (Bound p result, Mut α (Vector p v a))
+  BO' w β (Bound p result, Mut α (Vector p v a))
 {-# INLINE unsafeUpdate #-}
 unsafeUpdate index action =
   Unsafe.toLinear \(UnsafeAlias array@(Vector vector)) -> Control.do
@@ -634,12 +648,12 @@ unsafeUpdate index action =
 
 -- | Transform an element.
 modify ::
-  forall p v a α β.
+  forall p v a α β w.
   (HasCallStack, G.Vector v a, α >= β, KnownMultiplicity p) =>
   Int ->
   (a %p -> a) %p ->
   Mut α (Vector p v a) %1 ->
-  BO β (Mut α (Vector p v a))
+  BO' w β (Mut α (Vector p v a))
 {-# INLINE modify #-}
 modify index function array = Control.do
   (unit, array) <-
@@ -657,11 +671,12 @@ modify index function array = Control.do
 
 -- | Swap two elements.
 swap ::
+  forall v a α β p w.
   (HasCallStack, G.Vector v a, α >= β) =>
   Mut α (Vector p v a) %1 ->
   Int ->
   Int ->
-  BO β (Mut α (Vector p v a))
+  BO' w β (Mut α (Vector p v a))
 {-# INLINE swap #-}
 swap array first second =
   case size array of
@@ -678,11 +693,12 @@ swap array first second =
 
 -- | Unchecked 'swap'. Both indices must satisfy @0 <= index < size@.
 unsafeSwap ::
+  forall v a α β p w.
   (G.Vector v a, α >= β) =>
   Mut α (Vector p v a) %1 ->
   Int ->
   Int ->
-  BO β (Mut α (Vector p v a))
+  BO' w β (Mut α (Vector p v a))
 {-# INLINE unsafeSwap #-}
 unsafeSwap =
   Unsafe.toLinear \array@(UnsafeAlias (Vector vector)) first second ->

@@ -10,7 +10,7 @@
 module GenericGrowableUnrestricted.ContentOwnerReuse where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.BO
 import Data.Vector qualified as V
 import Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted qualified as Growable
 import Prelude.Linear

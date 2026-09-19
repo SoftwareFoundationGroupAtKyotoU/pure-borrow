@@ -8,11 +8,11 @@ module Control.Monad.Borrow.Pure.CopyableSpec (
   module Control.Monad.Borrow.Pure.CopyableSpec,
 ) where
 
-import Control.Monad.Borrow.Pure.BO (Mut, Share, linearly, runBO_)
-import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (UnsafeAlias))
-import Control.Monad.Borrow.Pure.Clone (AsCopyable (AsCopyable), Clone (clone))
-import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Lifetime (Static)
+import Control.Monad.Borrow.BO (Mut, Share, linearly, runBO_)
+import Control.Monad.Borrow.Clone (AsCopyable (AsCopyable), Clone (clone))
+import Control.Monad.Borrow.Copyable
+import Control.Monad.Borrow.Lifetime (Static)
+import Control.Monad.Borrow.Unsafe (Alias (UnsafeAlias))
 import Data.Complex (Complex ((:+)))
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import GHC.IO (unsafePerformIO)

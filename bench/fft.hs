@@ -19,7 +19,8 @@ import Control.Concurrent.DivideConquer.Linear (
  )
 import Control.Exception (evaluate)
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.BO (Pure)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Complex (Complex (..))
 import Data.Proxy (Proxy (..))
@@ -43,6 +44,7 @@ data Mode = NaiveDC | Worksteal Int | Sequential
   DivideConquer
     FftCoe
     α
+    Pure
     Pair
     (VL.Vector V.Vector (Complex Double))
     ()

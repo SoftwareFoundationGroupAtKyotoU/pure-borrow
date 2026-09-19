@@ -21,9 +21,9 @@ module Data.Ref.Linear.Borrow (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe
-import Control.Monad.Borrow.Pure.Copyable
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Copyable
+import Control.Monad.Borrow.Unsafe
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Ref.Linear (Ref)
 import Data.Ref.Linear qualified as Ref
@@ -39,7 +39,7 @@ to detect a collision without a separate lookup. Prefer this shape over
 lookup-then-update in hot paths, since the latter silently traverses the
 underlying structure twice.
 -}
-update :: (α >= β) => (a %1 -> BO β (b, a)) %1 -> Mut α (Ref a) %1 -> BO β (b, Mut α (Ref a))
+update :: forall α β a b w. (α >= β) => (a %1 -> BO' w β (b, a)) %1 -> Mut α (Ref a) %1 -> BO' w β (b, Mut α (Ref a))
 {-# INLINE update #-}
 update f (UnsafeAlias mv) = DataFlow.do
   -- NOTE: as there is only one reference to @'Ref' a@, we can just use read/write
@@ -49,24 +49,24 @@ update f (UnsafeAlias mv) = DataFlow.do
     !mv <- Ref.unsafeWriteRef mv a
     (b, UnsafeAlias mv)
 
-modify :: (α >= β) => (a %1 -> a) %1 -> Mut α (Ref a) %1 -> BO β (Mut α (Ref a))
+modify :: forall α β a w. (α >= β) => (a %1 -> a) %1 -> Mut α (Ref a) %1 -> BO' w β (Mut α (Ref a))
 modify f ma = Control.do
   ((), ma) <- update (Control.pure . ((),) . f) ma
   Control.pure ma
 
-swap :: (α >= β) => Mut α (Ref a) %1 -> Mut α (Ref a) %1 -> BO β (Mut α (Ref a), Mut α (Ref a))
+swap :: forall α β a w. (α >= β) => Mut α (Ref a) %1 -> Mut α (Ref a) %1 -> BO' w β (Mut α (Ref a), Mut α (Ref a))
 {-# INLINE swap #-}
 swap ma ma' =
   flip update ma' \ !a' -> Control.do
     (a, ma) <- update (\ !a -> Control.pure (a, a')) ma
     Control.pure (ma, a)
 
-readShare :: (α >= β) => Share α (Ref a) %1 -> BO β (Ur (Share α a))
+readShare :: forall α β a w. (α >= β) => Share α (Ref a) %1 -> BO' w β (Ur (Share α a))
 {-# INLINE readShare #-}
 readShare = Unsafe.toLinear \(UnsafeAlias mv) ->
   Control.pure $ Ur $! UnsafeAlias NonLinear.$! NonLinear.fst $! Ref.unsafeReadRef mv
 
-copyRef :: (Copyable a, α >= β) => Borrow k α (Ref a) %1 -> BO β a
+copyRef :: forall a α β k w. (Copyable a, α >= β) => Borrow k α (Ref a) %1 -> BO' w β a
 {-# INLINE copyRef #-}
 copyRef bor =
   share bor & \(Ur bor) -> Control.do

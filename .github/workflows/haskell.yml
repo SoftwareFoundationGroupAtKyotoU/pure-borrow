@@ -126,6 +126,8 @@ jobs:
           echo "tests=$(jq -cMnR '[inputs]' <"${{env.artifact-name}}"/tests.list)" >>"${GITHUB_OUTPUT}"
       - name: Run Tests
         run: ${{env.cabal}} test
+      - name: Check world boundaries at compile time
+        run: bash test/typing-fail/check-worlds.sh "--project-file=${{env.project-file}}"
 
   haddock:
     name: Haddock

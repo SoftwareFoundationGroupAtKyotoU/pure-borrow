@@ -39,11 +39,11 @@ module PureBorrow.Internal.Bench.MultiStoreScan (
 
 import Control.DeepSeq (NFData)
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.Experimental.Borrows (
+import Control.Monad.Borrow.Experimental.Borrows (
   Aliases (..),
   reborrowings,
  )
+import Control.Monad.Borrow.Pure
 import Control.Monad.ST.Strict (ST, runST)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.List qualified as List

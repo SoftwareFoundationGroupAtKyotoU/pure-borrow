@@ -10,14 +10,14 @@ module Data.Vector.Mutable.Linear.Borrow.Internal (
 ) where
 
 import Control.Monad qualified as NonLinear
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe
-import Control.Monad.Borrow.Pure.Clone
-import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Clone
+import Control.Monad.Borrow.Copyable
+import Control.Monad.Borrow.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )
+import Control.Monad.Borrow.Unsafe
 import Data.Vector.Mutable (RealWorld)
 import Data.Vector.Mutable qualified as MV
 import GHC.TypeError

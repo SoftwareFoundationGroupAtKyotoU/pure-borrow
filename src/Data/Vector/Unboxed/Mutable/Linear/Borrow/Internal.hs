@@ -13,13 +13,13 @@ module Data.Vector.Unboxed.Mutable.Linear.Borrow.Internal (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.BO
-import Control.Monad.Borrow.Pure.BO.Unsafe
-import Control.Monad.Borrow.Pure.Copyable
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
+import Control.Monad.Borrow.BO
+import Control.Monad.Borrow.Copyable
+import Control.Monad.Borrow.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )
+import Control.Monad.Borrow.Unsafe
 import Data.Unrestricted.Linear qualified as Ur
 import Data.Vector.Unboxed qualified as U
 import Data.Vector.Unboxed.Mutable qualified as UM
@@ -228,9 +228,10 @@ moveElements !index !length_ vector
 Unlike 'toVector', this leaves the owner live and therefore performs a copy.
 -}
 copyToVector ::
+  forall a α β bk w.
   (U.Unbox a, Copyable a, α >= β) =>
   Borrow bk α (Vector a) %1 ->
-  BO β (Ur (U.Vector a), Borrow bk α (Vector a))
+  BO' w β (Ur (U.Vector a), Borrow bk α (Vector a))
 {-# INLINE copyToVector #-}
 copyToVector =
   Unsafe.toLinear \array@(UnsafeAlias (Vector vector)) ->
@@ -268,10 +269,11 @@ size =
 
 -- | Borrow the element at an index.
 get ::
+  forall a α β bk w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
   Borrow bk α (Vector a) %1 ->
-  BO β (Borrow bk α a)
+  BO' w β (Borrow bk α a)
 {-# INLINE get #-}
 get index vector =
   case size vector of
@@ -288,10 +290,11 @@ get index vector =
 
 -- | Unchecked 'get'. The index must satisfy @0 <= index < size@.
 unsafeGet ::
+  forall a α β bk w.
   (U.Unbox a, α >= β) =>
   Int ->
   Borrow bk α (Vector a) %1 ->
-  BO β (Borrow bk α a)
+  BO' w β (Borrow bk α a)
 {-# INLINE unsafeGet #-}
 unsafeGet =
   Unsafe.toLinear2 \index (UnsafeAlias (Vector vector)) ->
@@ -299,25 +302,28 @@ unsafeGet =
 
 -- | Borrow the first element.
 head ::
+  forall a α β bk w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Borrow bk α (Vector a) %1 ->
-  BO β (Borrow bk α a)
+  BO' w β (Borrow bk α a)
 {-# INLINE head #-}
 head = get 0
 
 -- | Unchecked 'head'. The vector must be non-empty.
 unsafeHead ::
+  forall a α β bk w.
   (U.Unbox a, α >= β) =>
   Borrow bk α (Vector a) %1 ->
-  BO β (Borrow bk α a)
+  BO' w β (Borrow bk α a)
 {-# INLINE unsafeHead #-}
 unsafeHead = unsafeGet 0
 
 -- | Borrow the last element.
 last ::
+  forall a α β bk w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Borrow bk α (Vector a) %1 ->
-  BO β (Borrow bk α a)
+  BO' w β (Borrow bk α a)
 {-# INLINE last #-}
 last vector =
   case size vector of
@@ -327,9 +333,10 @@ last vector =
 
 -- | Unchecked 'last'. The vector must be non-empty.
 unsafeLast ::
+  forall a α β bk w.
   (U.Unbox a, α >= β) =>
   Borrow bk α (Vector a) %1 ->
-  BO β (Borrow bk α a)
+  BO' w β (Borrow bk α a)
 {-# INLINE unsafeLast #-}
 unsafeLast vector =
   case size vector of
@@ -337,10 +344,11 @@ unsafeLast vector =
 
 -- | Copy an element through a shared borrow.
 copyAt ::
+  forall a α β w.
   (HasCallStack, U.Unbox a, Copyable a, α >= β) =>
   Int ->
   Share α (Vector a) ->
-  BO β (Ur a)
+  BO' w β (Ur a)
 {-# INLINE copyAt #-}
 copyAt index vector = Control.do
   Ur !element <- move Control.<$> get index vector
@@ -352,10 +360,11 @@ The raw read is only a temporary alias. 'copy' consumes it to produce the
 authorized unrestricted result while the mutable vector remains exclusive.
 -}
 copyAtMut ::
+  forall a α β w.
   (HasCallStack, U.Unbox a, Copyable a, α >= β) =>
   Int ->
   Mut α (Vector a) %1 ->
-  BO β (Ur a, Mut α (Vector a))
+  BO' w β (Ur a, Mut α (Vector a))
 {-# INLINE copyAtMut #-}
 copyAtMut =
   Unsafe.toLinear2 \index vector@(UnsafeAlias (Vector buffer)) ->
@@ -376,11 +385,12 @@ copyAtMut =
 
 -- | Replace an element and return the displaced value linearly.
 set ::
+  forall a α β w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
   a %1 ->
   Mut α (Vector a) %1 ->
-  BO β (a, Mut α (Vector a))
+  BO' w β (a, Mut α (Vector a))
 {-# INLINE set #-}
 set index value array =
   case size array of
@@ -401,11 +411,12 @@ set index value array =
 The exchange completes before the displaced value is returned.
 -}
 unsafeSet ::
+  forall a α β w.
   (U.Unbox a, α >= β) =>
   Int ->
   a %1 ->
   Mut α (Vector a) %1 ->
-  BO β (a, Mut α (Vector a))
+  BO' w β (a, Mut α (Vector a))
 {-# INLINE unsafeSet #-}
 unsafeSet =
   Unsafe.toLinear3 \index !value array@(UnsafeAlias (Vector vector)) ->
@@ -415,11 +426,12 @@ unsafeSet =
 
 -- | Linearly transform an element and return an auxiliary result.
 update ::
+  forall a α β result w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
-  (a %1 -> BO β (result, a)) %1 ->
+  (a %1 -> BO' w β (result, a)) %1 ->
   Mut α (Vector a) %1 ->
-  BO β (result, Mut α (Vector a))
+  BO' w β (result, Mut α (Vector a))
 {-# INLINE update #-}
 update index action array =
   case size array of
@@ -443,11 +455,12 @@ strictly before the vector borrow is restored. This is a normal-return
 guarantee; no exceptional owner recovery is claimed.
 -}
 unsafeUpdate ::
+  forall a α β result w.
   (U.Unbox a, α >= β) =>
   Int ->
-  (a %1 -> BO β (result, a)) %1 ->
+  (a %1 -> BO' w β (result, a)) %1 ->
   Mut α (Vector a) %1 ->
-  BO β (result, Mut α (Vector a))
+  BO' w β (result, Mut α (Vector a))
 {-# INLINE unsafeUpdate #-}
 unsafeUpdate index =
   Unsafe.toLinear2 \action (UnsafeAlias array@(Vector vector)) -> Control.do
@@ -460,11 +473,12 @@ unsafeUpdate index =
 
 -- | Linearly transform an element.
 modify ::
+  forall a α β w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Int ->
   (a %1 -> a) %1 ->
   Mut α (Vector a) %1 ->
-  BO β (Mut α (Vector a))
+  BO' w β (Mut α (Vector a))
 {-# INLINE modify #-}
 modify index function array = Control.do
   ((), array) <-
@@ -476,11 +490,12 @@ modify index function array = Control.do
 
 -- | Swap two elements.
 swap ::
+  forall a α β w.
   (HasCallStack, U.Unbox a, α >= β) =>
   Mut α (Vector a) %1 ->
   Int ->
   Int ->
-  BO β (Mut α (Vector a))
+  BO' w β (Mut α (Vector a))
 {-# INLINE swap #-}
 swap array first second =
   case size array of
@@ -504,11 +519,12 @@ swap array first second =
 
 -- | Unchecked 'swap'. Both indices must satisfy @0 <= index < size@.
 unsafeSwap ::
+  forall a α β w.
   (U.Unbox a, α >= β) =>
   Mut α (Vector a) %1 ->
   Int ->
   Int ->
-  BO β (Mut α (Vector a))
+  BO' w β (Mut α (Vector a))
 {-# INLINE unsafeSwap #-}
 unsafeSwap =
   Unsafe.toLinear3 \array@(UnsafeAlias (Vector vector)) first second ->

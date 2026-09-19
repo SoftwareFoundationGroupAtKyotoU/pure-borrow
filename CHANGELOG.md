@@ -1,6 +1,6 @@
 # Revision history for pure-borrow
 
-## Unreleased
+## 0.1.0.0 - 2026-09-19
 
 ### Breaking changes
 
@@ -33,6 +33,7 @@
 - `Data.Vector.Mutable.Linear.Borrow`'s `toVector` and `toList` require `Movable` rather than `Copyable`, and are now \(O(n)\): each element goes through `move`, which is what hands a linearly owned buffer to a GC-owned result.
 - `Affine (Aliases k xs)` is constrained to borrow kinds, so a `Lends` bundle can no longer be discarded in safe code, matching the scalar `Lend`.
 - `Control.Concurrent.STM.TMDeque` and `TMDequeRingBuffer` are removed; the scheduler runs on `Control.Concurrent.Queue.ChaseLev`.
+- `DivideConquer` is now generalized to run on generic vector and qsort benchmarks are now run against unboxed vectors.
 
 ### Clarified
 
@@ -54,6 +55,8 @@
   This adds a dependency on `hashable`.
 - `subShare` shortens a `Share` without opening a scope, and `Par` is an applicative for parallel composition inside `BO`, with directly inlinable methods.
 - `BO.Unsafe` exports `unsafeCastAlias`, a `coerceLin` retagging that replaces a bare `unsafeCoerce`.
+- The divide-and-conquer scheduler now correctly exposes `Result` to allow users to write their own algorithm.
+  Now it further supports non-trivial "conquer" phase and now comes with FFT example.
 
 ### Performance
 
@@ -61,9 +64,6 @@
   The `slow` flag restores the old, safe-but-slow implementation.
   Measured on a scope-dominated microbenchmark, the plural scopes went from 40 bytes and 4.5 ns per crossing to 0 bytes and 1.2–1.6 ns.
   The FFT example picks this up through `iterReborrowing_`, which crosses a plural scope per iteration of its setup phase: −4.8% allocation and −5.6% wall at 2^20 points.
-- `BO` and `After` methods are directly inlinable, and the divide-and-conquer scheduler uses a Chase-Lev deque with half-stealing and weighted victim selection.
-  The qsort and FFT examples are written over the unrestricted vectors and specialize to primitive unboxed array operations.
-- A `pure-borrow-inspection` suite pins the optimized Core of the scopes and of the qsort/FFT roots, inverting each obligation under `slow`.
 
 ## 0.0.0.0 -- 2026-05-05
 

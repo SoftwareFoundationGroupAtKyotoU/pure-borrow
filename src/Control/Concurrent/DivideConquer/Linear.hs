@@ -25,6 +25,7 @@ module Control.Concurrent.DivideConquer.Linear (
   divideAndConquer,
   divideAndConquer',
   DivideConquer (..),
+  Result (..),
   Conquer (..),
 
   -- * Alternative naive and sequential implementations

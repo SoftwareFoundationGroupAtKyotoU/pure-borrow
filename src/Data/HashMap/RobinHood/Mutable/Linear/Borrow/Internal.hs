@@ -20,7 +20,7 @@ import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Utils (coerceLin, unsafeLeak)
 import Data.HashMap.RobinHood.Mutable.Linear qualified as Raw
 import Data.Ref.Linear (Ref)
-import Data.Ref.Linear qualified as Ref
+import Data.Ref.Linear.Internal qualified as Ref
 import GHC.TypeError
 import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
@@ -109,10 +109,13 @@ askRaw ::
 {-# INLINE askRaw #-}
 askRaw = Unsafe.toLinear2 \f borrow ->
   case borrow of
-    UnsafeAlias (HashMap ref) ->
-      case Ref.unsafeReadRef ref of
-        (!raw, _) -> case f raw of
-          (!res, !raw) -> unsafeLeak raw `lseq` Control.pure (res, borrow)
+    UnsafeAlias (HashMap ref) -> Control.do
+      -- Read inside 'BO', and run the query in the continuation, so both are
+      -- ordered after every earlier effect: see Note [Growable header reads]
+      -- in "Data.Vector.Mutable.Growable.Linear.Borrow.Internal".
+      raw <- Ref.unsafeReadRefBO ref
+      case f raw of
+        (!res, !raw) -> unsafeLeak raw `lseq` Control.pure (res, borrow)
 
 {- | Run a table query that consumes the table and materializes its result.
 
@@ -126,10 +129,10 @@ askRawUr ::
 {-# INLINE askRawUr #-}
 askRawUr = Unsafe.toLinear2 \f borrow ->
   case borrow of
-    UnsafeAlias (HashMap ref) ->
-      case Ref.unsafeReadRef ref of
-        (!raw, _) -> case f raw of
-          Ur !res -> Control.pure (Ur res, borrow)
+    UnsafeAlias (HashMap ref) -> Control.do
+      raw <- Ref.unsafeReadRefBO ref
+      case f raw of
+        Ur !res -> Control.pure (Ur res, borrow)
 
 {- | Force a queried value to WHNF.
 

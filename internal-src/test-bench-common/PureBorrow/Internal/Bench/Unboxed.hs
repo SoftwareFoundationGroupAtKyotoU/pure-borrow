@@ -213,8 +213,8 @@ pureBorrowGrowableUnboxedGrowthKernel input =
     runBO runLinear Control.do
       (vector, lend) <- borrowM (Growable.empty ownerLinear)
       vector <- pureBorrowGrowthWorker input 0 vector
-      Growable.capacity vector & \(Ur finalCapacity, vector) -> DataFlow.do
-        consume vector
+      (Ur finalCapacity, vector) <- Growable.capacity vector
+      consume vector `lseq`
         pureAfter
           (attachCapacity finalCapacity (unsafeBenchmarkFreezeGrowableInt (reclaim lend)))
 

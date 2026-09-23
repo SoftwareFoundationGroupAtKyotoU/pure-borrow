@@ -220,10 +220,10 @@ badSharedContentEscapeCase =
 
 preserveMutContent ::
   Mut α (Growable.GrowableVector V.Vector Int) %1 ->
-  Mut α (Fixed.Vector V.Vector Int)
+  BO α (Mut α (Fixed.Vector V.Vector Int))
 preserveMutContent = Growable.getContents
 
 preserveShareContent ::
   Share α (Growable.GrowableVector V.Vector Int) %1 ->
-  Share α (Fixed.Vector V.Vector Int)
+  BO α (Share α (Fixed.Vector V.Vector Int))
 preserveShareContent = Growable.getContents

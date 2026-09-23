@@ -108,7 +108,7 @@ badLifetimeSwapCase =
   linearly \linear -> DataFlow.do
     (ownerLinear, runLinear) <- dup linear
     runBO runLinear Control.do
-      (vector, lend) <- borrowM (Growable.empty ownerLinear)
+      (vector, lend) <- borrowM (Growable.empty @Int ownerLinear)
       let !() = consume (badLifetimeSwap vector)
       pureAfter (consume (reclaim lend) `lseq` 0)
 
@@ -127,7 +127,7 @@ badContentEscapeCase =
   linearly \linear -> DataFlow.do
     (ownerLinear, runLinear) <- dup linear
     runBO runLinear Control.do
-      (vector, lend) <- borrowM (Growable.empty ownerLinear)
+      (vector, lend) <- borrowM (Growable.empty @Int ownerLinear)
       (escaped, vector) <- Growable.withContent vector Control.pure
       let
         !() = consume escaped
@@ -141,7 +141,7 @@ badSharedContentEscapeCase =
   linearly \linear -> DataFlow.do
     (ownerLinear, runLinear) <- dup linear
     runBO runLinear Control.do
-      (vector, lend) <- borrowM (Growable.empty ownerLinear)
+      (vector, lend) <- borrowM (Growable.empty @Int ownerLinear)
       share vector & \(Ur sharedVector) -> Control.do
         (escaped, sharedVector) <-
           Growable.withContent sharedVector Control.pure

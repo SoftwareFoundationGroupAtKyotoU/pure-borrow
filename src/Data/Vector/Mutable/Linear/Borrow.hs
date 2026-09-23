@@ -42,7 +42,7 @@ module Data.Vector.Mutable.Linear.Borrow (
   copyAt,
   copyAtMut,
   unsafeInplace,
-  modifyBoxedMVector,
+  unsafeModifyBoxedMVector,
   modifyBoxedVector,
 
   -- * An example algorithm implementations
@@ -50,6 +50,9 @@ module Data.Vector.Mutable.Linear.Borrow (
 
   -- ** Internal functions
   divide,
+
+  -- * Removed
+  modifyBoxedMVector,
 ) where
 
 import Control.Functor.Linear qualified as Control
@@ -70,6 +73,7 @@ import Data.Vector.Mutable.Linear.Borrow.Internal (Vector (..))
 import GHC.Exts qualified as GHC
 import GHC.IO (unsafePerformIO)
 import GHC.Stack (HasCallStack)
+import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
 import Prelude.Linear hiding (head, last, splitAt)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
@@ -122,6 +126,10 @@ fromMutable = GHC.noinline $ Unsafe.toLinear \v l ->
       unsafePerformIO $!
         Unsafe.toLinear MV.clone (Unsafe.coerce v)
 
+{- | Take ownership of a boxed mutable vector from @vector@ without copying.
+
+Every element must be initialised, since consuming the vector reads each one, and the caller must keep no alias through which the storage or its elements could still be reached.
+-}
 unsafeFromMutable :: MV.MVector s a %1 -> Linearly %1 -> Vector a
 unsafeFromMutable v lin =
   lin `lseq` Vector (Unsafe.coerce v)
@@ -175,7 +183,8 @@ moveElements !index !length_ vector
 
 {- | Unsafely thaws 'V.Vector' (from @vector@ package) to a 'Vector',
 reusing the same memory.
-This is highly unsafe
+
+This is highly unsafe: the immutable vector must never be read again, because the new owner mutates its storage and treats its elements as linearly owned.
 -}
 unsafeFromVector :: V.Vector a %1 -> Linearly %1 -> Vector a
 {-# NOINLINE unsafeFromVector #-}
@@ -340,7 +349,11 @@ copyAtMut = Unsafe.toLinear2 \i mut@(UnsafeAlias (Vector v)) ->
           NonLinear.pure (Ur copied, mut)
 #endif
 
--- | Applies an in-place mutation on 'V.MVector' from @vector@ package.
+{- | Applies an in-place mutation on 'V.MVector' from @vector@ package.
+
+The vector owns its elements linearly, and the callback bypasses that: it must only rearrange the elements, never duplicate, drop or replace one.
+A duplicated element would later be consumed twice, and a dropped one never.
+-}
 unsafeInplace ::
   (α >= β) =>
   (forall s. V.MVector s a -> ST s ()) %1 ->
@@ -351,23 +364,56 @@ unsafeInplace = Unsafe.toLinear2 \f (UnsafeAlias v) -> Control.do
   !() <- unsafeSTToBO $ f $ content $ coerceLin v
   Control.pure (UnsafeAlias v)
 
-modifyBoxedMVector ::
+{- | \(O(n)\), plus the callback. Run a borrowing computation over a boxed mutable vector from @vector@, in place.
+
+The callback sees the storage as an element-owning 'Vector', whose operations accept and hand out linearly owned elements.
+So that nothing linearly owned is left behind in storage the caller keeps as GC-owned, every element passes through 'move' on the way out; that is one extra pass over the vector.
+
+This is unsafe because the caller keeps the storage.
+If the computation throws, parallel computations it started with 'parBO' may still be writing to the vector for a while afterwards, and the elements have not been moved; after catching an exception from it, do not read or reuse the vector.
+'modifyBoxedVector' works on a private copy instead and has no such obligation.
+-}
+unsafeModifyBoxedMVector ::
+  (Movable a) =>
   (forall α. Mut α (Vector a) %1 -> BO α ()) %1 ->
   V.MVector s a %1 ->
   ST s ()
-{-# INLINE modifyBoxedMVector #-}
-modifyBoxedMVector f v = do
-  unsafeBOToST (f (UnsafeAlias (Vector (unsafeCoerceVector v))))
+{-# INLINE unsafeModifyBoxedMVector #-}
+unsafeModifyBoxedMVector f =
+  Unsafe.toLinear \v -> unsafeBOToST Control.do
+    let storage = unsafeCoerceVector v
+    () <- f (UnsafeAlias (Vector storage))
+    unsafeSystemIOToBO (moveElements 0 (MV.length storage) storage)
 
 unsafeCoerceVector :: MV.MVector s a %1 -> MV.MVector RealWorld a
 unsafeCoerceVector = Unsafe.coerce
 
+{- | \(O(n)\), plus the callback. Run a borrowing computation over a copy of a boxed vector from @vector@, and return the result.
+
+As with 'unsafeModifyBoxedMVector', every element passes through 'move' on the way out, since the callback sees an element-owning 'Vector'.
+The copy is private to this call, so it is safe even when the computation throws.
+-}
 modifyBoxedVector ::
+  (Movable a) =>
   (forall α. Mut α (Vector a) %1 -> BO α ()) ->
   V.Vector a ->
   V.Vector a
 {-# INLINE modifyBoxedVector #-}
-modifyBoxedVector f = V.modify (\x -> modifyBoxedMVector f x)
+modifyBoxedVector f = V.modify (\x -> unsafeModifyBoxedMVector f x)
+
+{- | Renamed to 'unsafeModifyBoxedMVector' in 0.2.0.0; any use is a compile error that names the replacement and its obligation.
+
+The name without @unsafe@ is what hid that obligation, so it is not kept even as a deprecated alias.
+-}
+modifyBoxedMVector ::
+  ( Unsatisfiable
+      ( 'Text "modifyBoxedMVector was renamed to unsafeModifyBoxedMVector in pure-borrow 0.2.0.0, and now requires Movable a."
+          ':$$: 'Text "The caller keeps the storage: if the callback throws, do not read or reuse the MVector afterwards."
+          ':$$: 'Text "To modify a GC-owned vector without that obligation, use modifyBoxedVector."
+      )
+  ) =>
+  a
+modifyBoxedMVector = unsatisfiable
 
 {- | A simple parallel implementation of quicksort.
 It uses a sequential divide-and-conquer when size <8,

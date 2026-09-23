@@ -24,12 +24,10 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe
 import Control.Monad.Borrow.Pure.Copyable
-import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Ref.Linear (Ref)
-import Data.Ref.Linear qualified as Ref
+import Data.Ref.Linear.Internal qualified as Ref
 import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
-import Prelude qualified as NonLinear
 
 {- | Perform one read-modify-write traversal and return an auxiliary result.
 
@@ -41,13 +39,15 @@ underlying structure twice.
 -}
 update :: (α >= β) => (a %1 -> BO β (b, a)) %1 -> Mut α (Ref a) %1 -> BO β (b, Mut α (Ref a))
 {-# INLINE update #-}
-update f (UnsafeAlias mv) = DataFlow.do
+update = Unsafe.toLinear2 \f borrow@(UnsafeAlias ref) -> Control.do
   -- NOTE: as there is only one reference to @'Ref' a@, we can just use read/write
   -- instead of 'MutVar.atomicModify' (which requires pure function) while retaining atomicity.
-  (!a, !mv) <- Ref.unsafeReadRef mv
-  f a Control.<&> \(!b, !a) -> DataFlow.do
-    !mv <- Ref.unsafeWriteRef mv a
-    (b, UnsafeAlias mv)
+  -- Both happen in the state thread: a write left in a lazy result would run
+  -- whenever the caller forced it, possibly after the lifetime had ended.
+  a <- Ref.unsafeReadRefBO ref
+  (!b, !a) <- f a
+  () <- Ref.unsafeWriteRefBO ref a
+  Control.pure (b, borrow)
 
 modify :: (α >= β) => (a %1 -> a) %1 -> Mut α (Ref a) %1 -> BO β (Mut α (Ref a))
 modify f ma = Control.do
@@ -63,8 +63,12 @@ swap ma ma' =
 
 readShare :: (α >= β) => Share α (Ref a) %1 -> BO β (Ur (Share α a))
 {-# INLINE readShare #-}
-readShare = Unsafe.toLinear \(UnsafeAlias mv) ->
-  Control.pure $ Ur $! UnsafeAlias NonLinear.$! NonLinear.fst $! Ref.unsafeReadRef mv
+readShare = Unsafe.toLinear \(UnsafeAlias ref) -> Control.do
+  -- Read and force inside the state thread: a read left to a lazy 'Control.pure'
+  -- would run whenever the result is demanded, possibly after later writes.
+  value <- Ref.unsafeReadRefBO ref
+  value <- evaluateBO value
+  Control.pure (Unsafe.toLinear (\value -> Ur (UnsafeAlias value)) value)
 
 copyRef :: (Copyable a, α >= β) => Borrow k α (Ref a) %1 -> BO β a
 {-# INLINE copyRef #-}

@@ -147,7 +147,9 @@ library
     Data.Record.Linear.Borrow.Experimental.Split
     Data.Ref.Linear
     Data.Ref.Linear.Borrow
+    Data.Ref.Linear.Internal
     Data.Ref.Linear.Unlifted
+    Data.Ref.Linear.Unlifted.Internal
     Data.Unique.Linear
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted.Internal
@@ -184,6 +186,7 @@ test-suite pure-borrow-test
   -- cabal-gild: discover test --exclude=test/Main.hs --exclude=test/typing-fail/**
   other-modules:
     Control.Concurrent.DivideConquer.LinearSpec
+    Control.Monad.Borrow.Pure.BO.TypingCases
     Control.Monad.Borrow.Pure.BOSpec
     Control.Monad.Borrow.Pure.CopyableSpec
     Control.Monad.Borrow.Pure.Experimental.Borrows.TypingCases

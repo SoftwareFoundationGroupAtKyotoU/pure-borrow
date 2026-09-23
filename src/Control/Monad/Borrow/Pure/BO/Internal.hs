@@ -738,9 +738,17 @@ Two changes close it:
 Both properties of 'reviveOwner' are load-bearing.
 Its result must be opaque: with an inline @case@ on the token in its place, the kernels above fail again, because the alternative returns the caller's own variable.
 And it must force the token: 'withEnd', which the safe modules export, accepts any 'EndToken', including a bottom one, so a 'reclaim' that ignored its token would hand an owner back while its borrows are still live, giving two live 'Mut's over one resource.
-It forces the token inside its opaque body, where the caller learns nothing from it, and it covers a token supplied through 'withEnd' and through 'GHC.Exts.withDict' alike.
+It forces the token inside its opaque body, and it covers a token supplied through 'withEnd' and through 'GHC.Exts.withDict' alike.
 Do not make it @INLINE@ or @NOINLINE@, and do not replace it by a @case@: under @NOINLINE@, worker/wrapper splits it into a worker that drops the token, @$wreviveOwner = \a -> a@, which 'reclaim' calls on the owner alone.
 The same holds for 'reviveNow', 'endLifetime', 'reviveAliasWithEnd#' and 'endHere': each is @OPAQUE@, which is what keeps its token an argument or a result of a call.
+
+@OPAQUE@ hides the body but not the demand signature, and that of 'reviveOwner', @<1A><1L>@, says that the token is forced and its field unused.
+That is the shape through which a caller's worker rebuilt a token from a constant while 'endLifetime' dropped the field of its 'Now' (Note [Tokens carry a field] in "Control.Monad.Borrow.Pure.Lifetime.Token.Internal"), and here it is harmless, for three reasons.
+The one caller, 'reclaim', takes the token from the 'End' evidence, which comes only from 'withEnd' or 'GHC.Exts.withDict', and GHC desugars both through its wired-in @nospec@: the function that supplies the token sees an unknown function applied to it, not this demand.
+The signature leaves the token boxed, so a function that has the evidence as a constraint passes the dictionary on as it is; it did so under @-fdicts-strict@ and @-fno-state-hack@ as well.
+And no function of the safe modules takes an 'EndToken' apart and rebuilds it, which is where a constant would come in: the constructor is exported only from "Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe", and the one instance, of 'Data.Coerce.Directed.Internal.Subtype', is a coercion.
+Programs that reclaim through a token taken as an argument, forced or not, or through the evidence of a constraint, and that read the owner both before the scope and after it, read the value the scope wrote under each of those flags.
+Should any of the three change, for instance with a safe function that rebuilds an 'EndToken', make 'reviveOwner' use the field, as 'endLifetime' uses the field of its 'Now'.
 
 The barrier is one-directional, like 'reviveAlias': it stops a read after the scope being served from one before it.
 A read before the scope cannot sink below it, because 'borrow' consumes the owner it would read.

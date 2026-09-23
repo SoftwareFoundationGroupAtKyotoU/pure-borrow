@@ -18,10 +18,11 @@ import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (UnsafeAlias))
 import Control.Monad.Borrow.Pure.Copyable
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Bifunctor.Linear qualified as Bi
-import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
+import Data.IORef (IORef, atomicModifyIORef', modifyIORef', newIORef, readIORef)
 import Data.List qualified as List
 import Data.Vector qualified as V
 import Data.Vector.Mutable.Linear.Borrow qualified as VL
+import Data.Vector.Mutable.Linear.TypingCases (badModifyNonMovable)
 import GHC.IO (unsafePerformIO)
 import Prelude.Linear
 import Test.Falsify.Generator qualified as G
@@ -337,3 +338,108 @@ test_discardingScopes :: TestTree
 test_discardingScopes =
   testCase "result-discarding scopes restore the outer mutable borrow" do
     discardingScopes @?= (11, [11, 20, 32])
+
+-- | An element that records its identity when it is consumed.
+data Tracked = Tracked !(IORef [Int]) !Int
+
+instance Consumable Tracked where
+  consume =
+    Unsafe.toLinear \(Tracked consumed i) ->
+      unsafePerformIO (atomicModifyIORef' consumed \is -> (i : is, ()))
+  {-# NOINLINE consume #-}
+
+-- | Replace the first and last of three elements, consuming the two displaced ones.
+replaceEnds :: IORef [Int] -> Mut α (VL.Vector Tracked) %1 -> BO α ()
+replaceEnds consumed vector = Control.do
+  (old, vector) <- VL.set 0 (Tracked consumed 10) vector
+  (old', vector) <- VL.set 2 (Tracked consumed 30) vector
+  Control.pure (consume old `lseq` consume old' `lseq` consume vector)
+
+{- | Build with 'VL.fromList', replace two elements through a borrow, then consume the owner after 'modifyBO_'.
+
+'VL.fromList' rather than a constant: a vector repeating one GC-owned value would record that value once per slot.
+-}
+consumeAfterModify :: IORef [Int] -> ()
+{-# NOINLINE consumeAfterModify #-}
+consumeAfterModify consumed = linearly \lin -> DataFlow.do
+  (l1, l2) <- dup lin
+  vector <- VL.fromList [Tracked consumed 1, Tracked consumed 2, Tracked consumed 3] l1
+  consume (modifyBO_ vector l2 (replaceEnds consumed))
+
+-- | The same, consuming the owner inside the 'After' of the scope that borrowed it.
+consumeInAfter :: IORef [Int] -> ()
+{-# NOINLINE consumeInAfter #-}
+consumeInAfter consumed = linearly \lin -> DataFlow.do
+  (l1, l2) <- dup lin
+  vector <- VL.fromList [Tracked consumed 1, Tracked consumed 2, Tracked consumed 3] l1
+  runBO l2 Control.do
+    (mut, lend) <- borrowM vector
+    replaceEnds consumed mut
+    pureAfter (consume (reclaim lend))
+
+test_consume :: TestTree
+test_consume =
+  testGroup
+    "consume releases every element exactly once"
+    [ testCase "after modifyBO_" do
+        consumed <- newIORef []
+        () <- Exception.evaluate (consumeAfterModify consumed)
+        released <- readIORef consumed
+        -- The two displaced elements, and the three left in the vector.
+        List.sort released @?= [1, 2, 3, 10, 30]
+    , testCase "inside the After of the scope" do
+        consumed <- newIORef []
+        () <- Exception.evaluate (consumeInAfter consumed)
+        released <- readIORef consumed
+        List.sort released @?= [1, 2, 3, 10, 30]
+    ]
+
+-- | Replace the first element through the borrow, consuming the displaced one.
+replaceFirstTracked :: IORef Int -> Mut α (VL.Vector MoveTracked) %1 -> BO α ()
+replaceFirstTracked moves vector = Control.do
+  (old, vector) <- VL.set 0 (MoveTracked moves 40 False) vector
+  Control.pure (consume old `lseq` consume vector)
+
+trackedValues :: V.Vector MoveTracked -> [(Int, Bool)]
+trackedValues =
+  NonLinear.map (\(MoveTracked _ value wasMoved) -> (value, wasMoved)) NonLinear.. V.toList
+
+threeTracked :: IORef Int -> V.Vector MoveTracked
+threeTracked moves =
+  V.fromList [MoveTracked moves 10 False, MoveTracked moves 20 False, MoveTracked moves 30 False]
+
+modifyBoxedTracked :: IORef Int -> [(Int, Bool)]
+{-# NOINLINE modifyBoxedTracked #-}
+modifyBoxedTracked moves =
+  trackedValues (VL.modifyBoxedVector (replaceFirstTracked moves) (threeTracked moves))
+
+unsafeModifyBoxedTracked :: IORef Int -> [(Int, Bool)]
+{-# NOINLINE unsafeModifyBoxedTracked #-}
+unsafeModifyBoxedTracked moves = trackedValues NonLinear.$ V.create do
+  storage <- V.thaw (threeTracked moves)
+  VL.unsafeModifyBoxedMVector (replaceFirstTracked moves) storage
+  NonLinear.pure storage
+
+test_modifyBoxed :: TestTree
+test_modifyBoxed =
+  testGroup
+    "modifying a GC-owned boxed vector through a borrow"
+    [ testCase "modifyBoxedVector applies the callback and moves every element out" do
+        moves <- newIORef 0
+        modifyBoxedTracked moves @?= [(40, True), (20, True), (30, True)]
+        moveCount <- readIORef moves
+        moveCount @?= 3
+    , testCase "unsafeModifyBoxedMVector moves every element back into the storage" do
+        moves <- newIORef 0
+        unsafeModifyBoxedTracked moves @?= [(40, True), (20, True), (30, True)]
+        moveCount <- readIORef moves
+        moveCount @?= 3
+    , testCase "modifyBoxedVector requires Movable elements" do
+        result <- Exception.try @Exception.SomeException (Exception.evaluate (V.length badModifyNonMovable))
+        case result of
+          Left exception ->
+            assertBool
+              ("unexpected deferred type error: " <> Exception.displayException exception)
+              ("Movable Owned" `List.isInfixOf` Exception.displayException exception)
+          Right _ -> assertFailure "expected a deferred type error mentioning Movable Owned"
+    ]

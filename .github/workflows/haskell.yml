@@ -126,6 +126,8 @@ jobs:
           echo "tests=$(jq -cMnR '[inputs]' <"${{env.artifact-name}}"/tests.list)" >>"${GITHUB_OUTPUT}"
       - name: Run Tests
         run: ${{env.cabal}} test
+      - name: Check typing-fail fixtures
+        run: bash ./ci/scripts/check-typing-fail.sh ${{env.cabal}}
 
   haddock:
     name: Haddock

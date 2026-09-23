@@ -1,0 +1,63 @@
+{
+  "name": "pure-borrow",
+  "interface": {
+    "displayName": "Pure Borrow"
+  },
+  "plugins": [
+    {
+      "name": "linear-haskell",
+      "source": {
+        "source": "local",
+        "path": "./agent-plugins/linear-haskell"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "version": "0.1.0",
+      "description": "Skill for writing, reviewing, and debugging Linear Haskell (GHC LinearTypes and linear-base) on GHC 9.10.3 and 9.12.4+.",
+      "author": {
+        "name": "Hiromi Ishii"
+      },
+      "homepage": "https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow/tree/main/agent-plugins/linear-haskell",
+      "repository": "https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow",
+      "license": "BSD-3-Clause",
+      "keywords": [
+        "haskell",
+        "linear-types",
+        "linear-haskell",
+        "linear-base",
+        "ghc"
+      ],
+      "category": "Coding"
+    },
+    {
+      "name": "pure-borrow",
+      "source": {
+        "source": "local",
+        "path": "./agent-plugins/pure-borrow"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "version": "0.1.0",
+      "description": "Skill for Rust-style borrowing in Linear Haskell with the pure-borrow library: BO monad, lifetimes, Mut/Share/Lend borrows, and pure parallelism. Install together with linear-haskell.",
+      "author": {
+        "name": "Hiromi Ishii"
+      },
+      "homepage": "https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow/tree/main/agent-plugins/pure-borrow",
+      "repository": "https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow",
+      "license": "BSD-3-Clause",
+      "keywords": [
+        "haskell",
+        "pure-borrow",
+        "linear-types",
+        "borrowing",
+        "lifetimes",
+        "parallelism"
+      ],
+      "category": "Coding"
+    }
+  ]
+}

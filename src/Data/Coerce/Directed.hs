@@ -9,7 +9,7 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Data.Coerce.Directed (
-  type (<:) (),
+  type (<:),
   upcast,
   AsCoercible (..),
   GenericSubtype,

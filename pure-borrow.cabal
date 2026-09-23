@@ -248,6 +248,7 @@ test-suite pure-borrow-inspection
   main-is: Main.hs
   -- cabal-gild: discover test-inspection --exclude=test-inspection/Main.hs
   other-modules:
+    PureBorrow.Inspection.Barriers
     PureBorrow.Inspection.Fft
     PureBorrow.Inspection.Flags
     PureBorrow.Inspection.GenericGrowableUnrestricted

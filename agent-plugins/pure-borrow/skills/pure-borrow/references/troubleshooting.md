@@ -1,6 +1,7 @@
 # Troubleshooting pure-borrow code
 
-The messages below were produced by GHC 9.12.4 with pure-borrow 0.1; wording varies slightly between compilers.
+The diagnostic examples originated with GHC 9.12.4 and pure-borrow 0.1; the remedies below target the 0.2 API.
+Wording can name the hidden classes `Ended` or `SubLifetime` instead of their public synonyms, and varies between compilers.
 For general multiplicity errors, see the linear-haskell skill's troubleshooting reference first.
 
 ## `Couldn't match type 'Many' with 'One' arising from multiplicity of 'mvec'`
@@ -72,19 +73,22 @@ Convert the resource first (`VL.toVector`, `VL.toList`, `Ref.free`), or keep wor
 ## `No instance for 'Movable (Ref Int)' arising from a use of 'VL.toList'`
 
 Materialising an element-owning container moves every element into GC ownership, which requires `Movable` elements.
-The boxed `VL.Vector` has no other way out (no `Consumable` instance), so a boxed vector of `Ref`s can never be disposed of.
-Store elements that are not `Movable` in the growable vector (`Data.Vector.Mutable.Growable.Linear.Borrow`), which is `Consumable` whenever its elements are.
+Fixed and growable element-owning vectors can instead be consumed when their elements are `Consumable`.
+For a vector of `Ref`s, consume it or read the values through borrows; converting the owned references into unrestricted values would violate ownership.
 
 ## Different results at `-O0` and `-O1`, or stale sizes
 
 Pure code must not depend on the optimisation level, so this signals a borrow used where its lifetime no longer protects it, most often a `Share` captured by a `pureAfter` block and read after `reclaim` and a later mutation of the owner.
-Some header reads (for example the size of a growable vector) are pure functions of the borrow, so the compiler may serve them from an earlier evaluation.
+Growable `size`, `capacity`, and `getContents` are now `BO` actions, so their reads are ordered with mutations.
+Fixed-vector `size` remains pure because the view's length does not change.
+Treat a stale result on the fixed version as a bug to reproduce, rather than working around it with evaluation order.
 Copy what you need into `Ur` before `pureAfter`, and use only lenders and owned values inside it.
 
 ## `thread blocked indefinitely in an MVar operation` around `parBO`
 
-`parBO` does not forward exceptions: when one branch throws (an out-of-bounds index, `error`, a failed pattern), the child thread dies, prints its exception to stderr, and the parent waits forever.
-Look at the stderr output for the real error, and check indices and preconditions before forking.
+In 0.2, `parBO` rethrows a branch's original exception after stopping its sibling.
+Check the installed version if the old blocked-parent behavior appears.
+The scheduler used by `divideAndConquer` still has a separate worker-exception limitation; inspect worker errors and input preconditions there.
 
 ## `<Type> cannot be copied!`
 

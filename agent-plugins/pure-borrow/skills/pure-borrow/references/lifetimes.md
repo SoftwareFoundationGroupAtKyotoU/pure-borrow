@@ -6,6 +6,8 @@
   Its values form a free bounded lower semilattice: atomic lifetimes created by `runBO` and the scope combinators, the meet `α /\ β` (the longest lifetime shorter than both), and `Static`, which never ends.
 - `α <= β` means `α` is a sublifetime of `β`; `β >= α` reads "`β` outlives `α`".
   GHC can derive `α <= α`, `α /\ β <= α`, `α /\ β <= β`, `α <= Static`, `α <= β /\ γ` from `α <= β` and `α <= γ`, and reassociations of `/\`.
+- The public `(<=)`, `End`, and `(<:)` constraints are sealed synonyms for hidden classes; users cannot add instances, including through deriving.
+  Use the library's supplied constraints and `upcast` instead of manufacturing lifetime or subtyping evidence.
 - There is no type-checker plugin: the relation is implemented by layered `INCOHERENT` instances.
   Transitivity (`α <= β`, `β <= γ` ⊢ `α <= γ`) and monotonicity are **not** derived.
   If a constraint that "obviously" holds is rejected, restate the signature in terms of `/\` so that one of the rules above applies directly, or make the helper polymorphic in the lifetimes (below).
@@ -85,6 +87,7 @@ phase vec = srunBO Control.do
 
 The same `upcast (reclaim' lend)` works for resources borrowed inside `reborrowing'` and `sharing'`.
 The lower-level token API (`Now`, `newLifetime`, `endLifetime`, `scope_`, `sexecBO`) and the manual reassociation helpers (`assocLBO`, `assocRBO`, `assocBorrowL`, …) in `Control.Monad.Borrow.Pure.BO` are rarely needed in application code.
+`nowStatic :: BO α (Now Static)` is an action in `Control.Monad.Borrow.Pure.BO`, not an unrestricted token constant; bind it inside `BO` when an explicit `Now Static` is needed.
 
 ## Reading lifetime errors
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "pure-borrow",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Skill for Rust-style borrowing in Linear Haskell with the pure-borrow library: BO monad, lifetimes, Mut/Share/Lend borrows, and pure parallelism. Install together with the linear-haskell plugin.",
   "author": {
     "name": "Hiromi Ishii"

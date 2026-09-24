@@ -20,7 +20,7 @@ A `Share` is `Movable`, so a shared borrow can reach unrestricted code (`Ur (Sha
 If `copy` worked on a type with mutable state, copying through such a `Share` would give unrestricted code an alias of state that someone else still mutates.
 `Clone` avoids the problem because its result only exists inside `BO`, i.e. linearly.
 
-The library already bans `Copyable` for `Vector`, `GrowableVector`, `Ref`, `HashMap`, and linear-base's `Array`/`Vector`, with messages like `VL.Vector Int cannot be copied!`.
+The library already bans `Copyable` for `Vector`, `GrowableVector`, `Ref`, `HashMap`, and linear-base's `Array`/`Vector`/`HashMap`/`Set`, with messages like `VL.Vector Int cannot be copied!`.
 Ban it, and `Movable`, for your own mutable types:
 
 ```haskell
@@ -39,6 +39,15 @@ instance
   where
   move = unsatisfiable
 ```
+
+## Built-in clones
+
+Pure-borrow's element-owning fixed and growable vectors clone each initialized element with `Clone a`, including the unboxed families (`Unbox a` is also needed).
+Growable copies keep their capacity.
+Linear-base's `Array`, `Vector`, `HashMap`, and `Set` instead copy their backing storage and share their GC-owned elements, with no element `Clone` constraint.
+The library includes `Clone` and `Copyable` for `Identity`, `Down`, `Const`, `Dual`, semigroup `First`/`Last`, `WrappedMonoid`, `Any`, `All`, `Alt`, and tuples through arity six, with the corresponding component constraints.
+For a custom unboxed newtype, derive `Clone` from its contents; never infer that a shallow buffer copy is safe from `Unbox` alone.
+Do not add an overlapping orphan for these instances.
 
 ## Deriving
 
@@ -102,7 +111,7 @@ Hand-roll the instances instead:
   ```
 
 To keep the linear-base classes and `Copyable` derivable instead, use plain syntax and wrap the unrestricted field in `Ur` (`data Tagged = Tagged !(Ur Text) !(Ref Int)`): `Ur a` has `Consumable`, `Dupable`, `Movable`, and `Copyable` instances of its own.
-There is no `Clone (Ur a)` instance, though, so deriving `Clone` this way also needs `deriving via AsCopyable (Ur Text) instance Clone (Ur Text)` (an orphan instance) in your code.
+`Ur a` also has `Clone`, which shares its GC-owned payload without requiring `Clone a`; do not add an orphan instance for it.
 
 ## Splitting borrows of your own types
 

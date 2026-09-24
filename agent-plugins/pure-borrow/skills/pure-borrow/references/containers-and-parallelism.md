@@ -9,14 +9,16 @@ Containers differ in whether they own their elements linearly:
 
 | Kind | Modules | Elements | `get` returns | Materialising |
 | --- | --- | --- | --- | --- |
-| Element-owning | `Data.Vector.Mutable.Linear.Borrow` (boxed), `Data.Vector.Mutable.Growable.Linear.Borrow` (boxed, growable), and their `Unboxed` counterparts | bound linearly; in the boxed ones they may themselves be mutable (`Ref`s, vectors) | a borrow of the element, `Borrow bk α a` | `toVector`/`toList` require `Movable a` and `move` every element |
+| Element-owning | `Data.Vector.Mutable.Linear.Borrow` (boxed), `Data.Vector.Mutable.Growable.Linear.Borrow` (boxed, growable), and their `Unboxed` counterparts | bound linearly; may themselves be mutable, including boxed representations of unboxed elements | a borrow of the element, `Borrow bk α a` | `toVector`/`toList` require `Movable a` and `move` every element |
 | Non-element-owning vectors | `Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted` (any `vector` backend) and its growable variant | unrestricted, GC-owned | the value itself, `(Ur a, borrow)` | `toVector` freezes in O(1), no `Movable` needed |
 | Hash map | `Data.HashMap.RobinHood.Mutable.Linear.Borrow` | keys and values unrestricted, GC-owned | `lookup` returns `Ur (Maybe v)` | `toList` copies the entries in O(n) through a borrow |
 
 Element ownership is a design choice independent of boxed vs. unboxed storage: pick the non-element-owning vectors for plain data you only read and write, and the element-owning ones for nested mutable structures.
 Because an element-owning `set` cannot drop the old element, it returns it: `set :: Int -> a %1 -> Mut α (Vector a) %1 -> BO β (a, Mut α (Vector a))`.
-To hold elements that are not `Movable` (such as `Ref`s), use the boxed *growable* vector: unlike the fixed boxed vector, it is `Consumable`, so it can be disposed of.
-Its `fromList` takes an unrestricted list, so start from `empty` and `push` linear elements one by one.
+Fixed and growable element-owning vectors have `Consumable` instances requiring `Consumable a`, so either can own and eventually consume `Ref`s.
+Their `Clone` instances require `Clone a` and clone each initialized element deeply; the unboxed families also require `Unbox a`, and growable clones preserve capacity.
+An `Unbox` representation alone does not make a buffer copy sound: boxed representations can hold linear references.
+The boxed growable vector's `fromList` takes an unrestricted list, so start from `empty` and `push` linear elements one by one; the fixed boxed and unboxed `fromList`s take their elements linearly.
 
 ## Boxed borrow vectors (`Data.Vector.Mutable.Linear.Borrow`, as `VL`)
 
@@ -38,14 +40,16 @@ VL.splitAt    :: Int %1 -> Borrow bk α (VL.Vector a) %1 -> (Borrow bk α (VL.Ve
 VL.indicesMut :: (HasCallStack, α >= β) => Mut α (VL.Vector a) %1 -> [Int] %1 -> BO β [Mut α a]   -- distinct indices
 ```
 
-- The fixed boxed `VL.Vector` has no `Consumable` instance: finish it with `toVector`/`toList` (which need `Movable` elements), or keep it inside a structure that is reclaimed and converted.
-  A `VL.Vector (Ref Int)` can therefore never be disposed of; use the growable vector for such elements.
+- Consume the vector to consume each of its owned elements, or materialize it with `toVector`/`toList`, which call `move` on each element and need `Movable a`.
 - `VL.indicesMut` consumes the vector borrow and returns borrows of the requested elements; call it inside a `reborrowing` scope when you need the whole vector again afterwards.
 - `unsafeGet`, `unsafeSet`, `unsafeSwap`, `unsafeIndicesMut`, … only skip bounds (and, for `indicesMut`, distinctness) checks.
   `unsafeFromVector` (thaws a GC-owned vector in place), `unsafeFromMutable` (aliases the caller's `MVector`), and `unsafeInplace` (runs an `ST` action that may duplicate or drop owned elements) break ownership unless you prove otherwise; keep them out of application code.
 - The unboxed module has nearly the same API with a `U.Unbox a` constraint; it lacks `indicesMut` and `unsafeInplace`, and adds `copyToVector`.
 - The growable modules add `push`, `extend`, `reserve`, `capacity`, and `withCapacity`, but have no `splitAt`.
   To split a growable vector, for example for parallelism, open `withContent` (which lends its logical contents as a fixed-size vector for a sublifetime) and split that.
+  Growable `size`, `capacity`, and `getContents` run in `BO`, since their header can change: bind their results with `Control.do`.
+  `size` and `capacity` return `(Ur count, borrow)`, so thread or consume the returned borrow.
+  `getContents` consumes the growable borrow and returns a fixed view; when called on a `Share`, its result is still linearly bound by the action, so use `Ur content <- move Control.<$> getContents shared` before passing it to an unrestricted reader.
 
 ## Non-element-owning vectors and hash maps
 
@@ -66,13 +70,23 @@ RefB.copyRef :: (Copyable a, α >= β) => Borrow k α (Ref a) %1 -> BO β a
 ```
 
 `Ref a` owns its content linearly and is `Consumable` when `a` is.
+`Ref.new` evaluates its contents to WHNF when the reference itself is evaluated, which borrowing it does; the element-owning `fromList`s likewise evaluate each element before storing it.
+An `undefined` placeholder therefore raises even if the borrowed owner is never read, and expensive elements can be computed sequentially in the parent before a fork.
+Build expensive work inside its branch, or wrap a GC-owned value in a lazy `Ur` box when it should remain unevaluated.
+WHNF does not force nested lazy fields: evaluate an in-place linear-base operation before placing it in a field that multiple branches may read, using a strict field or the linear `$!` from `Prelude.Linear`.
+A `Share` is represented by its target, so storing a `Share` in a strict owner evaluates that target too.
+The runner guards evaluation demanded inside its action, including unboxed writes, while retaining strict arithmetic inside the run.
+An explicit force outside the action, such as a bang on a wrapper function's argument, remains outside that guard; `-feager-blackholing` also defeats the documented protection.
 Prefer `update` over read-then-write: it traverses once and can report what it replaced.
 
 ## Parallelism
 
 - `parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)` runs both computations on separate threads and waits for both.
   Determinism comes from the types: the only way to give each side mutable access is to split a borrow into disjoint pieces first (read-only `Share`s may overlap).
-- `parBO` does not forward exceptions: a branch that throws dies on its own thread (printing to stderr), and the parent fails with `thread blocked indefinitely in an MVar operation`.
+- If a branch throws, `parBO` stops its sibling, waits until it stops, and rethrows the original exception; a loop without allocation can delay cancellation.
+  Only that sibling is stopped: forks it started in a nested `parBO` can continue.
+  An asynchronous exception to the waiting parent does not stop the branches, so a timeout bounds waiting rather than work.
+  The divide-and-conquer scheduler below still does not propagate worker exceptions reliably; this fix applies to `parBO`.
 - `Par α` is an applicative whose `(<*>)`/`liftA2` run their arguments in parallel: `runPar (f Control.<$> Par a Control.<*> Par b)`.
 - `mapConcurrentlyOf :: Traversal s t a b -> (a %1 -> BO α b) -> s %1 -> BO α t` (and `forConcurrentlyOf`) processes every focus of a linear traversal in parallel, e.g. the element borrows returned by `VL.indicesMut`.
 - Open a `reborrowing_` scope around the split-and-fork so that the whole `Mut` comes back without manual reunification.

@@ -8,7 +8,7 @@ Application code should import only the safe modules (no suffix); the linear-has
 - **No suffix**: the safe public API.
 - **`.Internal`**: the real definitions and `Unsafe*` constructors, hidden from Haddock; some escape hatches, such as `unsafeCastBO`, live only here.
 - **`.Unsafe`**: trusted escape hatches.
-  `Control.Monad.Borrow.Pure.BO.Unsafe` exports `BO (..)`, `Alias (..)`, `unsafeUnalias`, `unsafeMapAlias`, `unsafeCastAlias`, `reviveAlias`, and the conversions between `BO` and `IO`, linear `IO`, and `ST`; `Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe` exports the constructors of `Linearly`, `LinearOnly`, `LinearOnlyWitness`, `Now`, `End`, and `EndToken`.
+  `Control.Monad.Borrow.Pure.BO.Unsafe` exports `BO (..)`, `Alias (..)`, `unsafeUnalias`, `unsafeMapAlias`, `unsafeCastAlias`, `reviveAlias`, and the conversions between `BO` and `IO`, linear `IO`, and `ST`; `Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe` exports token constructors, `LinearOnly`/`LinearOnlyWitness`, and the hidden capability class `Ended`; the public `End` is a sealed synonym.
   Import only the names you need, and treat every use as a proof obligation: write down the invariant it relies on and why it holds.
 
 ## An owner type
@@ -19,7 +19,7 @@ A typical mutable container:
 - is allocated only through functions taking `Linearly %1 ->`, so that every owner is linearly bound, which also makes it `LinearOnly` (define the instance with `LinearOnlyWitness` from the token `.Unsafe` module);
 - has `Consumable` (an element-owning container consumes every element, so it needs `Consumable a`);
 - has `Clone` if it can be deep-copied inside `BO`, cloning each element through its own `Clone a` instance;
-  if you duplicate elements with `dup` instead, remember that it consumes the element you only hold through a `Share` and that one of its results may be the original storage (for `Ref` and linear-base's `Array` it is the first), so keep only the independent copy;
+  never use `dup` on an element held through a `Share`: it consumes its argument, and its laws do not identify which result is the original;
 - **bans `Copyable` and `Movable`** with `Unsatisfiable`, since a copy or move would let unrestricted code alias its mutable state;
 - if it is element-owning, materialises into unrestricted form only with `Movable a`, calling `move` on every element (a bare, unused constraint is not enough); a non-element-owning container may freeze its storage in O(1);
 - is disposable: an element-owning container whose elements may be non-`Movable` needs a `Consumable` instance, or users can never get rid of it.
@@ -32,14 +32,24 @@ A typical mutable container:
 - A mutating operation on an element-owning container must hand back what it displaced (`set` returns the old element), because linear elements cannot be dropped.
 - Sub-borrow operations (`splitAt`, element borrows, `split`) must produce **disjoint** pieces: two live `Mut`s must never reach overlapping memory, a `Share` must never outlive the exclusivity it was carved from, and a borrow must never be placed in a nonlinear field.
 - `copy` implementations must finish copying (component copies included) before returning in WHNF.
+- A clone must finish its independent storage copy inside the returned `BO` action, before the borrow's lifetime ends.
+  Allocate and fill through the state thread, or use a `Linearly` token obtained there with a copying function protected by both `NOINLINE` and `noinline`.
+  Merely forcing a token-independent pure copy can let GHC merge repeated clones of the same borrow.
+  A container with GC-owned elements copies its storage and shares those elements without `Clone a`; an element-owning container clones each element through `Clone a` and never consumes the original.
 
 ## Scope combinators and delimiters
 
 - A delimiter that runs a continuation over a sublifetime and then gives the caller back the borrow it was given must return it through `reviveAlias` (or `reviveAliases` for bundles), never as the caller's own occurrence.
-  Some header reads (sizes, buffer pointers behind a `Ref`) do not go through the state token, so GHC may otherwise serve a post-scope read from a pre-scope one, across every write the scope performed.
+  Header reads now go through the state token, but keep this identity barrier: restored borrow occurrences must remain distinct across scopes, including callers using the lower-level API.
   See `Note [Restoring a borrow must break its Core identity]` in `Control.Monad.Borrow.Pure.BO.Internal`.
 - The same obligation applies to each method of a `Reborrowable` instance independently.
 - A `Lend` must be neither duplicated nor dropped, and `reclaim` must not run before its lifetime ends.
+  A delimiter discharging `After` obtains its end token from the state thread with the supplied trusted helpers; it must not build a constant `UnsafeEnd` beside the result.
+- `Linearly`, `Now`, and `EndToken` carry an intentionally lazy field that keeps their identity unknown to GHC.
+  Match a linear token using `UnsafeLinearlyToken`, `UnsafeNowToken`, or `UnsafeEndToken`, passing the field on when converting one token into another.
+  The old names are pattern synonyms and cannot match linear values.
+  Never replace these types with nullary constructors or newtypes; a function returning two tokens must be `NOINLINE` and applied through `noinline`, since two equal-looking tokens can let GHC merge allocations.
+- Public `(<=)`, `End`, and `(<:)` constraints are sealed synonyms; changing their hidden instances is a lifetime-soundness change, not an application extension point.
 
 ## Effects and inlining
 

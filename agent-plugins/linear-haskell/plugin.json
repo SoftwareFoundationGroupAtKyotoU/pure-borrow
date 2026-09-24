@@ -1,0 +1,13 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "linear-haskell",
+  "version": "0.2.0",
+  "description": "Skill for writing, reviewing, and debugging Linear Haskell (GHC LinearTypes and linear-base) on GHC 9.10.3 and 9.12.4+.",
+  "author": {
+    "name": "Hiromi Ishii"
+  },
+  "homepage": "https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow/tree/main/agent-plugins/linear-haskell",
+  "repository": "https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow",
+  "license": "BSD-3-Clause",
+  "keywords": ["haskell", "linear-types", "linear-haskell", "linear-base", "ghc"]
+}

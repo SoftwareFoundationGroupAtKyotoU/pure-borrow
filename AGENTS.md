@@ -193,7 +193,7 @@ The public entry point is `Control.Monad.Borrow.Pure`.
 
 - **No suffix = safe public API.** User/application code should import only these (`Control.Monad.Borrow.Pure`, `Data.Vector.Mutable.Linear.Borrow`, `Data.Ref.Linear.Borrow`, `Control.Concurrent.DivideConquer.Linear`, `…/Lifetime.hs`, `…/Lifetime/Token.hs`, …).
 - **`.Internal` = real definitions, `{-# OPTIONS_HADDOCK hide #-}`.** Exposed (so other modules can import) but omitted from docs; contains the actual newtypes and the `Unsafe*` constructors.
-- **`.Unsafe` = trusted escape hatches** (`unsafeSystemIOToBO`, `unsafeCastBO`, `Alias(..)`, `LinearOnly(..)`, …).
+- **`.Unsafe` = trusted escape hatches** (`unsafeSystemIOToBO`, `Alias(..)`, `reviveAlias`, `LinearOnly(..)`, …; `unsafeCastBO` lives only in `.Internal`).
   Every use is a proof obligation that lifetime/linearity invariants hold.
   Only the data-structure and scheduler modules should import these.
 - **`Utils` / `Utils/**` = truly private** (`other-modules`, not exposed).
@@ -241,6 +241,16 @@ Simpler baselines: `sequentialDivideAndConquer'`, `naiveDivideAndConquer'` (fork
 `Vector a` owns each element *linearly* (so it can nest other mutable resources); it is `LinearOnly` and intentionally **not** `Copyable`.
 `splitAt` splitting a borrow into two disjoint sub-borrows is the key primitive for parallelism.
 Includes a demonstrative in-place parallel `qsort` (budgeted `parBO`; the heavier version is `qsortDC` above).
+
+### Agent plugins — `agent-plugins/`
+
+The user-facing `linear-haskell` and `pure-borrow` skills ship as [Agent Plugins](https://agent-plugins.org/specification), listed for Claude Code, Codex, and Cursor by `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`, and `.cursor-plugin/marketplace.json`.
+They are documentation for *users* of the library, not guidance for working on this repository, and `agent-plugins/README.md` describes their layout.
+
+- A change to the public API is not done until the affected skill text, signatures, and examples are updated.
+- Recompile every code example you touch against the pinned GHC and against GHC 9.10.3, since the skills document version differences.
+- `SKILL.md` frontmatter takes only the Agent Skills fields, and `plugin.json` has a closed schema; tool-specific settings such as Claude Code's `dependencies` live in the marketplace files.
+- When a skill changes, bump `version` consistently in `agent-plugins/*/plugin.json` and in all three marketplace files.
 
 ## Conventions & workflow
 

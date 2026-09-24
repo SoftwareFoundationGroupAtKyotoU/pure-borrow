@@ -43,15 +43,15 @@ instance LinearOnly (Vector a) where
   {-# INLINE linearOnly #-}
 
 instance
-  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copied!")) =>
+  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copied!" :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead.")) =>
   Copyable (Vector a)
   where
   copy = unsatisfiable
 
 {- | Each element is cloned through a shared borrow of it, with its own 'Clone', into a fresh vector.
 
-The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same vector at once, unless an element is still an unevaluated call that updates memory in place, such as linear-base's @Data.Array.Mutable.Linear.map@.
-'Data.Vector.Mutable.Linear.Borrow.fromList' stores its elements unevaluated, so evaluate each such call before building the vector: see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same vector at once, unless an element holds, in a lazy field, a call that is not evaluated yet and updates memory in place, such as linear-base's @Data.Array.Mutable.Linear.map@: see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+'Data.Vector.Mutable.Linear.Borrow.fromList' and the writes evaluate the elements themselves.
 See Note [Cloning the contents of a shared borrow] in @Data.Ref.Linear.Internal@.
 -}
 instance (Clone a) => Clone (Vector a) where

@@ -130,10 +130,10 @@ runBO :: forall a. Linearly %1 -> (forall α. BO α (After α a)) %1 -> a
 {-# INLINE runBO #-}
 runBO lin bo =
   case newLifetime lin of
-    MkSomeNow (now :: Now α) -> DataFlow.do
-      (now, f) <- execBO @α @(After α a) bo now
-      case endLifetime now of
-        Ur end -> withEnd @α end f
+    MkSomeNow (now :: Now α) ->
+      execBOWith @α @(After α a) bo now \(now, f) ->
+        case endLifetime now of
+          Ur end -> withEnd @α end f
 
 -- | A variant of 'runBO' that returns the original rsource retained by the 'Lend'er
 runBOLend :: Linearly %1 -> (forall α. BO α (Lend α a)) %1 -> a

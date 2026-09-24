@@ -22,9 +22,15 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (UnsafeAlias))
 import Data.Array.Mutable.Linear qualified as LA
+import Data.HashMap.Mutable.Linear qualified as LH
 import Data.Ref.Linear qualified as Ref
+import Data.Set.Mutable.Linear qualified as LS
+import Data.Vector.Mutable.Growable.Linear.Borrow qualified as VG
 import Data.Vector.Mutable.Linear qualified as LV
 import Data.Vector.Mutable.Linear.Borrow qualified as VL
+import Data.Vector.Unboxed qualified as U
+import Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow qualified as UG
+import Data.Vector.Unboxed.Mutable.Linear.Borrow qualified as UV
 import Prelude.Linear
 import Prelude qualified as NonLinear
 
@@ -60,6 +66,37 @@ vectorOfDupableOnly = cloneDupableOnly clone (VL.fromList [DupableOnly 1])
 copyOfSharedArray :: LA.Array Int
 copyOfSharedArray = copy (UnsafeAlias NonLinear.undefined :: Share Static (LA.Array Int))
 
--- | 'copy' of a shared linear-base vector, which has no 'Clone' instance to point to.
+-- | 'copy' of a shared linear-base vector must point to 'clone'.
 copyOfSharedVector :: LV.Vector Int
 copyOfSharedVector = copy (UnsafeAlias NonLinear.undefined :: Share Static (LV.Vector Int))
+
+copyOfSharedHashMap :: LH.HashMap Int Int
+copyOfSharedHashMap = copy (UnsafeAlias NonLinear.undefined :: Share Static (LH.HashMap Int Int))
+
+copyOfSharedSet :: LS.Set Int
+copyOfSharedSet = copy (UnsafeAlias NonLinear.undefined :: Share Static (LS.Set Int))
+
+growableOfDupableOnly :: ()
+growableOfDupableOnly = cloneDupableOnly clone (VG.fromList [DupableOnly 1])
+
+instance Consumable (U.DoNotUnboxLazy (Ref.Ref Int)) where
+  consume (U.DoNotUnboxLazy ref) = consume ref
+  {-# NOINLINE consume #-}
+
+unboxedRefsWithoutClone :: ()
+unboxedRefsWithoutClone = linearly \lin -> runBO lin Control.do
+  ref <- asksLinearly (Ref.new (1 :: Int))
+  owner <- asksLinearly (UV.fromList [U.DoNotUnboxLazy ref])
+  (mut, lend) <- borrowM owner
+  Ur shared <- Control.pure (share mut)
+  copied <- clone shared
+  pureAfter (consume copied `lseq` consume (reclaim lend))
+
+unboxedGrowableRefsWithoutClone :: ()
+unboxedGrowableRefsWithoutClone = linearly \lin -> runBO lin Control.do
+  ref <- asksLinearly (Ref.new (1 :: Int))
+  owner <- asksLinearly (UG.fromList [U.DoNotUnboxLazy ref])
+  (mut, lend) <- borrowM owner
+  Ur shared <- Control.pure (share mut)
+  copied <- clone shared
+  pureAfter (consume copied `lseq` consume (reclaim lend))

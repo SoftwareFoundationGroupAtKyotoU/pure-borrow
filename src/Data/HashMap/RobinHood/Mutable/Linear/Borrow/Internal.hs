@@ -47,7 +47,7 @@ newtype InsertPlan k = InsertPlan (Raw.InsertPlan k)
 Cloning one is still possible inside 'BO', through the derived 'Clone'.
 -}
 instance
-  (Unsatisfiable (ShowType (HashMap k v) :<>: Text " cannot be copied!")) =>
+  (Unsatisfiable (ShowType (HashMap k v) :<>: Text " cannot be copied!" :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead.")) =>
   Copyable (HashMap k v)
   where
   copy = unsatisfiable

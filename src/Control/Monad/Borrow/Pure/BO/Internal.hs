@@ -203,14 +203,39 @@ unsafeLinIOToBO :: L.IO a %1 -> BO α a
 {-# INLINE unsafeLinIOToBO #-}
 unsafeLinIOToBO (L.IO f) = BO (Unsafe.coerce f)
 
+{-
+Note [Demand stays inside a BO run]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+A guard before the state action is insufficient if GHC sees that the action is strict in a captured value.
+Demand analysis and worker/wrapper can make a caller evaluate that value before entering the guarded thunk.
+Even an Int may hide linear effects: summing an Array.map consumes and updates an array before returning an ordinary number.
+A strict unboxed write must therefore stay behind the guard without hiding its demand from the loop that computes the value.
+
+runBO# applies GHC.lazy to the whole state continuation after an explicit case on noDuplicate#.
+GHC's Note [lazyId magic] specifies that lazy hides demand and prevents motion of its argument and free variables until CorePrep.
+Thus the guard precedes entry into the continuation, including evaluation of captured payloads, while arithmetic and vector writes can specialize inside it.
+An INLINE [0] wrapper alone cannot provide this boundary, since demand analysis still runs after phase 0.
+
+The result consumer belongs inside that same continuation.
+Otherwise the boundary makes every run allocate a (Now, After) pair that the caller immediately unpacks.
+execBOWith and runBOResultWith allow runBO's endLifetime/withEnd consumer to simplify with the action, while preserving the order action -> reviveNow -> endLifetime -> withEnd.
+The action result is forced as before; the consumer's result gains no extra forcing.
+
+This protects evaluation demanded by the run, not an explicit force in the user's code before it, nor an already shared lazy field evaluated independently in sibling branches.
+Independent pure constructors retain their own guards.
+The lazy-blackholing limitation described in Note [Pure Ref primitives run their effects at most once] in Data.Ref.Linear.Unlifted.Internal still applies.
+-}
+
 {- | Run a state-threaded computation to completion.
 
+See Note [Demand stays inside a BO run] for the continuation barrier.
 'GHC.noDuplicate#' comes first, so that a thunk running a 'BO' computation performs its effects at most once even when two threads force it together; see Note [Pure Ref primitives run their effects at most once] in "Data.Ref.Linear.Unlifted.Internal".
 -}
 runBO# :: forall {rep} α (o :: TYPE rep). (State# (ForBO α) %1 -> o) %1 -> o
 {-# INLINE runBO# #-}
 runBO# = Unsafe.toLinear \f -> runRW# \s ->
-  f (unsafeCoerce# (GHC.noDuplicate# s))
+  case GHC.noDuplicate# s of
+    s' -> GHC.lazy f (unsafeCoerce# s')
 
 {- | Run a computation in the lifetime of the given 'Now', and hand the 'Now' back once the computation is over.
 
@@ -218,16 +243,30 @@ The 'Now' comes back through 'reviveNow', after the computation's last effect, s
 -}
 execBO :: BO α a %1 -> Now α %1 -> (Now α, a)
 {-# INLINE execBO #-}
-execBO bo !now = runBOResult Control.do
-  !a <- bo
-  now <- reviveNow now
-  Control.pure (now, a)
+execBO bo now = execBOWith bo now id
+
+-- | Consume the result in the same guarded continuation as the run.
+execBOWith :: BO α a %1 -> Now α %1 -> ((Now α, a) %1 -> b) %1 -> b
+{-# INLINE execBOWith #-}
+execBOWith bo !now k =
+  runBOResultWith
+    ( Control.do
+        !a <- bo
+        now <- reviveNow now
+        Control.pure (now, a)
+    )
+    k
 
 -- | Run a computation and return its result, dropping the final state token.
 runBOResult :: BO α a %1 -> a
 {-# INLINE runBOResult #-}
-runBOResult (BO f) = case runBO# f of
-  (# s, !a #) -> dropState# s `PL.lseq` a
+runBOResult bo = runBOResultWith bo id
+
+-- | Keep the result consumer behind the run's demand barrier.
+runBOResultWith :: BO α a %1 -> (a %1 -> b) %1 -> b
+{-# INLINE runBOResultWith #-}
+runBOResultWith (BO f) k = runBO# \s -> case f s of
+  (# s, !a #) -> dropState# s `PL.lseq` k a
 
 {- | Hand a 'Now' back after the effects that precede it, through a barrier the optimizer cannot see through.
 
@@ -296,6 +335,10 @@ unsafePerformEvaluateUndupableBO (BO f) = runBO# \s ->
     (# s, !a #) -> dropState# s `PL.lseq` a
 
 {- | Run two computations in parallel, each in its own thread, and return both results once both have finished.
+
+Both computations can reach one value through a shared borrow, and a value that is not evaluated yet is evaluated by the first of them to force it, or by both when they force it at once.
+That is harmless unless evaluating it updates memory in place, as a call of linear-base's @Data.Array.Mutable.Linear.map@ does.
+The owners of this library evaluate what they store, but not a lazy field inside it: see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
 
 If either computation throws, 'parBO' stops the other one, waits until it has stopped, and rethrows the exception unchanged.
 If both throw, which of the two exceptions you get is unspecified.

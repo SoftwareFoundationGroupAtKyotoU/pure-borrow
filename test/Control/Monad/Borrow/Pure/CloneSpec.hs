@@ -2,6 +2,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE QualifiedDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 
 module Control.Monad.Borrow.Pure.CloneSpec (
@@ -12,18 +13,29 @@ import Control.Exception (TypeError, displayException, evaluate, try)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (UnsafeAlias))
-import Control.Monad.Borrow.Pure.Clone.TypingCases (copyOfSharedArray, copyOfSharedVector, refOfDupableOnly, vectorOfDupableOnly)
+import Control.Monad.Borrow.Pure.Clone.TypingCases
 import Control.Monad.Borrow.Pure.CloneSpec.ArrayLoops qualified as ArrayLoops
 import Data.Array.Mutable.Linear (Array)
 import Data.Array.Mutable.Linear qualified as LA
 import Data.Complex (Complex)
+import Data.Functor.Const (Const)
+import Data.Functor.Identity (Identity)
+import Data.HashMap.Mutable.Linear qualified as LH
 import Data.HashMap.RobinHood.Mutable.Linear qualified as HM
 import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
 import Data.List qualified as List
+import Data.Monoid qualified as Monoid
+import Data.Ord (Down)
 import Data.Ref.Linear qualified as Ref
 import Data.Ref.Linear.Borrow qualified as RefBorrow
 import Data.Semigroup qualified as Sem
+import Data.Set.Mutable.Linear qualified as LS
+import Data.Vector.Mutable.Growable.Linear.Borrow qualified as VG
+import Data.Vector.Mutable.Linear qualified as LV
 import Data.Vector.Mutable.Linear.Borrow qualified as VL
+import Data.Vector.Unboxed qualified as U
+import Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow qualified as UG
+import Data.Vector.Unboxed.Mutable.Linear.Borrow qualified as UV
 import Prelude.Linear
 import System.IO.Unsafe (unsafePerformIO)
 import Test.Tasty (TestTree, testGroup)
@@ -216,7 +228,7 @@ cloneAccount ::
   (Consumable (f Tracked), Clone (f Tracked)) =>
   (IORef [Int] -> IORef Int -> Linearly %1 -> f Tracked) ->
   ([Int], [Int])
-{-# INLINE cloneAccount #-}
+{-# NOINLINE cloneAccount #-}
 cloneAccount build = unsafePerformIO do
   consumed <- newIORef []
   counter <- newIORef 0
@@ -366,7 +378,7 @@ test_clone =
     , testCase "copy of a shared Array is rejected, and the message points to clone" do
         assertDeferredTypeError "clone a shared borrow of it inside BO" copyOfSharedArray
     , testCase "copy of a shared linear-base Vector is rejected" do
-        assertDeferredTypeError "has no Clone instance either" copyOfSharedVector
+        assertDeferredTypeError "clone a shared borrow of it inside BO" copyOfSharedVector
     , testCase "a clone of a Ref of an Array holds an array of its own" do
         cloneRefOfArray @?= ([1, 2], [7, 2])
     , testCase "an empty Array can be cloned" do
@@ -417,3 +429,321 @@ assertDeferredTypeError expectedFragment value = do
         (expectedFragment `List.isInfixOf` displayException exception)
     Right _ ->
       assertFailure ("expected a deferred type error containing " <> expectedFragment)
+
+-- | Two parallel copies and a snapshot must own storage independent of the original and each other.
+cloneFamily ::
+  forall o.
+  (Clone o) =>
+  (Linearly %1 -> o) ->
+  (Int -> o %1 -> Linearly %1 -> o) ->
+  (o %1 -> Ur [Int]) ->
+  ([Int], [Int], [Int], [Int])
+{-# NOINLINE cloneFamily #-}
+cloneFamily build writeOwner contents = linearly \lin -> runBO lin Control.do
+  original <- asksLinearly build
+  (mut, lend) <- borrowM original
+  Ur shared <- Control.pure (share mut)
+  (Ur first, Ur second) <- parBO (branch 7 shared) (branch 8 shared)
+  snapshot <- clone shared
+  token <- askLinearly
+  pureAfter case contents (writeOwner 9 (reclaim lend) token) of
+    Ur changed -> (first, second, changed, unur (contents snapshot))
+  where
+    branch :: Int -> Share α o -> BO α (Ur [Int])
+    branch k shared = Control.do
+      copied <- clone shared
+      token <- askLinearly
+      Control.pure $! contents (writeOwner k copied token)
+
+boxedGrowableWrite :: Int -> VG.GrowableVector Int %1 -> Linearly %1 -> VG.GrowableVector Int
+boxedGrowableWrite value owner token = modifyBO_ owner token \mut -> Control.do
+  (old, next) <- VG.set 0 value mut
+  Control.pure (consume old `lseq` consume next)
+
+boxedGrowableClones :: ([Int], [Int], [Int], [Int])
+{-# NOINLINE boxedGrowableClones #-}
+boxedGrowableClones = cloneFamily (VG.fromList [1, 2]) boxedGrowableWrite VG.toList
+
+unboxedFixedWrite :: Int -> UV.Vector Int %1 -> Linearly %1 -> UV.Vector Int
+unboxedFixedWrite value owner token = modifyBO_ owner token \mut -> Control.do
+  (old, next) <- UV.set 0 value mut
+  Control.pure (consume old `lseq` consume next)
+
+unboxedFixedClones :: ([Int], [Int], [Int], [Int])
+{-# NOINLINE unboxedFixedClones #-}
+unboxedFixedClones = cloneFamily (UV.fromList [1, 2]) unboxedFixedWrite UV.toList
+
+unboxedGrowableWrite :: Int -> UG.GrowableVector Int %1 -> Linearly %1 -> UG.GrowableVector Int
+unboxedGrowableWrite value owner token = modifyBO_ owner token \mut -> Control.do
+  (old, next) <- UG.set 0 value mut
+  Control.pure (consume old `lseq` consume next)
+
+unboxedGrowableClones :: ([Int], [Int], [Int], [Int])
+{-# NOINLINE unboxedGrowableClones #-}
+unboxedGrowableClones = cloneFamily (UG.fromList [1, 2]) unboxedGrowableWrite UG.toList
+
+-- A boxed Unbox representation can own a Ref, and must clone that Ref deeply.
+newtype DeepRef = DeepRef (Ref.Ref Int)
+  deriving newtype (Clone, Consumable)
+
+instance Clone (U.DoNotUnboxStrict DeepRef) where
+  clone = Unsafe.toLinear \(UnsafeAlias (U.DoNotUnboxStrict value)) ->
+    U.DoNotUnboxStrict Control.<$> clone (UnsafeAlias value)
+
+instance Consumable (U.DoNotUnboxStrict DeepRef) where
+  consume (U.DoNotUnboxStrict value) = consume value
+  {-# NOINLINE consume #-}
+
+unwrapDeepRef :: Mut α (U.DoNotUnboxStrict DeepRef) %1 -> Mut α (Ref.Ref Int)
+unwrapDeepRef = Unsafe.toLinear \(UnsafeAlias (U.DoNotUnboxStrict (DeepRef ref))) -> UnsafeAlias ref
+
+deepCloneFamily ::
+  (Clone o, Consumable o) =>
+  (Ref.Ref Int %1 -> Linearly %1 -> o) ->
+  (forall α. Mut α o %1 -> BO α (Mut α (Ref.Ref Int))) ->
+  (Int, Int)
+{-# NOINLINE deepCloneFamily #-}
+deepCloneFamily build element = linearly \lin -> runBO lin Control.do
+  ref <- asksLinearly (Ref.new 1)
+  original <- asksLinearly (build ref)
+  (mut, lend) <- borrowM original
+  (copied, restored) <- sharing mut (\shared -> clone shared)
+  originalRef <- element restored
+  bumped <- RefBorrow.modify (+ 1) originalRef
+  before <- RefBorrow.copyRef bumped
+  (copiedMut, copiedLend) <- borrowM copied
+  copiedRef <- element copiedMut
+  after <- RefBorrow.copyRef copiedRef
+  pureAfter (consume (reclaim lend) `lseq` consume (reclaim copiedLend) `lseq` (before, after))
+
+buildBoxedDeep :: Ref.Ref Int %1 -> Linearly %1 -> VG.GrowableVector (Ref.Ref Int)
+buildBoxedDeep ref token = case dup2 token of
+  (allocate, run) -> modifyBO_ (VG.empty allocate) run \mut ->
+    consume Control.<$> VG.push ref mut
+
+boxedGrowableDeep :: (Int, Int)
+boxedGrowableDeep = deepCloneFamily buildBoxedDeep (VG.get 0)
+
+unboxedFixedDeep :: (Int, Int)
+unboxedFixedDeep =
+  deepCloneFamily
+    (\ref -> UV.fromList [U.DoNotUnboxStrict (DeepRef ref)])
+    (\mut -> unwrapDeepRef Control.<$> UV.get 0 mut)
+
+unboxedGrowableDeep :: (Int, Int)
+unboxedGrowableDeep =
+  deepCloneFamily
+    (\ref -> UG.fromList [U.DoNotUnboxStrict (DeepRef ref)])
+    (\mut -> unwrapDeepRef Control.<$> UG.get 0 mut)
+
+boxedGrowableCapacity :: (Int, Int, Int)
+boxedGrowableCapacity = linearly \lin -> runBO lin Control.do
+  owner <- asksLinearly (VG.fromList [1, 2 :: Int])
+  (mut, lend) <- borrowM owner
+  reserved <- VG.reserve 32 mut
+  Ur shared <- Control.pure (share reserved)
+  (Ur originalCapacity, originalBorrow) <- VG.capacity shared
+  copied <- clone originalBorrow
+  (copiedMut, copiedLend) <- borrowM copied
+  (Ur copiedCapacity, copiedBorrow) <- VG.capacity copiedMut
+  (Ur copiedSize, sizedBorrow) <- VG.size copiedBorrow
+  let !() = consume sizedBorrow
+  pureAfter (consume (reclaim lend) `lseq` consume (reclaim copiedLend) `lseq` (originalCapacity, copiedCapacity, copiedSize))
+
+unboxedGrowableCapacity :: (Int, Int, Int)
+unboxedGrowableCapacity = linearly \lin -> runBO lin Control.do
+  owner <- asksLinearly (UG.fromList [1, 2 :: Int])
+  (mut, lend) <- borrowM owner
+  reserved <- UG.reserve 32 mut
+  Ur shared <- Control.pure (share reserved)
+  (Ur originalCapacity, originalBorrow) <- UG.capacity shared
+  copied <- clone originalBorrow
+  (copiedMut, copiedLend) <- borrowM copied
+  (Ur copiedCapacity, copiedBorrow) <- UG.capacity copiedMut
+  (Ur copiedSize, sizedBorrow) <- UG.size copiedBorrow
+  let !() = consume sizedBorrow
+  pureAfter (consume (reclaim lend) `lseq` consume (reclaim copiedLend) `lseq` (originalCapacity, copiedCapacity, copiedSize))
+
+-- These types pin linear-base's GC-owned element boundary and require no Clone for the contents.
+linearVectorGet :: LV.Vector a %1 -> (Ur a, LV.Vector a)
+linearVectorGet = LV.get 0
+
+linearVectorSet :: a -> LV.Vector a %1 -> LV.Vector a
+linearVectorSet = LV.set 0
+
+linearMapInsert :: Int -> a -> LH.HashMap Int a %1 -> LH.HashMap Int a
+linearMapInsert = LH.insert
+
+linearMapLookup :: Int -> LH.HashMap Int a %1 -> (Ur (Maybe a), LH.HashMap Int a)
+linearMapLookup = LH.lookup
+
+linearSetInsert :: Int -> LS.Set Int %1 -> LS.Set Int
+linearSetInsert = LS.insert
+
+linearSetContents :: LS.Set Int %1 -> Ur [Int]
+linearSetContents = LS.toList
+
+cloneLinearFunctions :: Share α (LV.Vector (Int -> Int)) %1 -> BO α (LV.Vector (Int -> Int))
+cloneLinearFunctions = clone
+
+cloneMapFunctions :: Share α (LH.HashMap Int (Int -> Int)) %1 -> BO α (LH.HashMap Int (Int -> Int))
+cloneMapFunctions = clone
+
+cloneSetFunctions :: Share α (LS.Set (Int -> Int)) %1 -> BO α (LS.Set (Int -> Int))
+cloneSetFunctions = clone
+
+-- Exercise storage growth and shrinking in linear-base after cloning.
+linearVectorClones :: ([Int], [Int], [Int])
+linearVectorClones = unur $ LV.fromList [1, 2 :: Int] \owner -> move $
+  linearly \lin -> runBO lin Control.do
+    (mut, lend) <- borrowM owner
+    Ur shared <- Control.pure (share mut)
+    (copied, second) <- parBO (clone shared) (clone shared)
+    Ur changed <- Control.pure (LV.toList (LV.shrinkToFit (LV.push 4 (LV.push 3 (LV.set 0 7 copied)))))
+    pureAfter (changed, unur (LV.toList second), unur (LV.toList (reclaim lend)))
+
+linearMapClones :: ([(Int, Int)], [(Int, Int)], [(Int, Int)])
+linearMapClones = unur $ LH.fromList [(1, 2 :: Int)] \owner -> move $
+  linearly \lin -> runBO lin Control.do
+    (mut, lend) <- borrowM owner
+    Ur shared <- Control.pure (share mut)
+    (copied, second) <- parBO (clone shared) (clone shared)
+    Ur changed <- Control.pure (LH.toList (LH.shrinkToFit (insertMany 40 copied)))
+    pureAfter (List.sort changed, unur (LH.toList second), unur (LH.toList (reclaim lend)))
+  where
+    insertMany :: Int -> LH.HashMap Int Int %1 -> LH.HashMap Int Int
+    insertMany 0 table = table
+    insertMany n table = insertMany (n - 1) (LH.insert n n table)
+
+linearSetClones :: ([Int], [Int], [Int])
+linearSetClones = unur $ LS.fromList [1 :: Int] \owner -> move $
+  linearly \lin -> runBO lin Control.do
+    (mut, lend) <- borrowM owner
+    Ur shared <- Control.pure (share mut)
+    (copied, second) <- parBO (clone shared) (clone shared)
+    Ur changed <- Control.pure (LS.toList (insertMany 40 copied))
+    pureAfter (List.sort changed, unur (LS.toList second), unur (LS.toList (reclaim lend)))
+  where
+    insertMany :: Int -> LS.Set Int %1 -> LS.Set Int
+    insertMany 0 table = table
+    insertMany n table = insertMany (n - 1) (LS.insert n table)
+
+cloneWrapper0 :: Share α (Identity (Ref.Ref Int)) %1 -> BO α (Identity (Ref.Ref Int))
+cloneWrapper0 = clone
+
+copyWrapper0 :: Share α (Identity (Int)) %1 -> Identity (Int)
+copyWrapper0 = copy
+
+cloneWrapper1 :: Share α (Down (Ref.Ref Int)) %1 -> BO α (Down (Ref.Ref Int))
+cloneWrapper1 = clone
+
+copyWrapper1 :: Share α (Down (Int)) %1 -> Down (Int)
+copyWrapper1 = copy
+
+cloneWrapper2 :: Share α (Const (Ref.Ref Int) Bool) %1 -> BO α (Const (Ref.Ref Int) Bool)
+cloneWrapper2 = clone
+
+copyWrapper2 :: Share α (Const (Int) Bool) %1 -> Const (Int) Bool
+copyWrapper2 = copy
+
+cloneWrapper3 :: Share α (Sem.Dual (Ref.Ref Int)) %1 -> BO α (Sem.Dual (Ref.Ref Int))
+cloneWrapper3 = clone
+
+copyWrapper3 :: Share α (Sem.Dual (Int)) %1 -> Sem.Dual (Int)
+copyWrapper3 = copy
+
+cloneWrapper4 :: Share α (Sem.First (Ref.Ref Int)) %1 -> BO α (Sem.First (Ref.Ref Int))
+cloneWrapper4 = clone
+
+copyWrapper4 :: Share α (Sem.First (Int)) %1 -> Sem.First (Int)
+copyWrapper4 = copy
+
+cloneWrapper5 :: Share α (Sem.Last (Ref.Ref Int)) %1 -> BO α (Sem.Last (Ref.Ref Int))
+cloneWrapper5 = clone
+
+copyWrapper5 :: Share α (Sem.Last (Int)) %1 -> Sem.Last (Int)
+copyWrapper5 = copy
+
+cloneWrapper6 :: Share α (Sem.WrappedMonoid (Ref.Ref Int)) %1 -> BO α (Sem.WrappedMonoid (Ref.Ref Int))
+cloneWrapper6 = clone
+
+copyWrapper6 :: Share α (Sem.WrappedMonoid (Int)) %1 -> Sem.WrappedMonoid (Int)
+copyWrapper6 = copy
+
+cloneWrapper7 :: Share α (Monoid.Alt Identity (Ref.Ref Int)) %1 -> BO α (Monoid.Alt Identity (Ref.Ref Int))
+cloneWrapper7 = clone
+
+copyWrapper7 :: Share α (Monoid.Alt Identity (Int)) %1 -> Monoid.Alt Identity (Int)
+copyWrapper7 = copy
+
+cloneTuple6 :: Share α (Int, Int, Int, Int, Int, Ref.Ref Int) %1 -> BO α (Int, Int, Int, Int, Int, Ref.Ref Int)
+cloneTuple6 = clone
+
+copyTuple5 :: Share α (Int, Int, Int, Int, Int) %1 -> (Int, Int, Int, Int, Int)
+copyTuple5 = copy
+
+copyTuple6 :: Share α (Int, Int, Int, Int, Int, Int) %1 -> (Int, Int, Int, Int, Int, Int)
+copyTuple6 = copy
+
+cloneBools :: Share α (Monoid.Any, Monoid.All) %1 -> BO α (Monoid.Any, Monoid.All)
+cloneBools = clone
+
+sortedUr :: (NonLinear.Ord a) => Ur [a] %1 -> [a]
+sortedUr (Ur values) = List.sort values
+
+linearVectorSnapshot :: ([Int], [Int])
+{-# NOINLINE linearVectorSnapshot #-}
+linearVectorSnapshot = unur $ LV.fromList [1, 2 :: Int] \owner -> move $
+  linearly \lin -> runBO lin Control.do
+    (mut, lend) <- borrowM owner
+    Ur shared <- Control.pure (share mut)
+    snapshot <- clone shared
+    pureAfter case LV.toList (LV.set 0 9 (reclaim lend)) of
+      Ur changed -> (changed, unur (LV.toList snapshot))
+
+linearMapSnapshot :: ([(Int, Int)], [(Int, Int)])
+{-# NOINLINE linearMapSnapshot #-}
+linearMapSnapshot = unur $ LH.fromList [(1, 2 :: Int)] \owner -> move $
+  linearly \lin -> runBO lin Control.do
+    (mut, lend) <- borrowM owner
+    Ur shared <- Control.pure (share mut)
+    snapshot <- clone shared
+    pureAfter case LH.toList (LH.insert 1 9 (reclaim lend)) of
+      Ur changed -> (List.sort changed, sortedUr (LH.toList snapshot))
+
+linearSetSnapshot :: ([Int], [Int])
+{-# NOINLINE linearSetSnapshot #-}
+linearSetSnapshot = unur $ LS.fromList [1 :: Int] \owner -> move $
+  linearly \lin -> runBO lin Control.do
+    (mut, lend) <- borrowM owner
+    Ur shared <- Control.pure (share mut)
+    snapshot <- clone shared
+    pureAfter case LS.toList (LS.insert 9 (reclaim lend)) of
+      Ur changed -> (List.sort changed, sortedUr (LS.toList snapshot))
+
+test_additionalClones :: TestTree
+test_additionalClones =
+  testGroup
+    "owning and GC-owned container clones"
+    [ testCase "boxed growable parallel copies and later-write snapshot" (boxedGrowableClones @?= expected)
+    , testCase "unboxed fixed parallel copies and later-write snapshot" (unboxedFixedClones @?= expected)
+    , testCase "unboxed growable parallel copies and later-write snapshot" (unboxedGrowableClones @?= expected)
+    , testCase "boxed growable clones Ref elements deeply" (boxedGrowableDeep @?= (2, 1))
+    , testCase "unboxed fixed clones boxed Ref elements deeply" (unboxedFixedDeep @?= (2, 1))
+    , testCase "unboxed growable clones boxed Ref elements deeply" (unboxedGrowableDeep @?= (2, 1))
+    , testCase "boxed growable preserves capacity" (boxedGrowableCapacity @?= (32, 32, 2))
+    , testCase "unboxed growable preserves capacity" (unboxedGrowableCapacity @?= (32, 32, 2))
+    , testCase "linear-base Vector copies can grow independently" (linearVectorClones @?= ([7, 2, 3, 4], [1, 2], [1, 2]))
+    , testCase "linear-base HashMap copies can resize independently" (linearMapClones @?= ([(n, n) | n <- [1 .. 40]], [(1, 2)], [(1, 2)]))
+    , testCase "linear-base Set copies can resize independently" (linearSetClones @?= ([1 .. 40], [1], [1]))
+    , testCase "linear-base Vector snapshot precedes later write" (linearVectorSnapshot @?= ([9, 2], [1, 2]))
+    , testCase "linear-base HashMap snapshot precedes later write" (linearMapSnapshot @?= ([(1, 9)], [(1, 2)]))
+    , testCase "linear-base Set snapshot precedes later write" (linearSetSnapshot @?= ([1, 9], [1]))
+    , testCase "copy of linear-base HashMap points to clone" (assertDeferredTypeError "clone a shared borrow of it inside BO" copyOfSharedHashMap)
+    , testCase "copy of linear-base Set points to clone" (assertDeferredTypeError "clone a shared borrow of it inside BO" copyOfSharedSet)
+    , testCase "boxed growable requires Clone elements" (assertDeferredTypeError "Clone DupableOnly" growableOfDupableOnly)
+    , testCase "unboxed fixed requires Clone elements even for boxed storage" (assertDeferredTypeError "Clone (U.DoNotUnboxLazy" unboxedRefsWithoutClone)
+    , testCase "unboxed growable requires Clone elements even for boxed storage" (assertDeferredTypeError "Clone (U.DoNotUnboxLazy" unboxedGrowableRefsWithoutClone)
+    ]
+  where
+    expected = ([7, 2], [8, 2], [9, 2], [1, 2])

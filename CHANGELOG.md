@@ -73,14 +73,17 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   For another package's type, write it for a newtype over that type rather than as an orphan, which an instance added later by this library or by that package would break.
   Contents that are `Clone` but not `Dupable`, as in `Ref (Vector (Ref Int))`, can now be cloned.
   Contents that are `Dupable` but none of the above can no longer be cloned through a borrow.
-  Among linear-base's types, `Data.Array.Mutable.Linear.Array` keeps being cloned, now through an instance of its own, while `Data.Vector.Mutable.Linear.Vector`, `Data.HashMap.Mutable.Linear.HashMap` and `Data.Set.Mutable.Linear.Set` have none, so a `Ref` of one of them, which 0.1.0.0 cloned, is rejected with "No instance for" their `Clone`: use pure-borrow's own boxed `Vector` and hash map instead.
+  Linear-base's `Array`, `Vector`, `HashMap` and `Set` keep being cloned through dedicated instances that copy their backing storage and share their GC-owned elements, as 0.1.0.0 did through `Dupable`.
 - `Linearly`, `Now` and `EndToken` carry a field, so that GHC cannot learn which value a token is, and `Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe` exports their constructors as `UnsafeLinearlyToken`, `UnsafeNowToken` and `UnsafeEndToken`.
   The old names `UnsafeLinearly`, `UnsafeNow` and `UnsafeEnd` remain as patterns, which build a token and match an unrestricted one as the constructors did.
   GHC does not let a pattern synonym match a linearly bound value, and rejects such a match with "Couldn't match type ‘Many’ with ‘One’" arising from "a non-linear pattern" "(pattern synonyms aren't linear)", or, in a `case`, arising from the "multiplicity of" the variable matched.
   Where you matched a linear token, write the constructor instead, as in `\(UnsafeLinearlyToken _) -> ()`.
   A token built with a pattern or a constructor is a constant, which GHC may share between allocations: build one only inside a function that is `NOINLINE` and applied through `noinline`.
   Where you take a token apart and return another, pass the field on; a function that returns two tokens must itself be `NOINLINE` and applied through `noinline`, as `dup2` is, since two tokens with the same field are one expression.
-- The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)`, `Clone (Array a)` or a `Subtype` instance for `Maybe`; delete the orphan.
+- The multiplicity vector's `fromList` requires `KnownMultiplicity p`, which both multiplicities have, so that it evaluates its elements only where it owns them.
+  A function polymorphic in `p` that calls it is rejected with "No instance for `KnownMultiplicity p`"; add the constraint to its signature.
+- The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)`, `Clone (Array a)`, `Clone` for a boxed growable or unboxed vector, or a `Subtype` instance for `Maybe`; delete the orphan.
+  Call sites of an old shallow vector-cloning orphan now need `Clone a`, since those vectors own their elements.
   An orphan as general as the new instance, such as `Clone (Array a)`, is rejected with "Duplicate instance declarations"; a narrower one, such as `Clone (Array Int)`, compiles, and each use of it is rejected with "Overlapping instances".
 
 ### Changed
@@ -92,6 +95,14 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   A computation's thread, stack included, about 1 KB, stays in memory after it finishes: the second computation's until the first one finishes, and the first computation's until the thread running `parBO` runs again; `Par` and `mapConcurrentlyOf` over a list put the short computation first.
 - `Data.Ref.Linear.Borrow.update`, `modify`, `swap` and `readShare`, and the hash map's queries and `take`, `take_` and `swap`, read and write inside `BO`, at their place in the sequence; a write could previously land only when its result was forced, after the lifetime had ended.
 - `reclaim` forces the `EndToken` it is discharged with; `withEnd` leaves it alone.
+- `Data.Ref.Linear.new` and `unsafeWriteRef`, and the `fromList` of the boxed, unboxed, unboxed growable and multiplicity vectors, evaluate the value they store to weak head normal form, once, as the owner itself is evaluated, which borrowing it does; the multiplicity vector does so only at `One`, where it owns its elements.
+  Writes through a `Mut` evaluate what they store inside the guarded run, including unboxed writes.
+  Demand is hidden at the run boundary, allowing arithmetic and writes to remain strict and specialize inside the run without allocating a thunk for each updated element.
+  A call stored unevaluated that updates memory in place, such as `Array.map f arr`, could otherwise run in both branches of a `parBO` that read it.
+  A placeholder stored in an owner, such as `undefined`, therefore raises when the owner is borrowed, even if nothing reads it and it is dropped with `aff`; one returned inside an owner by the `divide` of `divideAndConquer` or `divideAndConquer'` now raises in a worker, and the caller blocks (see "Known issues"), where it used to raise when the caller freed the owner.
+  A `Share` is stored as the value it points to, so storing one evaluates that value.
+  The thread that evaluates the owner, usually the parent before a `parBO` forks, now computes what it stores, and a `fromList` computes its elements one after another, where branches that read different contents used to compute them in parallel; this also holds for the hash map's `fromList` and `union`, whose tables are now built as the map is evaluated.
+  Build an expensive value inside the branch that needs it, or store a GC-owned one in a lazy box such as `Ur`, which is evaluated only to the box.
 
 ### Fixed
 
@@ -110,12 +121,24 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   It now takes a batch one task at a time, and so may return fewer than half the tasks when the owner or another thief takes some meanwhile.
   The deque, `Control.Concurrent.Queue.ChaseLev`, could also put its elements in the wrong slots when it grew, and hand out `undefined`; and on ARM64 a thief could take what a slot held before the owner's write to it.
   Both are fixed as well.
+- A call that updates memory in place, stored unevaluated by `Data.Ref.Linear.new`, by the `fromList` of the boxed, unboxed or multiplicity vectors, or by the multiplicity vector's `write` at `One`, could run twice when both branches of a `parBO` read or cloned it through a `Share` at once: `Ref.new (Array.map (+ 1) arr)` added 2 to some elements, a clone could copy the array halfway through, and a `map` that changes the element type crashed the program.
+  The same happened to a call of one of those constructors left unevaluated where both branches reached it, such as a component of a pair, and to a list whose cells make the call as they are produced.
+  Strict writes could make a wrapper around `modifyBO_` strict in its payload, allowing its caller to evaluate the payload before the run's guard.
+  Two branches forcing a delayed wrapper could then run a linear `Array.map` twice, even when the stored value was an ordinary `Int` computed by summing the array.
+  The runner now hides demand on the complete state continuation until after `noDuplicate#`; its result consumer remains inside the same continuation so intermediate lifetime/result pairs can be eliminated.
+  The borrow-aware hash map's `union` stored its in-place insertions unevaluated, so two branches that looked keys up in the union could corrupt it: a union of 12 entries with 4 lost entries or answered a lookup wrongly in 99 of 100 runs at `-N2`.
+  These fixes hold under GHC's default lazy blackholing; a module compiled with `-feager-blackholing` can still run such a call twice.
 
 ### New
 
 - `Consumable` for the boxed `Vector` of `Data.Vector.Mutable.Linear.Borrow`, which gives a vector of non-`Movable` elements, such as `Ref`s, a way out.
 - `Clone` for `Ur`, `Sum`, `Product`, `Min`, `Max`, `Arg` and `Complex`.
-- `Clone` for linear-base's `Data.Array.Mutable.Linear.Array`, which copies the array into a new one and shares its GC-owned elements, so it requires nothing of them.
+- `Clone` for linear-base's `Array`, `Vector`, `HashMap` and `Set`, copying their backing arrays and sharing their GC-owned contents without constraints on the elements.
+  Vector and hash-map capacities are preserved.
+- Deep `Clone` for the boxed growable vector and the fixed and growable unboxed vectors, requiring `Clone a` (and `Unbox a` for the unboxed families).
+  Growable copies retain length and capacity and clone only initialized elements.
+- `Clone` and `Copyable` for `Identity`, `Down`, `Const`, `Dual`, semigroup `First` and `Last`, `WrappedMonoid`, `Any`, `All`, `Alt`, and tuples through arity six.
+  Newtype wrappers delegate to the contained value's instance; an unboxed representation does not imply a shallow copy is safe.
 - `Clone` for the owned hash map of `Data.HashMap.RobinHood.Mutable.Linear`, which copies its slot array; the borrow-aware hash map clones through it.
 - `DistributesAlias` for `NonEmpty`.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
@@ -124,7 +147,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 ### Clarified
 
 - The callback of `unsafeInplace` must only rearrange elements, never duplicate, drop or replace one; `unsafeFromMutable` requires every element to be initialised.
-- `copy` of linear-base's `Array` or `Vector` is rejected with a message that says why, where it used to name linear-base's `Unsatisfiable` class, and for the array the message points to `clone`.
+- `copy` of mutable containers is rejected with a message pointing to `clone` inside `BO`, including linear-base's `Array`, `Vector`, `HashMap` and `Set` and pure-borrow's references and vectors.
 
 ### Performance
 
@@ -134,26 +157,43 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   On the quicksort of 32,768 elements at `-N10`, where the unchanged introsort varies by ±2% between rounds, the divide-and-conquer version built on `parBO` runs 2% slower, in every round; the budgeted parallel and the sequential versions are unchanged within that noise, and the work-stealing version, which does not use `parBO`, was 2–8% faster before the deque fix below, which changes it by no measurable amount.
   Its finished threads also stay in memory longer: the parallel divide-and-conquer FFT benchmark on 2^20 points peaks at 137 MB at `-N1`, against about 105 MB for 0.1.0.0, and at 123 MB against 118 MB at `-N4`.
 - Every `reclaim`, every run of the `runBO` family, and every crossing of a scope that discharges an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) makes one or two more out-of-line calls; `sharing`, `reborrowing` and the `_` variants are unchanged.
-- Every run of the `runBO` family, `modifyBO` and `modifyBO_` included, allocates its lifetime tokens, the `Now` and the end token with its `Ur`, 48 bytes, where 0.1.0.0 used static tokens shared by all runs: a loop of `modifyBO_` allocates 80 bytes per iteration against 32, and the benchmarks that run `BO` once per iteration 48 bytes more.
+- Every run of the `runBO` family, `modifyBO` and `modifyBO_` included, allocates distinct lifetime tokens rather than the static tokens shared by all runs in 0.1.0.0.
+  Token identity alone adds 48 bytes per run; the additional demand-barrier cost for repeated owner-returning runs is recorded below.
 - The `noDuplicate#` guard costs about 9 ns per owner-level `Ref` operation with several capabilities, and nothing with one.
 - `clone` of a boxed vector of references allocates about 25% more than 0.1.0.0, 4.16 MB against 3.31 MB per clone of 100,000 `Ref Int`s, because each element's clone is a new `Ref`, allocated when the clone is taken rather than left as a thunk.
   `clone` of a vector of values such as `Int` allocates exactly what it did in 0.1.0.0.
 - `clone` of a linear-base `Array`, and so of a `Ref` or boxed `Vector` of arrays, copies each array in one pass with the array's own `dup2`, as 0.1.0.0 did through `Dupable`.
   It costs a bare `cloneMutableArray#` plus about 2.5 ns and 16 bytes per clone on GHC 9.12 and later; on 9.10, whose `evaluate` allocates a thunk around the copy, it costs 48 bytes and about 5 ns more, or 30 ns more at 1,000 elements.
   Code that clones one borrow repeatedly, as a loop does, now pays for a copy per clone, where 0.1.0.0 made one copy and gave it to every clone (see "Fixed").
+- Deep cloning the element-owning unboxed vectors visits each initialized element through its `Clone` instance.
+  On GHC 9.12.4/AArch64 macOS at `-O2`, cloning 100,000 `Int`s took 37.8 µs with specialization versus 13.4 µs for a safe ST buffer copy, with about 0.80 MB allocated by both.
+  Through a polymorphic dictionary boundary, the clone took 908 µs and allocated 4.00 MB; a vector of `(Int, Double)` took 2.71 ms and 8.80 MB versus 25.0 µs and 1.60 MB for the storage copy.
+  These are eleven rotated samples at `-N1`, excluding source setup and final materialization; they compare deep cloning with copying plain data, not with a previous equivalent instance.
+  Growable unboxed clones showed comparable costs; linear-base wrapper clones copy the whole backing capacity, including spare slots.
+  A bulk-copy fast path would need an additional guarantee that copying the element representation implements its `Clone`; `Unbox` alone does not provide that guarantee.
 - The work-stealing deque's `stealHalf` takes a batch one task at a time, with a compare-and-swap and two barriers for each, where 0.1.0.0 claimed the batch with one compare-and-swap (see "Fixed").
   In the quicksort and FFT benchmarks most steal attempts find nothing and a batch holds one or two tasks, so their work-stealing variants show no measurable change in interleaved runs against the old deque: a pooled ratio of 1.00, with a 95% interval of about ±7%, at `-N4` and `-N10`.
   On x86-64 the barrier between a thief's reads of `top` and `bottom` is now a full fence on every steal attempt, whose cost was not measured.
+- Strict construction and guarded runs were measured on GHC 9.12.4/AArch64 macOS at `-O2`, using serial `-N1` paired runs.
+  Against the committed branch before strict storage, 1,000 `Ref.new`/`free` iterations rose from 6.55 to 7.27 µs without extra allocation (32,072 bytes).
+  Against the earlier strict-storage runner, 1,000 owner-returning `modifyBO_` calls rose from 11.92 to 16.34 µs and from 80,104 to 144,896 bytes, about 65 extra bytes per call; the guard prevents the caller from forcing owners early and can leave a chain of delayed updates.
+  The continuation-based runner eliminates its intermediate lifetime/result pair: 1,000 empty runs retain 80,088 bytes.
+  Fused `fromList` construction avoids an intermediate list: 100,000 prebuilt boxed `Int`s retain 3.70 MB, compared with 8.50 MB in the intermediate strict-list implementation, with 0.729 → 0.830 ms against the pre-strict-storage branch in two rotated rounds.
+  Multiplicity `One` construction retains about 8 extra bytes per element; `Many` has no measured per-element allocation increase.
+  Selected fixed and growable unboxed kernels at 0, 1, 1,024 and 1,048,576 elements retain the earlier strict-storage implementation's allocation, including the strict writes now protected by the runner.
 
 ### Known issues
 
 - `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` do not propagate an exception raised by `divide` or `conquer`; the caller blocks instead.
 - A pure value whose evaluation writes memory it did not allocate can perform those writes twice if two threads force it at the same moment, for example both branches of a `parBO` reading it through a `Share`.
-  `Ref`'s pure operations and `runBO`/`modifyBO` computations are protected, but the owned hash map's `insert`, `delete` and `alter` in `Data.HashMap.RobinHood.Mutable.Linear` are not.
-  Neither are linear-base's in-place operations: `set`, `write`, `unsafeSet`, `unsafeWrite`, `map` and `fmap` of `Data.Array.Mutable.Linear`, and linear-base's `Vector`, `HashMap` and `Set`, which are built on them.
-  Any field that stores such a call unevaluated, as `Ref.new` and `Data.Vector.Mutable.Linear.Borrow.fromList` do, or a lazy field of a record, a `Maybe` or a list, can have the call run twice when two branches read or clone it through a `Share` at once.
+  `Ref`'s pure operations, `runBO`/`modifyBO` computations, and the owners, which evaluate what they store (see "Changed"), are protected, but the owned hash map's `insert`, `delete` and `alter` in `Data.HashMap.RobinHood.Mutable.Linear` are not.
+  Neither are linear-base's in-place operations: `set`, `write`, `unsafeSet`, `unsafeWrite`, `map` and `fmap` of `Data.Array.Mutable.Linear`, the array that its `fromList` hands to its continuation, whose writes have not run yet, and linear-base's `Vector`, `HashMap` and `Set`, which are built on them.
+  A lazy field inside a stored value that holds such a call unevaluated, such as a component of a pair, the payload of a `Just`, an element of a list or a field of a record, also one handed out by `splitPair`, `split` or the record splitting of `Data.Record.Linear.Borrow.Experimental`, can have the call run twice when two branches read or clone it through a `Share` at once, or when one of them stores a `Share` of it in an owner, which evaluates it.
+  An explicit force outside a `BO` action, such as a bang on an argument of a wrapper function, also remains outside the runner's guard.
+  Evaluation demanded inside the action, including unboxed writes, is protected.
   A lone write run twice writes the same value twice, but `map`, `fmap` and chains of reads and writes read what the first run wrote, and a clone taken meanwhile can copy what the second run has written so far: `Array.map (+ 1)` adds 2 to some elements, a clone can copy an array halfway through an update, or hold a value that a chain wrote to one place only on the way, and a `map` that changes the element type reads the first run's results at the wrong type and crashes the program.
-  Force such a call before storing it where several branches can reach it, e.g. `Ref.new $! HashMap.insert k v m` or `Ref.new $! Array.map f arr`; `$!` reaches only the outermost constructor, so force each call that a record, a list or a vector holds.
+  It can also break the invariants of linear-base's containers: a pair of `HashMap.insert k v m` and `()`, forced by both branches, left a table whose size said 40 while it held 41 entries.
+  Evaluate such a call before storing it where several branches can reach it, with a strict field, `StrictData`, or the linear `$!` of `Prelude.Linear` where the field is built, as in `Just PL.$! Array.map f arr`; the `$!` of `Prelude` does not take a linear argument, and `$!` reaches only the outermost constructor, so evaluate each call that a record, a list or a vector holds.
   The protection holds under GHC's default lazy blackholing; `-feager-blackholing` on the module that builds the value can defeat it, and single-capability programs are unaffected.
 
 ## 0.1.0.0 - 2026-09-19

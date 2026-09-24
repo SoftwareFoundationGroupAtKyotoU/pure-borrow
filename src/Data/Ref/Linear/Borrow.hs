@@ -24,6 +24,7 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe
 import Control.Monad.Borrow.Pure.Copyable
+import Control.Monad.Borrow.Pure.Utils (evaluateStored)
 import Data.Ref.Linear (Ref)
 import Data.Ref.Linear.Internal qualified as Ref
 import Prelude.Linear
@@ -44,8 +45,11 @@ update = Unsafe.toLinear2 \f borrow@(UnsafeAlias ref) -> Control.do
   -- instead of 'MutVar.atomicModify' (which requires pure function) while retaining atomicity.
   -- Both happen in the state thread: a write left in a lazy result would run
   -- whenever the caller forced it, possibly after the lifetime had ended.
+  -- WHNF forcing stays inside the guarded run; see Note [Demand stays inside a BO run] in "Control.Monad.Borrow.Pure.BO.Internal".
+  -- The write evaluates what it stores.
   a <- Ref.unsafeReadRefBO ref
-  (!b, !a) <- f a
+  (b, a) <- f a
+  b <- unsafeSystemIOToBO (Unsafe.toLinear evaluateStored b)
   () <- Ref.unsafeWriteRefBO ref a
   Control.pure (b, borrow)
 

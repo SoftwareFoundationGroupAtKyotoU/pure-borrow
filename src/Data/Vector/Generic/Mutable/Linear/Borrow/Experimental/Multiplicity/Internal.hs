@@ -24,13 +24,14 @@ import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )
+import Control.Monad.Borrow.Pure.Utils (evaluateStored, evaluatingBundle)
 import Data.Kind (Constraint, Type)
 import Data.Vector.Generic qualified as G
 import Data.Vector.Generic.Mutable qualified as GM
 import Data.Vector.Mutable (RealWorld)
 import GHC.Exts (Multiplicity (..))
 import GHC.Exts qualified as GHC
-import GHC.IO (unsafePerformIO)
+import GHC.IO (evaluate, unsafePerformIO)
 import GHC.Stack (HasCallStack)
 import GHC.TypeError
 import Prelude.Linear hiding (head, last, splitAt)
@@ -102,7 +103,7 @@ instance LinearOnly (Vector p v a) where
   {-# INLINE linearOnly #-}
 
 instance
-  (Unsatisfiable (ShowType (Vector p v a) :<>: Text " cannot be copied!")) =>
+  (Unsatisfiable (ShowType (Vector p v a) :<>: Text " cannot be copied!" :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead.")) =>
   Copyable (Vector p v a)
   where
   copy = unsatisfiable
@@ -143,7 +144,7 @@ instance (G.Vector v a) => Clone (Vector Many v a) where
 
 {- | Each element is cloned through a shared borrow of it, with its own 'Clone', into a fresh vector.
 
-The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same vector at once.
+The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same vector at once, unless an element holds, in a lazy field, a call that is not evaluated yet: see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
 See Note [Cloning the contents of a shared borrow] in @Data.Ref.Linear.Internal@.
 -}
 instance (G.Vector v a, Clone a) => Clone (Vector One v a) where
@@ -185,9 +186,13 @@ constant =
   GHC.noinline \count value linear ->
     linear `lseq` Vector (unsafePerformIO (GM.replicate count value))
 
--- | \(O(n)\). Materialize a list whose binding multiplicity matches the mode.
+{- | \(O(n)\). Materialize a list whose binding multiplicity matches the mode.
+
+At 'One', each element is evaluated to weak head normal form as it is stored; see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+-}
 fromList ::
-  (G.Vector v a) =>
+  forall v a p.
+  (G.Vector v a, KnownMultiplicity p) =>
   [a] %p ->
   Linearly %1 ->
   Vector p v a
@@ -196,7 +201,7 @@ fromList =
   GHC.noinline $ Unsafe.toLinear \values linear ->
     linear `lseq`
       Vector
-        (unsafePerformIO (G.thaw (G.fromList values)))
+        (unsafePerformIO (mFromList @p values))
 
 -- | \(O(n)\). Copy an immutable vector into a new owner.
 fromVector ::
@@ -273,6 +278,14 @@ class KnownMultiplicity p where
     Borrow bk α (Vector p v a) %1 ->
     BO β (GetResult p bk α v a)
 
+  {- | Build fresh storage, forcing linearly owned elements and preserving GC-owned element laziness.
+  Keeping producer and consumer in this method lets the stream fuse after instance selection.
+  -}
+  mFromList :: forall v a. (G.Vector v a) => [a] -> IO (G.Mutable v RealWorld a)
+
+  -- | Force a write payload to WHNF inside the guarded BO run.
+  mEvaluateStored :: a -> IO a
+
 instance KnownMultiplicity Many where
   {-# SPECIALIZE instance KnownMultiplicity Many #-}
   mMove = Unsafe.toLinear Ur
@@ -304,6 +317,12 @@ instance KnownMultiplicity Many where
         NonLinear.pure (Ur value, vectorBorrow)
   {-# INLINE mUnsafeGet #-}
 
+  mFromList values = G.thaw (G.fromList values)
+  {-# INLINE mFromList #-}
+
+  mEvaluateStored value = NonLinear.pure $! value
+  {-# INLINE mEvaluateStored #-}
+
 instance KnownMultiplicity One where
   {-# SPECIALIZE instance KnownMultiplicity One #-}
   mMove = id
@@ -326,7 +345,9 @@ instance KnownMultiplicity One where
   mUnsafeWrite =
     Unsafe.toLinear3 \index value array@(UnsafeAlias (Vector vector)) ->
       unsafeSystemIOToBO do
-        oldValue <- GM.unsafeExchange vector index value
+        -- WHNF forcing stays inside the guarded run; see Note [Demand stays inside a BO run] in "Control.Monad.Borrow.Pure.BO.Internal".
+        stored <- evaluateStored value
+        oldValue <- GM.unsafeExchange vector index stored
         let !() = consume oldValue
         NonLinear.pure array
   {-# INLINE mUnsafeWrite #-}
@@ -335,6 +356,14 @@ instance KnownMultiplicity One where
     Unsafe.toLinear \(UnsafeAlias (Vector vector)) ->
       UnsafeAlias Control.<$> unsafeSystemIOToBO (GM.unsafeRead vector index)
   {-# INLINE mUnsafeGet #-}
+
+  mFromList values = do
+    immutable <- evaluate (G.unstream (evaluatingBundle values))
+    G.thaw immutable
+  {-# INLINE mFromList #-}
+
+  mEvaluateStored = evaluateStored
+  {-# INLINE mEvaluateStored #-}
 
 unsafeToVector ::
   (G.Vector v a) =>
@@ -538,12 +567,16 @@ unsafeSet ::
   BO β (Bound p a, Mut α (Vector p v a))
 {-# INLINE unsafeSet #-}
 unsafeSet =
-  Unsafe.toLinear3 \index !value array@(UnsafeAlias (Vector vector) :: Mut α (Vector p v a)) ->
+  Unsafe.toLinear3 \index value array@(UnsafeAlias (Vector vector) :: Mut α (Vector p v a)) ->
     unsafeSystemIOToBO do
-      oldValue <- GM.unsafeExchange vector index value
+      stored <- mEvaluateStored @p value
+      oldValue <- GM.unsafeExchange vector index stored
       NonLinear.pure (mMove @p oldValue, array)
 
--- | Replace an element and consume the displaced value.
+{- | Replace an element and consume the displaced value.
+
+At 'One', the new element is evaluated to weak head normal form as the write runs; see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+-}
 write ::
   ( HasCallStack
   , G.Vector v a
@@ -632,10 +665,10 @@ unsafeUpdate index action =
   Unsafe.toLinear \(UnsafeAlias array@(Vector vector)) -> Control.do
     value <- unsafeSystemIOToBO (GM.unsafeRead vector index)
     (result, updatedValue) <- Unsafe.toLinear action value
-    let !unboundValue = mUnbind @p updatedValue
+    -- Evaluated where the write runs, as the multiplicity asks: see mEvaluateStored.
     () <-
       unsafeSystemIOToBO
-        (Unsafe.toLinear3 GM.unsafeWrite vector index unboundValue)
+        (Unsafe.toLinear (\stored -> mEvaluateStored @p stored NonLinear.>>= GM.unsafeWrite vector index) (mUnbind @p updatedValue))
     Control.pure (result, UnsafeAlias array)
 
 -- | Transform an element.

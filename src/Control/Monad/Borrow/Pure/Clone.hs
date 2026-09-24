@@ -86,7 +86,12 @@ A value behind a shared borrow that is still an unevaluated call, in any field s
 That is harmless for a call that only allocates, reads, or makes a single write.
 It is not for one that reads what it writes, as linear-base's @Data.Array.Mutable.Linear.map@ or a chain of reads and writes does, nor for one that writes one place twice.
 The second run then reads what the first one wrote, and a clone can copy what the second run has written so far: @Array.map (+ 1)@ adds 2 to some elements, a clone can copy an array halfway through the update or hold a value that the call wrote only on the way, and a @map@ that changes the element type crashes the program.
-Evaluate such a call before the value is shared, for example with @Ref.new $! Array.map f arr@.
+The owners of this library evaluate each value they take over linearly, once, to weak head normal form, before anything can share it: 'Data.Ref.Linear.new', the @fromList@ of the vectors, and their writes through a 'Control.Monad.Borrow.Pure.Mut'.
+A field that the value holds lazily is not evaluated, however: a component of a pair, the payload of a 'Just', an element of a list or a field of a record, including one that 'Control.Monad.Borrow.Pure.splitPair' or another @split@ hands out.
+Storing a value evaluates it, so a branch that stores a 'Control.Monad.Borrow.Pure.Share' of such a field in an owner, or writes it through a 'Control.Monad.Borrow.Pure.Mut', evaluates the field too, and runs the call while a sibling that reads or clones the field can run it as well.
+The BO runner keeps evaluation demanded by its action behind its guard, including strict unboxed writes.
+An explicit force outside the action, such as a bang on the argument of a user's wrapper function, is still outside that protection.
+Evaluate such a call before the value is shared, with a strict field, @StrictData@, or the linear @$!@ of "Prelude.Linear" where the field is built, as in @Just PL.$! Array.map f arr@ with "Prelude.Linear" imported as @PL@; the @$!@ of "Prelude" does not take a linear argument.
 @$!@ reaches only the outermost constructor, so evaluate each such call that a record, a list or a vector holds, not only the container.
 -}
 module Control.Monad.Borrow.Pure.Clone (
@@ -111,10 +116,17 @@ import Data.Array.Mutable.Unlifted.Linear qualified as Unlifted
 import Data.Coerce (Coercible, coerce)
 import Data.Complex (Complex)
 import Data.Data (Proxy)
+import Data.Functor.Const (Const (..))
+import Data.Functor.Identity (Identity (..))
+import Data.HashMap.Mutable.Linear.Internal qualified as LinearHashMap
 import Data.Int
 import Data.Kind (Constraint, Type)
 import Data.List.NonEmpty (NonEmpty)
+import Data.Monoid qualified as Monoid
+import Data.Ord (Down (..))
 import Data.Semigroup qualified as Sem
+import Data.Set.Mutable.Linear.Internal qualified as LinearSet
+import Data.Vector.Mutable.Linear.Internal qualified as LinearVector
 import Data.Word
 import GHC.Exts (Multiplicity (..), isTrue#, noinline, sameMutableArray#)
 import Generics.Linear
@@ -127,9 +139,9 @@ import Unsafe.Linear qualified as Unsafe
 The difference between 'Clone' and 'Copyable' is that the former allows for cloning a shared borrow of a /mutable/ or /linear/ value, while the latter requires cloning a shared borrow of an /immutable/ value.
 This is because a @'Share' α a@ can be leaked through its t'Prelude.Linear.Movable' instance, and so outlive the lifetime @α@, which would leak the mutable state inside @a@ into /unrestricted/ contexts and destroy soundness.
 
-A container that owns its contents, such as t'Data.Ref.Linear.Ref' or the boxed vectors, clones them with their own 'Clone', so its instance requires @'Clone' a@.
+A container that owns its contents, such as t'Data.Ref.Linear.Ref' or the boxed and unboxed owning vectors, clones them with their own 'Clone', so its instance requires @'Clone' a@.
 One whose contents are GC-owned copies its own storage, shares the contents, and requires nothing of them.
-Linear-base's t'Data.Array.Mutable.Linear.Array' is one: its operations take elements unrestricted and hand them out in t'Ur'.
+Linear-base's Array, Vector, HashMap and Set have GC-owned elements: their operations take elements unrestricted and hand them out in t'Ur'.
 
 A type gets an instance in one of these ways:
 
@@ -211,6 +223,26 @@ deriving via
 
 deriving via AsCopyable (Complex a) instance (Copyable a) => Clone (Complex a)
 
+deriving newtype instance (Clone a) => Clone (Identity a)
+
+deriving newtype instance (Clone a) => Clone (Down a)
+
+deriving newtype instance (Clone a) => Clone (Const a b)
+
+deriving newtype instance (Clone a) => Clone (Sem.Dual a)
+
+deriving newtype instance (Clone a) => Clone (Sem.First a)
+
+deriving newtype instance (Clone a) => Clone (Sem.Last a)
+
+deriving newtype instance (Clone a) => Clone (Sem.WrappedMonoid a)
+
+deriving newtype instance (Clone (f a)) => Clone (Monoid.Alt f a)
+
+deriving via AsCopyable Monoid.Any instance Clone Monoid.Any
+
+deriving via AsCopyable Monoid.All instance Clone Monoid.All
+
 {- | \(O(n)\). Copy the array into a new one.
 
 The elements are GC-owned, so the copy shares them, and nothing is required of them.
@@ -241,6 +273,35 @@ copyArray = noinline \arr lin ->
 sameStorage :: Unlifted.Array# a -> Unlifted.Array# a -> Bool
 sameStorage x y =
   unur (Unlifted.unArray# (\mx -> unur (Unlifted.unArray# (\my -> isTrue# (sameMutableArray# mx my)) y)) x)
+
+{-
+Note [Cloning linear-base containers]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Linear-base's Vector, HashMap and Set own their backing arrays, but their element operations take unrestricted arguments and return Ur values.
+Their clones therefore copy the complete backing array, including spare capacity, and share the GC-owned elements without requiring Clone on them.
+Vector's Vec fields are strict through StrictData; HashMap's fields have explicit bangs, and Set is a newtype over HashMap.
+Forcing these wrappers exposes a completed backing array rather than an unevaluated in-place operation in a lazy field.
+These representation and ownership assumptions hold in linear-base 0.7.0 and 0.8.1; the test suite pins the unrestricted element signatures.
+Array's clone completes its copy in BO and obtains a fresh allocation token for every call, including repeated clones of the same shared borrow.
+-}
+
+-- | Copy the backing array, preserving capacity and sharing GC-owned elements.
+instance Clone (LinearVector.Vector a) where
+  clone = Unsafe.toLinear \(UnsafeAlias (LinearVector.Vec count buffer)) ->
+    LinearVector.Vec count Control.<$> clone (UnsafeAlias buffer)
+  {-# INLINE clone #-}
+
+-- | Copy the slot array, sharing GC-owned keys and values.
+instance Clone (LinearHashMap.HashMap k v) where
+  clone = Unsafe.toLinear \(UnsafeAlias (LinearHashMap.HashMap count capacity buffer)) ->
+    LinearHashMap.HashMap count capacity Control.<$> clone (UnsafeAlias buffer)
+  {-# INLINE clone #-}
+
+-- | Copy the backing hash map, sharing GC-owned elements.
+instance Clone (LinearSet.Set a) where
+  clone = Unsafe.toLinear \(UnsafeAlias (LinearSet.Set table)) ->
+    LinearSet.Set Control.<$> clone (UnsafeAlias table)
+  {-# INLINE clone #-}
 
 type GenericClone a = (Generic a, GClone (Rep a))
 
@@ -304,6 +365,11 @@ deriving via
   Generically (a, b, c, d, e)
   instance
     (Clone a, Clone b, Clone c, Clone d, Clone e) => Clone (a, b, c, d, e)
+
+deriving via
+  Generically (a, b, c, d, e, f)
+  instance
+    (Clone a, Clone b, Clone c, Clone d, Clone e, Clone f) => Clone (a, b, c, d, e, f)
 
 deriving via
   Generically (Either a b)

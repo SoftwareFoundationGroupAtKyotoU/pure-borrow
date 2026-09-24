@@ -19,6 +19,7 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Internal (unsafeSrunBO_)
 import Control.Monad.Borrow.Pure.BO.Unsafe
+import Control.Monad.Borrow.Pure.Clone
 import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnly (..),
@@ -57,10 +58,33 @@ instance LinearOnly (GrowableVector a) where
   {-# INLINE linearOnly #-}
 
 instance
-  (Unsatisfiable (ShowType (GrowableVector a) :<>: Text " cannot be copied!")) =>
+  (Unsatisfiable (ShowType (GrowableVector a) :<>: Text " cannot be copied!" :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead.")) =>
   Copyable (GrowableVector a)
   where
   copy = unsatisfiable
+
+{- | Clone every initialized element into independent storage, preserving length and capacity.
+The unused capacity contains no owned elements and is not read.
+See Note [Cloning the contents of a shared borrow] in Data.Ref.Linear.Internal and the lazy-field caveat in "Control.Monad.Borrow.Pure.Clone#lazy".
+-}
+instance (U.Unbox a, Clone a) => Clone (GrowableVector a) where
+  clone :: forall α. Share α (GrowableVector a) %1 -> BO α (GrowableVector a)
+  clone = Unsafe.toLinear \(UnsafeAlias growable) -> Control.do
+    Ur (logicalSize, buffer) <- readHeader growable
+    cloned <- unsafeSystemIOToBO do
+      target <- UM.unsafeNew (UM.length buffer)
+      let go !index
+            | index >= logicalSize = NonLinear.pure ()
+            | otherwise = do
+                value <- UM.unsafeRead buffer index
+                !copied <- unsafeBOToSystemIO (clone @a @α (UnsafeAlias value))
+                UM.unsafeWrite target index copied
+                go (index + 1)
+      go 0
+      NonLinear.pure target
+    linear <- askLinearly
+    Control.pure (GrowableVector (Ref.new (Header logicalSize cloned) linear))
+  {-# INLINE clone #-}
 
 instance (U.Unbox a, Consumable a) => Consumable (GrowableVector a) where
   consume =
@@ -108,7 +132,10 @@ constant =
   GHC.noinline \count value linear ->
     fromVector (U.replicate count value) linear
 
--- | \(O(n)\). Move a linear list into a new vector.
+{- | \(O(n)\). Move a linear list into a new vector.
+
+Each element is evaluated to weak head normal form as it is stored, as the fixed vector's @fromList@ does; see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+-}
 fromList ::
   (U.Unbox a) =>
   [a] %1 ->
@@ -448,6 +475,8 @@ set ::
   BO β (a, Mut α (GrowableVector a))
 {-# INLINE set #-}
 set index =
+  -- The value is evaluated with a bang, which GHC can turn into strictness of a caller, unlike the boxed vectors' writes: hiding the demand would make a caller that computes an unboxed element build a thunk for it, which tripled the allocation of an update loop.
+  -- See Note [Stored contents are evaluated after noDuplicate#] in "Data.Ref.Linear.Unlifted.Internal".
   Unsafe.toLinear2 \ !value vector@(UnsafeAlias growable) -> Control.do
     Ur (logicalSize, buffer) <- readHeader growable
     if index < 0 || index >= logicalSize

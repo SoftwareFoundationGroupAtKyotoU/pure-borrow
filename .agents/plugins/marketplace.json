@@ -14,7 +14,7 @@
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"
       },
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "Skill for writing, reviewing, and debugging Linear Haskell (GHC LinearTypes and linear-base) on GHC 9.10.3 and 9.12.4+.",
       "author": {
         "name": "Hiromi Ishii"
@@ -41,7 +41,7 @@
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"
       },
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "Skill for Rust-style borrowing in Linear Haskell with the pure-borrow library: BO monad, lifetimes, Mut/Share/Lend borrows, and pure parallelism. Install together with linear-haskell.",
       "author": {
         "name": "Hiromi Ishii"

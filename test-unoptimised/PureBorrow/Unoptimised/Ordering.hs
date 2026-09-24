@@ -3,13 +3,13 @@
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
-{-# OPTIONS_GHC -O0 -fno-ignore-interface-pragmas #-}
+{-# OPTIONS_GHC -O0 #-}
 
-{- | The kernels of "Control.Monad.Borrow.Pure.OrderingSpec.Kernels", compiled at @-O0@.
+{- | The kernels of @Control.Monad.Borrow.Pure.OrderingSpec.Kernels@ in the main test suite, compiled at @-O0@, as a user's module compiled at @-O0@ or loaded into GHCi runs them.
 
 Keep the two copies identical.
 -}
-module Control.Monad.Borrow.Pure.OrderingSpec.Unoptimised (
+module PureBorrow.Unoptimised.Ordering (
   refUpdateWrites,
   hashMapTakeEmpties,
   growableSizeAfterReclaim,

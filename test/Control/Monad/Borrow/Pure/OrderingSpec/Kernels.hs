@@ -7,7 +7,7 @@
 {- | Kernels whose results depend on effects being ordered by the 'BO' state token.
 
 Each one fails as wrong data, not as a crash, when a read or a write through a borrow escapes that ordering.
-"Control.Monad.Borrow.Pure.OrderingSpec.Unoptimised" compiles the same kernels at @-O0@, where a write deferred into a lazily forced result shows up deterministically; this module is built at the suite's @-O2@, where common-subexpression elimination serves a stale read.
+@PureBorrow.Unoptimised.Ordering@, in the component @pure-borrow-unoptimised@, compiles the same kernels at @-O0@, where a write deferred into a lazily forced result shows up deterministically; this module is built at the suite's @-O2@, where common-subexpression elimination serves a stale read.
 Keep the two copies identical.
 -}
 module Control.Monad.Borrow.Pure.OrderingSpec.Kernels (

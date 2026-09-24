@@ -37,6 +37,7 @@ cabal test                            # run all test suites
 cabal test pure-borrow-test           # main tasty suite only
 cabal test pure-borrow-doctests       # doctests (needs GHC >= 9.12.3)
 cabal test pure-borrow-no-state-hack  # owner kernels built with -fno-state-hack
+cabal test pure-borrow-unoptimised    # ordering kernels built at -O0, as GHCi runs them
 
 cabal bench qsort-bench               # parallel quicksort benchmark (tasty-bench)
 cabal bench fft-bench                 # parallel FFT benchmark (tasty-bench)
@@ -80,9 +81,12 @@ A test that needs different code-generation flags gets a component of its own, w
 Set in one module's `OPTIONS_GHC` inside `pure-borrow-test`, `-fno-state-hack` did not take effect, and the tests stayed green against a library they fail when built as their own component.
 GHC also does not recompile a module when only that flag changes, so a negative control that toggles it must start from a clean build directory.
 
-A test module compiled at `-O0`, as the `TypingCases` modules are, must also pass `-fno-ignore-interface-pragmas`.
+A module of `pure-borrow-test` compiled at `-O0`, as its `TypingCases` modules are, must also pass `-fno-ignore-interface-pragmas`.
 `-O0` implies `-fignore-interface-pragmas`, and within one `--make` session the first module that loads a library interface decides whether every module after it sees the library's unfoldings.
 After a plain `-O0` module, the `-O2` modules of `pure-borrow-test` called `Clone (Array a)` through its dictionary instead of inlining it as user code at `-O2` does, so a test of what the optimiser does to library code tested nothing.
+`bash ci/scripts/check-o0-test-modules.sh` checks this rule, and CI runs it.
+With the flag, though, `-O0` still inlines the library's `INLINE` functions, which a user's `-O0` module or GHCi never sees.
+So a test of what an `-O0` user gets goes into a component of its own, with every module at plain `-O0`, as `pure-borrow-unoptimised` does.
 
 Two kinds of failing test look superficially alike here, and they encode opposite intentions.
 Never convert one into the other.

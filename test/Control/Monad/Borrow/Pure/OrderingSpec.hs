@@ -7,50 +7,30 @@ module Control.Monad.Borrow.Pure.OrderingSpec (
 import Control.Exception qualified as Exception
 import Control.Monad.Borrow.Pure.OrderingSpec.Kernels qualified as Optimised
 import Control.Monad.Borrow.Pure.OrderingSpec.Owners qualified as Owners
-import Control.Monad.Borrow.Pure.OrderingSpec.Unoptimised qualified as Unoptimised
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit
 
+-- | The same kernels compiled at @-O0@ run in the component @pure-borrow-unoptimised@.
 test_ordering :: TestTree
 test_ordering =
   testGroup
     "reads and writes through borrows are ordered by the state token"
     [ testGroup
-        "-O0"
-        ( cases
-            Unoptimised.refUpdateWrites
-            Unoptimised.hashMapTakeEmpties
-            Unoptimised.growableSizeAfterReclaim
-            Unoptimised.hashMapSizeAfterReclaim
-            Unoptimised.refDupReclaimFresh
-            Unoptimised.refDupReclaimOwners
-        )
-    , testGroup
         "-O2"
-        ( cases
-            Optimised.refUpdateWrites
-            Optimised.hashMapTakeEmpties
-            Optimised.growableSizeAfterReclaim
-            Optimised.hashMapSizeAfterReclaim
-            Optimised.refDupReclaimFresh
-            Optimised.refDupReclaimOwners
-        )
+        [ testCase "Ref.Borrow.update writes before the scope ends" do
+            Optimised.refUpdateWrites @?= (0, 1)
+        , testCase "HashMap.take_ leaves an empty table behind" do
+            Optimised.hashMapTakeEmpties @?= ([(1, 10), (2, 20)], [(3, 30)])
+        , testCase "a growable size read after reclaim sees the push" do
+            Optimised.growableSizeAfterReclaim @?= (3, 4)
+        , testCase "a hash map size read after reclaim sees the insert" do
+            Optimised.hashMapSizeAfterReclaim @?= (2, 3)
+        , testCase "an owner reclaimed after a scope is not served from an earlier dup2" do
+            Optimised.refDupReclaimFresh @?= (1, 0)
+        , testCase "an owner reclaimed after a scope does not hand back a reference it gave away" do
+            Optimised.refDupReclaimOwners @?= (100, 1)
+        ]
     ]
-  where
-    cases refUpdate hashMapTake growableSize hashMapSize refDupFresh refDupOwners =
-      [ testCase "Ref.Borrow.update writes before the scope ends" do
-          refUpdate @?= (0, 1)
-      , testCase "HashMap.take_ leaves an empty table behind" do
-          hashMapTake @?= ([(1, 10), (2, 20)], [(3, 30)])
-      , testCase "a growable size read after reclaim sees the push" do
-          growableSize @?= (3, 4)
-      , testCase "a hash map size read after reclaim sees the insert" do
-          hashMapSize @?= (2, 3)
-      , testCase "an owner reclaimed after a scope is not served from an earlier dup2" do
-          refDupFresh @?= (1, 0)
-      , testCase "an owner reclaimed after a scope does not hand back a reference it gave away" do
-          refDupOwners @?= (100, 1)
-      ]
 
 test_owners :: TestTree
 test_owners =

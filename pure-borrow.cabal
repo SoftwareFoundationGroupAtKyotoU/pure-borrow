@@ -205,7 +205,6 @@ test-suite pure-borrow-test
     Control.Monad.Borrow.Pure.OrderingSpec
     Control.Monad.Borrow.Pure.OrderingSpec.Kernels
     Control.Monad.Borrow.Pure.OrderingSpec.Owners
-    Control.Monad.Borrow.Pure.OrderingSpec.Unoptimised
     Control.Monad.Borrow.Pure.ParBOSpec
     Control.Monad.Borrow.Pure.SharedEffectSpec
     Data.Coerce.Directed.TypingCases
@@ -316,6 +315,22 @@ test-suite pure-borrow-no-state-hack
     -threaded
     -fno-state-hack
 
+  build-depends:
+    pure-borrow,
+    tasty,
+    tasty-hunit,
+
+test-suite pure-borrow-unoptimised
+  import: defaults
+  default-language: GHC2021
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test-unoptimised
+  main-is: Main.hs
+  -- cabal-gild: discover test-unoptimised --exclude=test-unoptimised/Main.hs
+  other-modules:
+    PureBorrow.Unoptimised.Ordering
+
+  ghc-options: -threaded
   build-depends:
     pure-borrow,
     tasty,

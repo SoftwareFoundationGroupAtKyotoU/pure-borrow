@@ -128,6 +128,8 @@ jobs:
         run: ${{env.cabal}} test
       - name: Check typing-fail fixtures
         run: bash ./ci/scripts/check-typing-fail.sh ${{env.cabal}}
+      - name: Check the -O0 test modules
+        run: bash ./ci/scripts/check-o0-test-modules.sh
 
   haddock:
     name: Haddock

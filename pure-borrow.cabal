@@ -186,6 +186,7 @@ test-suite pure-borrow-test
   -- cabal-gild: discover test --exclude=test/Main.hs --exclude=test/typing-fail/**
   other-modules:
     Control.Concurrent.DivideConquer.LinearSpec
+    Control.Concurrent.Queue.ChaseLevSpec
     Control.Monad.Borrow.Pure.BO.TypingCases
     Control.Monad.Borrow.Pure.BOSpec
     Control.Monad.Borrow.Pure.Clone.TypingCases

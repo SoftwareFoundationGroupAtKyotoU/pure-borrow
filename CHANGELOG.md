@@ -105,6 +105,11 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `Data.Ref.Linear.atomicModify_` could crash or store an ill-typed value, and `atomicModify` stored the old value rather than the new one.
 - Cloning one shared `Ref` of a linear-base `Array` more than once, as a loop does, gave every clone the same array at `-O2`: GHC made the pure `dup2` of the contents once for all the clones, so a write to one clone reached them all.
   Each clone now copies the array.
+- The work-stealing scheduler behind `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` could run a task twice, running the mutable borrows it carries twice, and lose another, so that the call never returned: `qsortDC` occasionally hung, and under load could return a vector it had not sorted.
+  Its deque's `stealHalf` claimed a batch of tasks with one compare-and-swap, sized from a count that could be out of date, while the owner, popping from the other end without one, could reach into the batch.
+  It now takes a batch one task at a time, and so may return fewer than half the tasks when the owner or another thief takes some meanwhile.
+  The deque, `Control.Concurrent.Queue.ChaseLev`, could also put its elements in the wrong slots when it grew, and hand out `undefined`; and on ARM64 a thief could take what a slot held before the owner's write to it.
+  Both are fixed as well.
 
 ### New
 
@@ -126,7 +131,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - The growable vectors read and write their header inline, in the state thread, where 0.1.0.0 made an out-of-line call: a `push` that grows an unboxed vector, and the plural scope benchmark that threads a bundle, allocate 28% less, and the other growable and scope benchmarks are unchanged.
 - `parBO` allocates about 13.5% more per call, 2627 bytes against 2314, for the exception handling.
   In time, it costs about 20 ns more per call at `-N1`: measured with interleaved runs against 0.1.0.0 on GHC 9.12.4, the fork-join benchmark, whose branches do almost nothing, runs 25–35% slower at `-N1` and 9–28% slower at `-N4`, and the divide-and-conquer FFT on 2^20 points runs 9% slower.
-  On the quicksort of 32,768 elements at `-N10`, where the unchanged introsort varies by ±2% between rounds, the divide-and-conquer version built on `parBO` runs 2% slower, in every round; the budgeted parallel and the sequential versions are unchanged within that noise, and the work-stealing version, which does not use `parBO`, is not slower (2–8% faster).
+  On the quicksort of 32,768 elements at `-N10`, where the unchanged introsort varies by ±2% between rounds, the divide-and-conquer version built on `parBO` runs 2% slower, in every round; the budgeted parallel and the sequential versions are unchanged within that noise, and the work-stealing version, which does not use `parBO`, was 2–8% faster before the deque fix below, which changes it by no measurable amount.
   Its finished threads also stay in memory longer: the parallel divide-and-conquer FFT benchmark on 2^20 points peaks at 137 MB at `-N1`, against about 105 MB for 0.1.0.0, and at 123 MB against 118 MB at `-N4`.
 - Every `reclaim`, every run of the `runBO` family, and every crossing of a scope that discharges an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) makes one or two more out-of-line calls; `sharing`, `reborrowing` and the `_` variants are unchanged.
 - Every run of the `runBO` family, `modifyBO` and `modifyBO_` included, allocates its lifetime tokens, the `Now` and the end token with its `Ur`, 48 bytes, where 0.1.0.0 used static tokens shared by all runs: a loop of `modifyBO_` allocates 80 bytes per iteration against 32, and the benchmarks that run `BO` once per iteration 48 bytes more.
@@ -136,12 +141,13 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `clone` of a linear-base `Array`, and so of a `Ref` or boxed `Vector` of arrays, copies each array in one pass with the array's own `dup2`, as 0.1.0.0 did through `Dupable`.
   It costs a bare `cloneMutableArray#` plus about 2.5 ns and 16 bytes per clone on GHC 9.12 and later; on 9.10, whose `evaluate` allocates a thunk around the copy, it costs 48 bytes and about 5 ns more, or 30 ns more at 1,000 elements.
   Code that clones one borrow repeatedly, as a loop does, now pays for a copy per clone, where 0.1.0.0 made one copy and gave it to every clone (see "Fixed").
+- The work-stealing deque's `stealHalf` takes a batch one task at a time, with a compare-and-swap and two barriers for each, where 0.1.0.0 claimed the batch with one compare-and-swap (see "Fixed").
+  In the quicksort and FFT benchmarks most steal attempts find nothing and a batch holds one or two tasks, so their work-stealing variants show no measurable change in interleaved runs against the old deque: a pooled ratio of 1.00, with a 95% interval of about ±7%, at `-N4` and `-N10`.
+  On x86-64 the barrier between a thief's reads of `top` and `bottom` is now a full fence on every steal attempt, whose cost was not measured.
 
 ### Known issues
 
 - `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` do not propagate an exception raised by `divide` or `conquer`; the caller blocks instead.
-- `qsortDC`, on the work-stealing scheduler, occasionally never returns: in a benchmark sweep at `-N10`, 1 of 45 work-stealing benchmarks ran past a 10 s timeout, where a sort takes about a millisecond, and 0.1.0.0 did the same in 2 of 45.
-  The cause is not known yet.
 - A pure value whose evaluation writes memory it did not allocate can perform those writes twice if two threads force it at the same moment, for example both branches of a `parBO` reading it through a `Share`.
   `Ref`'s pure operations and `runBO`/`modifyBO` computations are protected, but the owned hash map's `insert`, `delete` and `alter` in `Data.HashMap.RobinHood.Mutable.Linear` are not.
   Neither are linear-base's in-place operations: `set`, `write`, `unsafeSet`, `unsafeWrite`, `map` and `fmap` of `Data.Array.Mutable.Linear`, and linear-base's `Vector`, `HashMap` and `Set`, which are built on them.

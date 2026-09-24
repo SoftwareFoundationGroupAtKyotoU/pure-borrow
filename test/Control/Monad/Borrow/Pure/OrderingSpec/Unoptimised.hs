@@ -3,7 +3,7 @@
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
-{-# OPTIONS_GHC -O0 #-}
+{-# OPTIONS_GHC -O0 -fno-ignore-interface-pragmas #-}
 
 {- | The kernels of "Control.Monad.Borrow.Pure.OrderingSpec.Kernels", compiled at @-O0@.
 

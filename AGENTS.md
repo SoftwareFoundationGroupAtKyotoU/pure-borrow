@@ -80,6 +80,10 @@ A test that needs different code-generation flags gets a component of its own, w
 Set in one module's `OPTIONS_GHC` inside `pure-borrow-test`, `-fno-state-hack` did not take effect, and the tests stayed green against a library they fail when built as their own component.
 GHC also does not recompile a module when only that flag changes, so a negative control that toggles it must start from a clean build directory.
 
+A test module compiled at `-O0`, as the `TypingCases` modules are, must also pass `-fno-ignore-interface-pragmas`.
+`-O0` implies `-fignore-interface-pragmas`, and within one `--make` session the first module that loads a library interface decides whether every module after it sees the library's unfoldings.
+After a plain `-O0` module, the `-O2` modules of `pure-borrow-test` called `Clone (Array a)` through its dictionary instead of inlining it as user code at `-O2` does, so a test of what the optimiser does to library code tested nothing.
+
 Two kinds of failing test look superficially alike here, and they encode opposite intentions.
 Never convert one into the other.
 

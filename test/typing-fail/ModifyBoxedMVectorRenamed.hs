@@ -1,3 +1,5 @@
+{-# LANGUAGE ImportQualifiedPost #-}
+
 module ModifyBoxedMVectorRenamed where
 
 import Data.Vector.Mutable.Linear.Borrow qualified as VL

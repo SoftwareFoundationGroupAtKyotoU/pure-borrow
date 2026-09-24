@@ -11,7 +11,7 @@ module Control.Monad.Borrow.Pure.ParBOSpec (
   module Control.Monad.Borrow.Pure.ParBOSpec,
 ) where
 
-import Control.Concurrent (ThreadId, forkIO, myThreadId, newEmptyMVar, putMVar, readMVar, takeMVar, threadDelay)
+import Control.Concurrent (ThreadId, forkIO, myThreadId, newEmptyMVar, putMVar, readMVar, takeMVar, threadDelay, yield)
 import Control.Exception (ErrorCall (..), SomeException, catch, evaluate, throwIO, try, uninterruptibleMask_)
 import Control.Monad (filterM, forM_, replicateM_, void)
 import Control.Monad.Borrow.Pure (BO, linearly, parBO, runBO_)
@@ -94,19 +94,30 @@ waitForThreads threads count = do
   recorded <- pollFor 5_000_000 ((>= count) . length <$> readIORef threads)
   assertBool "the branches did not all start" recorded
 
--- | Wait until every recorded thread has finished, then collect once.
-settleThenCollect :: IORef [Weak ThreadId] -> IO ()
-settleThenCollect threads = do
+-- | Wait until every recorded thread has finished.
+settle :: IORef [Weak ThreadId] -> IO ()
+settle threads = do
   settled <- pollFor 5_000_000 do
     found <- readIORef threads >>= mapM deRefWeak
     statuses <- mapM threadStatus (catMaybes found)
     pure (all (`elem` [ThreadFinished, ThreadDied]) statuses)
   assertBool "the recorded branches did not finish" settled
-  performMajorGC
 
 -- | How many of the recorded threads are still reachable.
 countAlive :: IORef [Weak ThreadId] -> IO Int
 countAlive threads = length . filter isJust <$> (readIORef threads >>= mapM deRefWeak)
+
+{- | Collect, and count the recorded threads that are still reachable, collecting again, up to four times, while any is.
+
+One collection occasionally left one finished branch reachable (in 2 runs of the suite out of about 40, under load), and the next one freed it, whereas a reference that keeps the threads alive keeps them through every collection.
+-}
+aliveAfterCollecting :: IORef [Weak ThreadId] -> IO Int
+aliveAfterCollecting threads = go (4 :: Int)
+  where
+    go n = do
+      performMajorGC
+      alive <- countAlive threads
+      if alive == 0 || n <= 1 then pure alive else yield >> go (n - 1)
 
 test_parBOExceptions :: TestTree
 test_parBOExceptions =
@@ -178,10 +189,10 @@ test_parBOExceptions =
           evaluate (runPair (parBO (recordThread threads i) (recordThread threads i)))
         recorded <- length <$> readIORef threads
         recorded @?= 400
-        -- Nothing may keep a finished branch alive, so a single collection must free every one.
+        -- Nothing may keep a finished branch alive, so collecting must free every one.
         -- A finalizer that kept the threads would not show here, since the weak references die in the collection that queues it; the chains below catch one.
-        settleThenCollect threads
-        alive <- countAlive threads
+        settle threads
+        alive <- aliveAfterCollecting threads
         alive @?= 0
     , testCase "a finished left branch is not kept alive while its sibling runs" do
         threads <- newIORef []
@@ -193,8 +204,8 @@ test_parBOExceptions =
         done <- newEmptyMVar
         _ <- forkIO (try @SomeException (evaluate (runPair (Data.fmap (\x -> (x, 0)) (chain 200)))) >>= putMVar done)
         waitForThreads threads 200
-        settleThenCollect threads
-        alive <- countAlive threads
+        settle threads
+        alive <- aliveAfterCollecting threads
         putMVar gate ()
         void (takeMVar done)
         alive @?= 0
@@ -208,8 +219,8 @@ test_parBOExceptions =
           done <- newEmptyMVar
           _ <- forkIO (try @SomeException (evaluate (runPair (Data.fmap (\x -> (x, 0)) (chain 200)))) >>= putMVar done)
           waitForThreads threads 200
-          settleThenCollect threads
-          alive <- countAlive threads
+          settle threads
+          alive <- aliveAfterCollecting threads
           putMVar gate ()
           void (takeMVar done)
           alive @?= 0

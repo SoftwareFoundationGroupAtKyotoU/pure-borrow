@@ -1,6 +1,6 @@
 # Core API by task
 
-Signatures are those of pure-borrow 0.1 (`Control.Monad.Borrow.Pure`, plus `Control.Monad.Borrow.Pure.BO` for the lower-level ones marked *BO*).
+Signatures target the pure-borrow 0.2 API (`Control.Monad.Borrow.Pure`, plus `Control.Monad.Borrow.Pure.BO` for the lower-level ones marked *BO*).
 Always check the Haddock of the installed version when in doubt.
 
 ## Types
@@ -8,12 +8,12 @@ Always check the Haddock of the installed version when in doubt.
 ```haskell
 -- Lifetime is a kind; Static is the lifetime that never ends.
 type (/\) :: Lifetime -> Lifetime -> Lifetime   -- meet: the longest lifetime shorter than both
-class α <= β                                    -- α is a sublifetime of β (β outlives α)
+type (<=) :: Lifetime -> Lifetime -> Constraint  -- sealed synonym: α is a sublifetime of β
 type α >= β = β <= α
 
 type BO :: Lifetime -> Type -> Type             -- computations during α; a control monad (abstract)
 newtype After α a = After ((End α) => a)        -- post-processing once α has ended
-class End α                                     -- evidence that α has ended (only inside After)
+type End :: Lifetime -> Constraint              -- sealed synonym: evidence that α has ended
 
 type Alias :: AliasKind -> Type -> Type         -- common zero-cost representation
 type Borrow bk α a = Alias ('Borrow bk α) a     -- either Mut or Share
@@ -49,6 +49,7 @@ withLinearly  :: LinearOnly a => a %1 -> (Linearly, a)
 askLinearly   :: BO α Linearly
 asksLinearly  :: (Linearly %1 -> r) %1 -> BO α r
 asksLinearlyM :: (Linearly %1 -> BO α r) %1 -> BO α r
+nowStatic     :: BO α (Now Static)                 -- BO; produced inside a linear computation
 ```
 
 ## Borrowing and reclaiming

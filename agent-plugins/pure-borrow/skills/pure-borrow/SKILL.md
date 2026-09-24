@@ -6,7 +6,7 @@ description: >-
   Always load the linear-haskell skill too.
 license: BSD-3-Clause
 compatibility: >-
-  pure-borrow >= 0.1 on GHC 9.10.3 or 9.12.4+ (recommended) with linear-base >= 0.7.
+  pure-borrow 0.2 API (currently on the soundness-fixes branch) on GHC 9.10.3 or 9.12.4+ (recommended) with linear-base >= 0.7.
   Requires the linear-haskell skill.
 metadata:
   author: Hiromi Ishii
@@ -188,14 +188,15 @@ parallel = linearly \lin -> runBO lin Control.do
 ```
 
 `parBO` forks real threads (compile with `-threaded`, run with `+RTS -N`), yet the result is deterministic: the two branches can only hold disjoint *mutable* borrows (read-only `Share`s may overlap).
-It does not forward exceptions: if a branch throws, the parent blocks and dies with `thread blocked indefinitely in an MVar operation`, so validate inputs before forking.
+If a branch throws, `parBO` stops its sibling, waits for it to stop, and rethrows the original exception.
+Nested forks and asynchronous exceptions have different cancellation behavior; see the parallelism reference.
 `reborrowing_` returns the whole `Mut` once both halves have been dropped, so there is no need to reunite them by hand.
 For many tasks use the `Par α` applicative (`runPar`, `mapConcurrentlyOf`, `forConcurrentlyOf`); for scalable divide-and-conquer use `Control.Concurrent.DivideConquer.Linear`.
 
 ## Containers
 
-- The boxed `Data.Vector.Mutable.Linear.Borrow` vector owns its elements linearly and `get` returns a borrow of the element, but it has no `Consumable` instance: it can only be finished with `toVector`/`toList`, which need `Movable` elements.
-  For elements that are not `Movable` (such as `Ref`s or other vectors) use the growable vector `Data.Vector.Mutable.Growable.Linear.Borrow`, which is `Consumable`; a boxed vector of `Ref`s can never be disposed of.
+- The boxed `Data.Vector.Mutable.Linear.Borrow` vector owns its elements linearly and `get` returns a borrow of the element.
+  Fixed and growable element-owning vectors are `Consumable` when their elements are, so vectors of `Ref`s can be consumed; `toVector`/`toList` instead require `Movable` elements.
 - For plain numbers prefer `Data.Vector.Unboxed.Mutable.Linear.Borrow` (almost the same API, and `Consumable`) or `Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted`, whose elements are GC-owned and read back as `Ur a`.
 - `Data.Ref.Linear` with `Data.Ref.Linear.Borrow` gives a mutable cell, and `Data.HashMap.RobinHood.Mutable.Linear.Borrow` a hash map with GC-owned keys and values.
 
@@ -211,6 +212,9 @@ Details are in [references/containers-and-parallelism.md](references/containers-
 
 A type containing mutable state **must not** be `Copyable` nor `Movable`, and **must** ban both explicitly with `Unsatisfiable`: a `Share` is `Movable`, so a `copy` taken through a moved `Share` could leak an alias of mutable state into unrestricted code.
 Derive the instances with `deriving via Generically T` after `deriveGeneric ''T` (linear-generics), and `Clone` from `Copyable` with `deriving via AsCopyable T`; details, and what to do for types mixing nonlinear and linear fields, are in [references/data-types.md](references/data-types.md).
+
+Element-owning vectors clone their elements with `Clone a`; growable clones preserve capacity.
+Linear-base's `Array`, `Vector`, `HashMap`, and `Set` clone their storage while sharing GC-owned elements.
 
 Choose by ownership, not by representation: a value bound nonlinearly (`->`, `Ur`) is GC-owned and needs no `Copyable`/`Clone`/`Dupable`/`Consumable` to be copied, kept, or dropped.
 

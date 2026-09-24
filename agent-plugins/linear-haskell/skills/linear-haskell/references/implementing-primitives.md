@@ -14,7 +14,9 @@ GHC does not know the expression is effectful, so the implementation must stop i
    A function such as `new :: Int -> Array a` would let `let a = new 3 in (write a 0 x, a)` typecheck.
 2. **Use `unsafePerformIO`, which runs `noDuplicate#`, for a destructive operation exposed as a pure function.**
    `unsafeDupablePerformIO` and bare `runRW#` (which is what `unsafeDupablePerformIO` is built on) allow two threads to enter the same thunk and run the write twice.
-   Use the dupable forms only with an argument that the thunk can never be entered twice; linear-base's arrays and pure-borrow's reference internals do this deliberately.
+   Use the dupable forms only with a proof that the thunk cannot be entered twice.
+   Linear-base's unguarded in-place array operations can run twice when a borrowing library gives multiple threads read access to one lazy field; pure-borrow now guards its own reference primitives.
+   Strict storage alone protects only WHNF, so a nested lazy field still needs evaluation before sharing or a guard in the operation that evaluates it.
    Never fake purity with `unsafeThaw`/`unsafeFreeze` tricks or `unsafeIOToST`.
 3. **Protect every binding whose body reaches an effect from inlining and worker/wrapper**: mark it `OPAQUE`, or `NOINLINE` with its right-hand side wrapped in `GHC.Exts.noinline`.
    Plain `NOINLINE` still allows worker/wrapper: GHC can then rebuild a field-less token in the caller and merge two allocations into one, or common-subexpression-eliminate two calls that look identical.

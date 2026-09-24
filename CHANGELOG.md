@@ -116,7 +116,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 - The growable vectors read and write their header inline, in the state thread, where 0.1.0.0 made an out-of-line call: a `push` that grows an unboxed vector, and the plural scope benchmark that threads a bundle, allocate 28% less, and the other growable and scope benchmarks are unchanged.
 - `parBO` allocates about 13.5% more per call, 2627 bytes against 2314, for the exception handling.
-  In time, it costs about 20 ns more per call at `-N1`: measured with interleaved runs against 0.1.0.0 on GHC 9.12.4, the fork-join benchmark, whose branches do almost nothing, runs 34–35% slower at `-N1` and 9–28% slower at `-N4`, and the divide-and-conquer quicksort on 32,768 elements and FFT on 2^20 points run 7% and 9% slower; the budgeted parallel quicksort is unchanged within noise.
+  In time, it costs about 20 ns more per call at `-N1`: measured with interleaved runs against 0.1.0.0 on GHC 9.12.4, the fork-join benchmark, whose branches do almost nothing, runs 25–35% slower at `-N1` and 9–28% slower at `-N4`, and the divide-and-conquer FFT on 2^20 points runs 9% slower.
+  On the quicksort of 32,768 elements at `-N10`, where the unchanged introsort varies by ±2% between rounds, the divide-and-conquer version built on `parBO` runs 2% slower, in every round; the budgeted parallel and the sequential versions are unchanged within that noise, and the work-stealing version, which does not use `parBO`, is not slower (2–8% faster).
   Its finished threads also stay in memory longer: the parallel divide-and-conquer FFT benchmark on 2^20 points peaks at 137 MB at `-N1`, against about 105 MB for 0.1.0.0, and at 123 MB against 118 MB at `-N4`.
 - Every `reclaim`, every run of the `runBO` family, and every crossing of a scope that discharges an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) makes one or two more out-of-line calls; `sharing`, `reborrowing` and the `_` variants are unchanged.
 - Every run of the `runBO` family, `modifyBO` and `modifyBO_` included, allocates its lifetime tokens, the `Now` and the end token with its `Ur`, 48 bytes, where 0.1.0.0 used static tokens shared by all runs: a loop of `modifyBO_` allocates 80 bytes per iteration against 32, and the benchmarks that run `BO` once per iteration 48 bytes more.
@@ -127,6 +128,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 ### Known issues
 
 - `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` do not propagate an exception raised by `divide` or `conquer`; the caller blocks instead.
+- `qsortDC`, on the work-stealing scheduler, occasionally never returns: in a benchmark sweep at `-N10`, 1 of 45 work-stealing benchmarks ran past a 10 s timeout, where a sort takes about a millisecond, and 0.1.0.0 did the same in 2 of 45.
+  The cause is not known yet.
 - A pure value whose evaluation writes memory it did not allocate can perform those writes twice if two threads force it at the same moment, for example both branches of a `parBO` reading it through a `Share`.
   `Ref`'s pure operations and `runBO`/`modifyBO` computations are protected, but the owned hash map's `insert`, `delete` and `alter` in `Data.HashMap.RobinHood.Mutable.Linear` are not: force such a result before storing it where several branches can reach it, e.g. `Ref.new $! HashMap.insert k v m`.
   The protection holds under GHC's default lazy blackholing; `-feager-blackholing` on the module that builds the value can defeat it, and single-capability programs are unaffected.

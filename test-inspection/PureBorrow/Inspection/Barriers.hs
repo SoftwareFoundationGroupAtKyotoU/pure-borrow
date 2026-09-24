@@ -20,8 +20,10 @@ Made @NOINLINE@, it would stay a call, but worker/wrapper would split it into a 
 So each obligation here states that a probe /uses/ its barrier: it is a 'doesNotUse' that is expected to fail.
 An expected failure passes whatever made the obligation fail, including a probe that inspection-testing cannot inspect at all, such as one imported from another module; the obligation that the probe uses no 'unmentioned' name must therefore pass, and turns the group red if the probe stops being inspectable.
 "PureBorrow.Inspection.Sublifetime" states the same for the delimiters' own barriers, next to its probes.
+
+The probe is exported, as the probes of "PureBorrow.Inspection.Sublifetime" are: GHC 9.14 drops a binding that only a Template Haskell name quote mentions, and inspection-testing then reports that it is not a local name.
 -}
-module PureBorrow.Inspection.Barriers (tests) where
+module PureBorrow.Inspection.Barriers (tests, runBOReclaimAt) where
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure

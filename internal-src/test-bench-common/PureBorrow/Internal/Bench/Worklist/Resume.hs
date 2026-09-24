@@ -607,13 +607,13 @@ worklistPureBorrowOpenOnceRootWithSeed seed target =
                     frontierRootBorrows
                       .@ (frontierQueueField, frontierLogField)
               adjacencyContent <-
-                    Growable.getContents adjacencyBorrow
+                Growable.getContents adjacencyBorrow
               payloadContent <-
-                    Growable.getContents payloadBorrow
+                Growable.getContents payloadBorrow
               queueContent <-
-                    Growable.getContents queueBorrow
+                Growable.getContents queueBorrow
               logContent <-
-                    Growable.getContents logBorrow
+                Growable.getContents logBorrow
               (Ur initial, stateBorrow) <-
                 readTraversalState stateBorrow
               let !seededInitial =
@@ -717,13 +717,13 @@ worklistPureBorrowCheckedOpenOnceRootWithSeed seed target =
                     frontierRootBorrows
                       .@ (frontierQueueField, frontierLogField)
               adjacencyContent <-
-                    Growable.getContents adjacencyBorrow
+                Growable.getContents adjacencyBorrow
               payloadContent <-
-                    Growable.getContents payloadBorrow
+                Growable.getContents payloadBorrow
               queueContent <-
-                    Growable.getContents queueBorrow
+                Growable.getContents queueBorrow
               logContent <-
-                    Growable.getContents logBorrow
+                Growable.getContents logBorrow
               (Ur initial, stateBorrow) <-
                 readTraversalStateChecked stateBorrow
               let !seededInitial =
@@ -884,9 +884,9 @@ worklistPureBorrowReopenRootWithSeed seed reopenShape growth target =
                   let !(Ur sharedAdjacency) = share adjacencyBorrow
                   let !(Ur sharedPayload) = share payloadBorrow
                   Ur adjacencyContent <-
-                        move Control.<$> Growable.getContents sharedAdjacency
+                    move Control.<$> Growable.getContents sharedAdjacency
                   Ur payloadContent <-
-                        move Control.<$> Growable.getContents sharedPayload
+                    move Control.<$> Growable.getContents sharedPayload
                   (Ur evidence, fixedFields) <-
                     reborrowings
                       (marksBorrow :- stateBorrow :- BNil)
@@ -993,13 +993,13 @@ runFlatReopenPureBorrow
               :- outputLog
               :- BNil -> Control.do
                 adjacencyContent <-
-                      Growable.getContents adjacency
+                  Growable.getContents adjacency
                 payloadContent <-
-                      Growable.getContents payload
+                  Growable.getContents payload
                 queueContent <-
-                      Growable.getContents queue
+                  Growable.getContents queue
                 logContent <-
-                      Growable.getContents outputLog
+                  Growable.getContents outputLog
                 ( Ur segment
                   , offsets
                   , marks
@@ -1175,9 +1175,9 @@ runNestedReopenPureBorrow
           reborrowings fields \case
             queue :- outputLog :- BNil -> Control.do
               queueContent <-
-                    Growable.getContents queue
+                Growable.getContents queue
               logContent <-
-                    Growable.getContents outputLog
+                Growable.getContents outputLog
               ( Ur segment
                 , offsetsOccurrence
                 , marks

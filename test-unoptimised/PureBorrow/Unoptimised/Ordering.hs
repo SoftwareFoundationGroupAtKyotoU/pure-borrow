@@ -2,8 +2,8 @@
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -O0 #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 {- | The kernels of @Control.Monad.Borrow.Pure.OrderingSpec.Kernels@ in the main test suite, compiled at @-O0@, as a user's module compiled at @-O0@ or loaded into GHCi runs them.
 

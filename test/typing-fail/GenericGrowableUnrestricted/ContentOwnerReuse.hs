@@ -25,6 +25,7 @@ shortenBO = upcast
 -- rejected while compiling this module even with
 -- `-fdefer-type-errors -Wno-deferred-type-errors`. It therefore cannot live in
 -- `TypingCases` as a runtime-observed deferred type error.
+-- EXPECT: arising from multiplicity of
 badGrowthWhileContentLive ::
   Mut α (Growable.GrowableVector V.Vector Int) %1 ->
   BO α (Mut α (Growable.GrowableVector V.Vector Int))

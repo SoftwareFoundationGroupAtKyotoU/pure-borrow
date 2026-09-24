@@ -46,13 +46,13 @@ hotWorker = multiStoreScanPureBorrowWorker
 
 boxedContentProjection ::
   Mut α (Growable.GrowableVector V.Vector (Int, Int)) %1 ->
-  Mut α (Fixed.Vector V.Vector (Int, Int))
+  BO α (Mut α (Fixed.Vector V.Vector (Int, Int)))
 {-# NOINLINE boxedContentProjection #-}
 boxedContentProjection = multiStoreScanBoxedContentProjection
 
 unboxedContentProjection ::
   Mut α (Growable.GrowableVector U.Vector Int) %1 ->
-  Mut α (Fixed.Vector U.Vector Int)
+  BO α (Mut α (Fixed.Vector U.Vector Int))
 {-# NOINLINE unboxedContentProjection #-}
 unboxedContentProjection = multiStoreScanUnboxedContentProjection
 

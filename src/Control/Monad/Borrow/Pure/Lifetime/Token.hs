@@ -7,7 +7,7 @@ module Control.Monad.Borrow.Pure.Lifetime.Token (
   Linearly (),
   linearly,
   Now (),
-  End (),
+  End,
   EndToken,
   After (..),
   unAfter,
@@ -19,7 +19,6 @@ module Control.Monad.Borrow.Pure.Lifetime.Token (
   SomeNow (..),
   newLifetime,
   newLifetime',
-  nowStatic,
   neverEnds,
 ) where
 

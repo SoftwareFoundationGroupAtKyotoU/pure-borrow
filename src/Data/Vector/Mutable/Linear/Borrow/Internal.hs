@@ -20,6 +20,7 @@ import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
  )
 import Data.Vector.Mutable (RealWorld)
 import Data.Vector.Mutable qualified as MV
+import GHC.IO (unsafePerformIO)
 import GHC.TypeError
 import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
@@ -42,20 +43,55 @@ instance LinearOnly (Vector a) where
   {-# INLINE linearOnly #-}
 
 instance
-  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copied!")) =>
+  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copied!" :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead.")) =>
   Copyable (Vector a)
   where
   copy = unsatisfiable
 
-instance (Dupable a) => Clone (Vector a) where
+{- | Each element is cloned through a shared borrow of it, with its own 'Clone', into a fresh vector.
+
+The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same vector at once, unless an element holds, in a lazy field, a call that is not evaluated yet and updates memory in place, such as linear-base's @Data.Array.Mutable.Linear.map@: see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+'Data.Vector.Mutable.Linear.Borrow.fromList' and the writes evaluate the elements themselves.
+See Note [Cloning the contents of a shared borrow] in @Data.Ref.Linear.Internal@.
+-}
+instance (Clone a) => Clone (Vector a) where
+  clone :: forall α. Share α (Vector a) %1 -> BO α (Vector a)
   clone = Unsafe.toLinear \(UnsafeAlias (Vector v)) -> unsafeSystemIOToBO do
     let !n = MV.length v
     !new <- MV.new n
     let go !i = NonLinear.when (i < n) do
           x <- MV.unsafeRead v i
-          let (!_, !x') = dup x
-          MV.unsafeWrite new i x'
+          copied <- unsafeBOToSystemIO (clone @a @α (UnsafeAlias x))
+          MV.unsafeWrite new i copied
           go (i + 1)
     go 0
     NonLinear.pure (Vector new)
   {-# INLINE clone #-}
+
+{- | Consume every element, then drop the storage.
+
+For elements that are not 'Movable', such as t'Data.Ref.Linear.Ref's, this is the only way to dispose of the vector: its conversions to @vector@'s types and to lists need 'Movable'.
+-}
+instance (Consumable a) => Consumable (Vector a) where
+  consume =
+    Unsafe.toLinear \(Vector vector) ->
+      unsafePerformIO (consumeElements 0 (MV.length vector) vector)
+  -- The traversal only reads the buffer, but it runs under
+  -- 'unsafePerformIO'. Inlining would let GHC duplicate that call across use
+  -- sites, or float it out of a scope, and each copy would consume the
+  -- elements again; 'NOINLINE' keeps exactly one occurrence.
+  {-# NOINLINE consume #-}
+
+consumeElements ::
+  (Consumable a) =>
+  Int ->
+  Int ->
+  MV.IOVector a ->
+  NonLinear.IO ()
+{-# INLINE consumeElements #-}
+consumeElements !index !length_ vector
+  | index >= length_ = NonLinear.pure ()
+  | otherwise = do
+      value <- MV.unsafeRead vector index
+      let !() = consume value
+      consumeElements (index + 1) length_ vector

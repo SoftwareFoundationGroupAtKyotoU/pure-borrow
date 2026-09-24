@@ -1,10 +1,4 @@
-{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE MagicHash #-}
-{-# LANGUAGE RoleAnnotations #-}
-{-# LANGUAGE UnboxedTuples #-}
-{-# LANGUAGE UnliftedNewtypes #-}
-{-# LANGUAGE NoImplicitPrelude #-}
-{-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module Data.Ref.Linear.Unlifted (
   Ref#,
@@ -16,61 +10,4 @@ module Data.Ref.Linear.Unlifted (
   atomicModify#,
 ) where
 
-import Control.Monad.Borrow.Pure.Lifetime.Token
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (LinearOnly (..), LinearOnlyWitness (..))
-import Control.Monad.Borrow.Pure.Utils (lseq#)
-import GHC.Exts
-import GHC.Exts qualified as GHC
-import Prelude.Linear
-import Unsafe.Linear qualified as Unsafe
-
-newtype Ref# a = Ref# (MutVar# RealWorld a)
-
-type role Ref# nominal
-
-newRef# :: a %1 -> Linearly %1 -> Ref# a
-{-# NOINLINE newRef# #-}
-newRef# = GHC.noinline $ Unsafe.toLinear $ \a lin ->
-  lin
-    `lseq#` GHC.runRW# \s ->
-      case GHC.newMutVar# a s of
-        (# !_, !v #) -> Ref# v
-
--- | This is unsafe, because the ownership of 'a' is duplicated.
-unsafeReadRef# :: Ref# a %1 -> (# a, Ref# a #)
-unsafeReadRef# = GHC.noinline $ Unsafe.toLinear \(Ref# !mv) ->
-  runRW# \s ->
-    case GHC.readMutVar# mv s of
-      (# !_, !a #) -> (# a, Ref# mv #)
-
--- | This is unsafe, because the ownership of original 'a' is dropped.
-unsafeWriteRef# :: Ref# a %1 -> a %1 -> Ref# a
-{-# NOINLINE unsafeWriteRef# #-}
-unsafeWriteRef# = GHC.noinline $ Unsafe.toLinear2 \(Ref# mv) !a ->
-  runRW# \s ->
-    case GHC.writeMutVar# mv a s of
-      _ -> Ref# mv
-
-freeRef# :: Ref# a %1 -> a
-{-# NOINLINE freeRef# #-}
-freeRef# = Unsafe.toLinear \(Ref# a) ->
-  runRW# \s ->
-    case GHC.readMutVar# a s of
-      (# _, !a #) -> a
-
-instance LinearOnly (Ref# a) where
-  linearOnly = UnsafeLinearOnly
-
-atomicModify_# :: (a %1 -> a) %1 -> Ref# a %1 -> Ref# a
-{-# NOINLINE atomicModify_# #-}
-atomicModify_# = GHC.noinline $ Unsafe.toLinear2 \f (Ref# mv) ->
-  runRW# \s ->
-    case GHC.atomicModifyMutVar2# mv (Unsafe.toLinear f) s of
-      (# _, !_, !_ #) -> Ref# mv
-
-atomicModify# :: (a %1 -> (b, a)) %1 -> Ref# a %1 -> (# b, Ref# a #)
-{-# NOINLINE atomicModify# #-}
-atomicModify# = GHC.noinline $ Unsafe.toLinear2 \f (Ref# mv) ->
-  runRW# \s ->
-    case GHC.atomicModifyMutVar2# mv (Unsafe.toLinear f) s of
-      (# _, !_, (!b, !_) #) -> (# b, Ref# mv #)
+import Data.Ref.Linear.Unlifted.Internal

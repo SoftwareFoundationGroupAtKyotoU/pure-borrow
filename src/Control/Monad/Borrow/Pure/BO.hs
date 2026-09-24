@@ -32,6 +32,7 @@ module Control.Monad.Borrow.Pure.BO (
   askLinearly,
   asksLinearly,
   asksLinearlyM,
+  nowStatic,
   evaluateBO,
 
   -- ** In-place modification with mutable borrows
@@ -120,10 +121,6 @@ import Data.Functor.Linear qualified as Data
 import Data.Type.Coercion (Coercion (..))
 import Prelude.Linear
 
-#ifndef PURE_BORROW_SLOW_SCOPES
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe qualified as Unsafe
-#endif
-
 {- |
 Runs a 'BO' computation and returns the result of postprocessing 'After' the lifetime has ended.
 
@@ -133,10 +130,10 @@ runBO :: forall a. Linearly %1 -> (forall α. BO α (After α a)) %1 -> a
 {-# INLINE runBO #-}
 runBO lin bo =
   case newLifetime lin of
-    MkSomeNow (now :: Now α) -> DataFlow.do
-      (now, f) <- execBO @α @(After α a) bo now
-      case endLifetime now of
-        Ur end -> withEnd @α end f
+    MkSomeNow (now :: Now α) ->
+      execBOWith @α @(After α a) bo now \(now, f) ->
+        case endLifetime now of
+          Ur end -> withEnd @α end f
 
 -- | A variant of 'runBO' that returns the original rsource retained by the 'Lend'er
 runBOLend :: Linearly %1 -> (forall α. BO α (Lend α a)) %1 -> a
@@ -421,7 +418,9 @@ srunBO bo = asksLinearlyM \lin ->
 #else
 srunBO bo = Control.do
   after <- unsafeCastBO bo
-  Control.pure $! withEnd Unsafe.UnsafeEnd after
+  -- The token comes from the state thread, after the scope's effects; see Note [Owners handed back by reclaim].
+  end <- endHere
+  Control.pure $! withEndL end after
 #endif
 
 -- | A variant of 'srunBO' that returns the direct value of 'BO' computation.
@@ -433,8 +432,12 @@ srunBO_ k = srunBO Control.do a <- k; Control.pure $ After a
 srunBO_ = \bo -> unsafeCastBO bo
 #endif
 
-{- | A parallel comoutation applicative functor for 'BO' monad.
+{- | A parallel computation applicative functor for 'BO' monad.
 All the computations chained by '<*>' or 'liftA2' will be executed in parallel.
+
+Each '<*>' is a 'parBO', so a traversal nests them.
+An exception is rethrown unchanged, but unlike @mapConcurrently@ from @async@, the computations of the other elements are not all stopped: a failure stops only the computation it is paired with in its 'parBO', and whatever that one had started runs to completion.
+See 'parBO'.
 -}
 newtype Par α a = Par (BO α a)
   deriving newtype (Data.Functor, Control.Functor)

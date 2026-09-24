@@ -1,6 +1,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ImpredicativeTypes #-}
+{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -21,7 +22,7 @@
 {- |
 Core-level obligations for the statically erased sublifetime delimiters.
 
-With the @slow@ flag off, 'srunBO_' must compile to the identity, and 'srunBO' to nothing beyond handing the runtime-erased 'EndToken' to the 'After' the delimited action returned.
+With the @slow@ flag off, 'srunBO_' must compile to the identity, and 'srunBO' to nothing beyond taking an 'EndToken' from the state thread and handing it to the 'After' the delimited action returned (see Note [Owners handed back by reclaim] in "Control.Monad.Borrow.Pure.BO.Internal").
 In particular neither may retain a runtime lifetime token, nor the 'Linearly' witness that 'newLifetime' consumes to produce one.
 This has to hold through 'reborrowing'' and 'sharing'' too, which are the public combinators built on 'srunBO'.
 
@@ -29,6 +30,7 @@ The @+slow@ build restores the token-allocating implementations, so every obliga
 -}
 module PureBorrow.Inspection.Sublifetime (
   tests,
+  barrierTests,
   srunBOAt,
   endTokenAt,
   srunBO_At,
@@ -44,19 +46,22 @@ module PureBorrow.Inspection.Sublifetime (
   locallyValueRefAt,
   reborrowingsValueRefAt,
   bumpBundleAt,
+  reborrowingsRefAt,
+  bumpBundleAfterAt,
 ) where
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
+import Control.Monad.Borrow.Pure.BO.Internal (endHere, restoreWithEnd, reviveAliasWithEnd#, withEndL)
 import Control.Monad.Borrow.Pure.BO.Unsafe (reviveAlias)
-import Control.Monad.Borrow.Pure.Experimental.Borrows (Aliases (..), Muts, reborrowings, reviveAliases)
+import Control.Monad.Borrow.Pure.Experimental.Borrows (Aliases (..), Muts, reborrowings, reborrowings', reviveAliases)
 import Control.Monad.Borrow.Pure.Experimental.Reborrowable (locally)
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (EndToken (..))
 import Data.Ref.Linear (Ref)
 import Data.Ref.Linear.Borrow qualified as Ref
 import Prelude.Linear
 import PureBorrow.Inspection.Flags (expectFailIfBecause, isSlowAPI)
 import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.ExpectedFailure (expectFailBecause)
 import Test.Tasty.Inspection
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
@@ -73,7 +78,7 @@ srunBOAt :: (forall α. BO (α /\ β) (After α Int)) %1 -> BO β Int
 {-# NOINLINE srunBOAt #-}
 srunBOAt bo = Control.fmap (+ 1) (srunBO bo)
 
-{- | The specification 'srunBOAt' must meet: run the action, then apply the runtime-erased 'EndToken' to the 'After' it returned, under the same eta-reduction guard.
+{- | The specification 'srunBOAt' must meet: run the action, then take an 'EndToken' from the state thread and apply it to the 'After' the action returned, under the same eta-reduction guard.
 
 Note the signature: no rank-2 argument and no @/\\@ anywhere.
 An equality with 'srunBOAt' therefore says the sublifetime left no residue at all.
@@ -83,7 +88,8 @@ endTokenAt :: BO β (After γ Int) %1 -> BO β Int
 endTokenAt bo =
   Control.fmap (+ 1) Control.do
     after <- bo
-    Control.pure $! withEnd UnsafeEnd after
+    end <- endHere
+    Control.pure $! withEndL end after
 
 -- | 'srunBO_' at a concrete carrier, saturated and rank-2 as above.
 srunBO_At :: (forall α. BO (α /\ β) Int) %1 -> BO β Int
@@ -147,7 +153,7 @@ bumpRefAt = Unsafe.toLinear \ref -> Control.do
     restored <- reviveAlias ref
     Control.pure (restored `lseq` old)
 
-{- | The specification 'reborrowingRefAt' must meet: 'bumpRefAt', plus the application that hands the runtime-erased 'EndToken' to the 'After' the continuation returned.
+{- | The specification 'reborrowingRefAt' must meet: 'bumpRefAt', with the borrow restored by the exit primitive that also hands back an 'EndToken', and that token applied to the 'After' the continuation returned.
 
 That application is the one thing a delimiter taking an @'After' β r@ cannot drop, and 'srunBO' pays it too — see 'endTokenAt'.
 -}
@@ -156,8 +162,8 @@ bumpRefAfterAt :: forall α. Mut α (Ref Int) %1 -> BO α Int
 bumpRefAfterAt = Unsafe.toLinear \ref -> Control.do
   (old, spent) <- bumpRef ref
   spent `lseq` Control.do
-    restored <- reviveAlias ref
-    Control.pure (restored `lseq` withEnd (UnsafeEnd @α) (After old))
+    (r, restored) <- restoreWithEnd @α ref (After old)
+    Control.pure (restored `lseq` r)
 
 {- | The generic path at 'Mut': 'locally' is what a caller reaches for when the borrow type is a parameter.
 
@@ -209,6 +215,27 @@ bumpBundleAt = Unsafe.toLinear \bundle -> Control.do
     restored <- reviveAliases bundle
     Control.pure (restored `lseq` old)
 
+-- | 'reborrowings'', the finalizing plural delimiter, with the restored bundle dropped as the scalar probes drop their borrow.
+reborrowingsRefAt :: Muts α '[Ref Int, Ref Int] %1 -> BO α Int
+{-# NOINLINE reborrowingsRefAt #-}
+reborrowingsRefAt bundle =
+  reborrowings'
+    bundle
+    ( \borrowed -> Control.do
+        (old, spent) <- bumpBundle borrowed
+        spent `lseq` Control.pure (After old)
+    )
+    Control.<&> \(old, muts) -> muts `lseq` old
+
+-- | The specification 'reborrowingsRefAt' must meet: 'bumpBundleAt', with the bundle restored by the exit primitive that also hands back an 'EndToken', as 'bumpRefAfterAt' is to 'bumpRefAt'.
+bumpBundleAfterAt :: forall α. Muts α '[Ref Int, Ref Int] %1 -> BO α Int
+{-# NOINLINE bumpBundleAfterAt #-}
+bumpBundleAfterAt = Unsafe.toLinear \bundle -> Control.do
+  (old, spent) <- bumpBundle bundle
+  spent `lseq` Control.do
+    (r, restored) <- restoreWithEnd @α bundle (After old)
+    Control.pure (restored `lseq` r)
+
 -- | The other 'srunBO' client, on the shared side, with the restored borrow dropped as above.
 sharingRefAt :: Mut α (Ref Int) %1 -> BO α Int
 {-# NOINLINE sharingRefAt #-}
@@ -244,8 +271,8 @@ copyRefAfterAt :: forall α. Mut α (Ref Int) %1 -> BO α Int
 {-# NOINLINE copyRefAfterAt #-}
 copyRefAfterAt = Unsafe.toLinear \ref -> Control.do
   seen <- Ref.copyRef ref
-  restored <- reviveAlias ref
-  Control.pure (restored `lseq` withEnd (UnsafeEnd @α) (After seen))
+  (r, restored) <- restoreWithEnd @α ref (After seen)
+  Control.pure (restored `lseq` r)
 
 {- | Every obligation below describes the statically erased delimiters, so under @+slow@ — where the sublifetime is a genuine runtime token by construction — each one is expected to fail rather than to be skipped.
 That inversion is what keeps them honest: an obligation that also holds of the allocating implementation is no evidence about this one, and turns the group red under @+slow@ until it is either sharpened or dropped.
@@ -254,9 +281,77 @@ Two plausible-looking obligations were dropped for exactly that reason.
 @'hasNoType' \'srunBOAt ''SomeNow@ holds under both, because 'MkSomeNow' wraps a nullary 'Now' and case-of-known-constructor removes the box either way.
 @'hasNoType' \'reborrowingRefAt ''Now@ likewise: through 'reborrowing'' the token itself is always erased, and what the allocating version actually leaves behind is the 'Linearly' that produced it.
 
-The four borrow-scope equalities now pin the 'Control.Monad.Borrow.Pure.BO.Unsafe.reviveAlias' barrier as well, because their specifications name it.
-That matters beyond bookkeeping: the runtime regressions in "Control.Monad.Borrow.Pure.BOSpec" observe a wrong /answer/, so on a compiler that stopped performing the merge they would go vacuously green rather than red, and these equalities would be the only thing left that notices the barrier being dropped.
+The borrow-scope equalities pin the barriers as well, because their specifications name them: a delimiter that stopped calling one would no longer equal its specification.
+They cannot notice a barrier being weakened, since the specification calls the same barrier; "PureBorrow.Inspection.Barriers" checks that each barrier survives as a call.
+That matters beyond bookkeeping: the runtime regressions in "Control.Monad.Borrow.Pure.BOSpec" observe a wrong /answer/, so on a compiler that stopped performing the merge they would go vacuously green rather than red.
 -}
+
+-- | Turn a 'doesNotUse' obligation into the statement that the probe uses the name.
+uses :: TestTree -> TestTree
+uses = expectFailBecause "the probe must call the barrier"
+
+{- | The barriers each delimiter restores through must survive as calls; see "PureBorrow.Inspection.Barriers".
+
+An expected failure passes whatever made the obligation fail, including a probe that inspection-testing cannot inspect; the obligations of 'tests' on the same probes pass only when it can, so they turn red first.
+The erased delimiters' barriers are inverted once more under @+slow@, whose delimiters restore through 'reclaim' instead; the plural one is shared by both builds.
+-}
+barrierTests :: TestTree
+barrierTests =
+  testGroup
+    "delimiters restore through their barriers"
+    [ uses
+        $( inspectTest
+             ( (doesNotUse 'reborrowingsValueRefAt 'reviveAliases)
+                 { testName = Just "reborrowings restores the bundle through reviveAliases"
+                 }
+             )
+         )
+    , testGroup "erased delimiters" $
+        NonLinear.map
+          ( expectFailIfBecause
+              isSlowAPI
+              "+slow restores the borrow through reclaim instead"
+              NonLinear.. uses
+          )
+          [ $( inspectTest
+                 ( (doesNotUse 'srunBOAt 'endHere)
+                     { testName = Just "srunBO takes its end token from endHere"
+                     }
+                 )
+             )
+          , $( inspectTest
+                 ( (doesNotUse 'reborrowingRefAt 'reviveAliasWithEnd#)
+                     { testName = Just "reborrowing' restores through reviveAliasWithEnd#"
+                     }
+                 )
+             )
+          , $( inspectTest
+                 ( (doesNotUse 'sharingRefAt 'reviveAliasWithEnd#)
+                     { testName = Just "sharing' restores through reviveAliasWithEnd#"
+                     }
+                 )
+             )
+          , $( inspectTest
+                 ( (doesNotUse 'reborrowingsRefAt 'reviveAliasWithEnd#)
+                     { testName = Just "reborrowings' restores through reviveAliasWithEnd#"
+                     }
+                 )
+             )
+          , $( inspectTest
+                 ( (doesNotUse 'reborrowingValueRefAt 'reviveAlias)
+                     { testName = Just "reborrowing restores through reviveAlias"
+                     }
+                 )
+             )
+          , $( inspectTest
+                 ( (doesNotUse 'sharingValueRefAt 'reviveAlias)
+                     { testName = Just "sharing restores through reviveAlias"
+                     }
+                 )
+             )
+          ]
+    ]
+
 tests :: TestTree
 tests =
   testGroup "sublifetime delimiting" $
@@ -381,6 +476,27 @@ tests =
              ( (doesNotUse 'reborrowingsValueRefAt 'askLinearly)
                  { testName =
                      Just "reborrowings does not reach for the ambient Linearly"
+                 }
+             )
+         )
+      , $( inspectTest
+             ( ('reborrowingsRefAt ==- 'bumpBundleAfterAt)
+                 { testName =
+                     Just "reborrowings' only supplies the erased end token"
+                 }
+             )
+         )
+      , $( inspectTest
+             ( (hasNoType 'reborrowingsRefAt ''Linearly)
+                 { testName =
+                     Just "reborrowings' needs no linearity witness"
+                 }
+             )
+         )
+      , $( inspectTest
+             ( (doesNotUse 'reborrowingsRefAt 'askLinearly)
+                 { testName =
+                     Just "reborrowings' does not reach for the ambient Linearly"
                  }
              )
          )

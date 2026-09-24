@@ -147,7 +147,9 @@ library
     Data.Record.Linear.Borrow.Experimental.Split
     Data.Ref.Linear
     Data.Ref.Linear.Borrow
+    Data.Ref.Linear.Internal
     Data.Ref.Linear.Unlifted
+    Data.Ref.Linear.Unlifted.Internal
     Data.Unique.Linear
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted.Internal
@@ -184,15 +186,34 @@ test-suite pure-borrow-test
   -- cabal-gild: discover test --exclude=test/Main.hs --exclude=test/typing-fail/**
   other-modules:
     Control.Concurrent.DivideConquer.LinearSpec
+    Control.Concurrent.Queue.ChaseLevSpec
+    Control.Monad.Borrow.Pure.BO.TypingCases
     Control.Monad.Borrow.Pure.BOSpec
+    Control.Monad.Borrow.Pure.Clone.TypingCases
+    Control.Monad.Borrow.Pure.CloneSpec
+    Control.Monad.Borrow.Pure.CloneSpec.ArrayLoops
     Control.Monad.Borrow.Pure.CopyableSpec
     Control.Monad.Borrow.Pure.Experimental.Borrows.TypingCases
     Control.Monad.Borrow.Pure.Experimental.BorrowsSpec
+    Control.Monad.Borrow.Pure.Experimental.Loop.TypingCases
+    Control.Monad.Borrow.Pure.Experimental.LoopSpec
+    Control.Monad.Borrow.Pure.Lifetime.TokenSpec
+    Control.Monad.Borrow.Pure.Lifetime.TokenSpec.ClosedRun
+    Control.Monad.Borrow.Pure.Lifetime.TokenSpec.Forced
+    Control.Monad.Borrow.Pure.Lifetime.TokenSpec.Strict
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
+    Control.Monad.Borrow.Pure.OrderingSpec
+    Control.Monad.Borrow.Pure.OrderingSpec.Kernels
+    Control.Monad.Borrow.Pure.OrderingSpec.Owners
+    Control.Monad.Borrow.Pure.ParBOSpec
+    Control.Monad.Borrow.Pure.SharedEffectSpec
+    Data.Coerce.Directed.TypingCases
+    Data.Coerce.DirectedSpec
     Data.HashMap.RobinHood.Mutable.Linear.BorrowSpec
     Data.HashMap.RobinHood.Mutable.LinearSpec
     Data.HashMap.RobinHood.Mutable.LinearSpec.Cases
+    Data.Ref.LinearSpec
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted.TypingCases
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.UnrestrictedSpec
     Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity.TypingCases
@@ -202,6 +223,7 @@ test-suite pure-borrow-test
     Data.Vector.Mutable.Growable.Linear.BorrowSpec
     Data.Vector.Mutable.Growable.Linear.TypingCases
     Data.Vector.Mutable.Linear.BorrowSpec
+    Data.Vector.Mutable.Linear.TypingCases
     Data.Vector.Unboxed.Mutable.Growable.Linear.BorrowSpec
     Data.Vector.Unboxed.Mutable.Growable.Linear.TypingCases
     Data.Vector.Unboxed.Mutable.Linear.BorrowSpec
@@ -248,9 +270,11 @@ test-suite pure-borrow-inspection
   main-is: Main.hs
   -- cabal-gild: discover test-inspection --exclude=test-inspection/Main.hs
   other-modules:
+    PureBorrow.Inspection.Barriers
     PureBorrow.Inspection.Fft
     PureBorrow.Inspection.Flags
     PureBorrow.Inspection.GenericGrowableUnrestricted
+    PureBorrow.Inspection.GrowableAccess
     PureBorrow.Inspection.MultiStoreScan
     PureBorrow.Inspection.QSort
     PureBorrow.Inspection.Sublifetime
@@ -270,6 +294,48 @@ test-suite pure-borrow-inspection
     tasty-expected-failure,
     tasty-inspection-testing,
     vector,
+
+-- The owner kernels and the forced-token kernels, with GHC's state hack switched off.
+-- The flag is set for the whole component because it did not take effect in one module's OPTIONS_GHC of pure-borrow-test; see test-no-state-hack/Main.hs.
+test-suite pure-borrow-no-state-hack
+  import: defaults
+  default-language: GHC2021
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test-no-state-hack
+  main-is: Main.hs
+  -- cabal-gild: discover test-no-state-hack --exclude=test-no-state-hack/Main.hs
+  other-modules:
+    PureBorrow.NoStateHack.ClosedRun
+    PureBorrow.NoStateHack.ForcedLinearly
+    PureBorrow.NoStateHack.ForcedToken
+    PureBorrow.NoStateHack.Owners
+    PureBorrow.NoStateHack.Scopes
+
+  ghc-options:
+    -O2
+    -threaded
+    -fno-state-hack
+
+  build-depends:
+    pure-borrow,
+    tasty,
+    tasty-hunit,
+
+test-suite pure-borrow-unoptimised
+  import: defaults
+  default-language: GHC2021
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test-unoptimised
+  main-is: Main.hs
+  -- cabal-gild: discover test-unoptimised --exclude=test-unoptimised/Main.hs
+  other-modules:
+    PureBorrow.Unoptimised.Ordering
+
+  ghc-options: -threaded
+  build-depends:
+    pure-borrow,
+    tasty,
+    tasty-hunit,
 
 test-suite pure-borrow-doctests
   import: defaults
@@ -348,7 +414,9 @@ benchmark pure-borrow-bench
   -- cabal-gild: discover bench/suite --exclude=bench/suite/Main.hs
   other-modules:
     PureBorrow.Bench.CopyAt
+    PureBorrow.Bench.ForkJoin
     PureBorrow.Bench.Growable
+    PureBorrow.Bench.GrowableAccess
     PureBorrow.Bench.HashMap
     PureBorrow.Bench.Ingredients
     PureBorrow.Bench.MultiStoreScan

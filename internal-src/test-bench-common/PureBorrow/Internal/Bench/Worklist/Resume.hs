@@ -606,14 +606,14 @@ worklistPureBorrowOpenOnceRootWithSeed seed target =
               let %1 !(queueBorrow, logBorrow) =
                     frontierRootBorrows
                       .@ (frontierQueueField, frontierLogField)
-              let %1 !adjacencyContent =
-                    Growable.getContents adjacencyBorrow
-              let %1 !payloadContent =
-                    Growable.getContents payloadBorrow
-              let %1 !queueContent =
-                    Growable.getContents queueBorrow
-              let %1 !logContent =
-                    Growable.getContents logBorrow
+              adjacencyContent <-
+                Growable.getContents adjacencyBorrow
+              payloadContent <-
+                Growable.getContents payloadBorrow
+              queueContent <-
+                Growable.getContents queueBorrow
+              logContent <-
+                Growable.getContents logBorrow
               (Ur initial, stateBorrow) <-
                 readTraversalState stateBorrow
               let !seededInitial =
@@ -716,14 +716,14 @@ worklistPureBorrowCheckedOpenOnceRootWithSeed seed target =
               let %1 !(queueBorrow, logBorrow) =
                     frontierRootBorrows
                       .@ (frontierQueueField, frontierLogField)
-              let %1 !adjacencyContent =
-                    Growable.getContents adjacencyBorrow
-              let %1 !payloadContent =
-                    Growable.getContents payloadBorrow
-              let %1 !queueContent =
-                    Growable.getContents queueBorrow
-              let %1 !logContent =
-                    Growable.getContents logBorrow
+              adjacencyContent <-
+                Growable.getContents adjacencyBorrow
+              payloadContent <-
+                Growable.getContents payloadBorrow
+              queueContent <-
+                Growable.getContents queueBorrow
+              logContent <-
+                Growable.getContents logBorrow
               (Ur initial, stateBorrow) <-
                 readTraversalStateChecked stateBorrow
               let !seededInitial =
@@ -883,10 +883,10 @@ worklistPureBorrowReopenRootWithSeed seed reopenShape growth target =
                   let !(Ur sharedOffsets) = share offsetsBorrow
                   let !(Ur sharedAdjacency) = share adjacencyBorrow
                   let !(Ur sharedPayload) = share payloadBorrow
-                  let !adjacencyContent =
-                        Growable.getContents sharedAdjacency
-                  let !payloadContent =
-                        Growable.getContents sharedPayload
+                  Ur adjacencyContent <-
+                    move Control.<$> Growable.getContents sharedAdjacency
+                  Ur payloadContent <-
+                    move Control.<$> Growable.getContents sharedPayload
                   (Ur evidence, fixedFields) <-
                     reborrowings
                       (marksBorrow :- stateBorrow :- BNil)
@@ -992,14 +992,14 @@ runFlatReopenPureBorrow
               :- queue
               :- outputLog
               :- BNil -> Control.do
-                let %1 !adjacencyContent =
-                      Growable.getContents adjacency
-                let %1 !payloadContent =
-                      Growable.getContents payload
-                let %1 !queueContent =
-                      Growable.getContents queue
-                let %1 !logContent =
-                      Growable.getContents outputLog
+                adjacencyContent <-
+                  Growable.getContents adjacency
+                payloadContent <-
+                  Growable.getContents payload
+                queueContent <-
+                  Growable.getContents queue
+                logContent <-
+                  Growable.getContents outputLog
                 ( Ur segment
                   , offsets
                   , marks
@@ -1174,10 +1174,10 @@ runNestedReopenPureBorrow
         ((Ur segment, marks, state), fields) <-
           reborrowings fields \case
             queue :- outputLog :- BNil -> Control.do
-              let %1 !queueContent =
-                    Growable.getContents queue
-              let %1 !logContent =
-                    Growable.getContents outputLog
+              queueContent <-
+                Growable.getContents queue
+              logContent <-
+                Growable.getContents outputLog
               ( Ur segment
                 , offsetsOccurrence
                 , marks

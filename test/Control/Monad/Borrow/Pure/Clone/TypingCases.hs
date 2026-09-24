@@ -10,6 +10,9 @@
 See Note [Cloning the contents of a shared borrow] in "Data.Ref.Linear.Internal".
 
 Each case runs the clone, because the missing instance is only needed, and its deferred error only raised, when the container's 'clone' clones a piece of the contents.
+
+Nor may linear-base's mutable arrays and vectors be copied out of a borrow with 'copy': 'copy' works outside 'BO', so its copy would not be ordered with the writes of the state thread.
+Their 'Copyable' instances are unsatisfiable, and each case forces 'copy', whose method raises the deferred message.
 -}
 module Control.Monad.Borrow.Pure.Clone.TypingCases (
   module Control.Monad.Borrow.Pure.Clone.TypingCases,
@@ -17,9 +20,13 @@ module Control.Monad.Borrow.Pure.Clone.TypingCases (
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
+import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (UnsafeAlias))
+import Data.Array.Mutable.Linear qualified as LA
 import Data.Ref.Linear qualified as Ref
+import Data.Vector.Mutable.Linear qualified as LV
 import Data.Vector.Mutable.Linear.Borrow qualified as VL
 import Prelude.Linear
+import Prelude qualified as NonLinear
 
 -- | Contents that can be duplicated, but have no 'Clone' instance.
 newtype DupableOnly = DupableOnly Int
@@ -48,3 +55,11 @@ refOfDupableOnly = cloneDupableOnly clone (Ref.new (DupableOnly 1))
 
 vectorOfDupableOnly :: ()
 vectorOfDupableOnly = cloneDupableOnly clone (VL.fromList [DupableOnly 1])
+
+-- | 'copy' of a shared linear-base array; the message must point to 'clone'.
+copyOfSharedArray :: LA.Array Int
+copyOfSharedArray = copy (UnsafeAlias NonLinear.undefined :: Share Static (LA.Array Int))
+
+-- | 'copy' of a shared linear-base vector, which has no 'Clone' instance to point to.
+copyOfSharedVector :: LV.Vector Int
+copyOfSharedVector = copy (UnsafeAlias NonLinear.undefined :: Share Static (LV.Vector Int))

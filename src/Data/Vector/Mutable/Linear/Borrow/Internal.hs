@@ -50,7 +50,8 @@ instance
 
 {- | Each element is cloned through a shared borrow of it, with its own 'Clone', into a fresh vector.
 
-The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same vector at once.
+The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same vector at once, unless an element is still an unevaluated call that updates memory in place, such as linear-base's @Data.Array.Mutable.Linear.map@.
+'Data.Vector.Mutable.Linear.Borrow.fromList' stores its elements unevaluated, so evaluate each such call before building the vector: see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
 See Note [Cloning the contents of a shared borrow] in @Data.Ref.Linear.Internal@.
 -}
 instance (Clone a) => Clone (Vector a) where

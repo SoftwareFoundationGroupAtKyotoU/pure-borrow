@@ -48,11 +48,10 @@ import Data.Kind (Constraint, Type)
 import Data.Semigroup qualified as Sem
 import Data.Vector.Mutable.Linear (Vector)
 import Data.Word
-import GHC.TypeError (ErrorMessage (..))
+import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
 import Generics.Linear
 import Numeric.Natural (Natural)
 import Prelude.Linear
-import Prelude.Linear.Unsatisfiable (Unsatisfiable, unsatisfiable)
 import Unsafe.Linear qualified as Unsafe
 
 -- | Values that can be copied from a live borrow.
@@ -72,13 +71,23 @@ instance Copyable (Ur a) where
   {-# INLINE copy #-}
 
 instance
-  (Unsatisfiable (ShowType (Array a) :<>: Text " cannot be copied!")) =>
+  ( Unsatisfiable
+      ( ShowType (Array a)
+          :<>: Text " cannot be copied!"
+          :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead."
+      )
+  ) =>
   Copyable (Array a)
   where
   copy = unsatisfiable
 
 instance
-  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copied!")) =>
+  ( Unsatisfiable
+      ( ShowType (Vector a)
+          :<>: Text " cannot be copied!"
+          :$$: Text "It is mutable, and has no Clone instance either."
+      )
+  ) =>
   Copyable (Vector a)
   where
   copy = unsatisfiable

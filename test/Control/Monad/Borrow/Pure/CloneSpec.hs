@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE NoImplicitPrelude #-}
@@ -7,12 +8,14 @@ module Control.Monad.Borrow.Pure.CloneSpec (
   module Control.Monad.Borrow.Pure.CloneSpec,
 ) where
 
-import Control.Exception (SomeException, displayException, evaluate, try)
+import Control.Exception (TypeError, displayException, evaluate, try)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (UnsafeAlias))
-import Control.Monad.Borrow.Pure.Clone.TypingCases (refOfDupableOnly, vectorOfDupableOnly)
-import Control.Monad.Borrow.Pure.CloneSpec.Recipe qualified as Recipe
+import Control.Monad.Borrow.Pure.Clone.TypingCases (copyOfSharedArray, copyOfSharedVector, refOfDupableOnly, vectorOfDupableOnly)
+import Control.Monad.Borrow.Pure.CloneSpec.ArrayLoops qualified as ArrayLoops
+import Data.Array.Mutable.Linear (Array)
+import Data.Array.Mutable.Linear qualified as LA
 import Data.Complex (Complex)
 import Data.HashMap.RobinHood.Mutable.Linear qualified as HM
 import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
@@ -50,6 +53,128 @@ cloneArg = clone
 
 cloneComplex :: Share α (Complex Double) %1 -> BO α (Complex Double)
 cloneComplex = clone
+
+-- These must keep compiling too: the array's instance reaches a container of arrays, and a newtype over an array derives its own.
+
+cloneVectorOfArrays :: Share α (VL.Vector (Array Int)) %1 -> BO α (VL.Vector (Array Int))
+cloneVectorOfArrays = clone
+
+-- | A user's type built on an array.
+newtype Buffer = Buffer (Array Int)
+  deriving newtype (Clone)
+
+cloneBuffer :: Share α Buffer %1 -> BO α Buffer
+cloneBuffer = clone
+
+-- | An array of values with no instance of any class: an array's clone requires nothing of its elements.
+cloneFunctions :: Share α (Array (Int -> Int)) %1 -> BO α (Array (Int -> Int))
+cloneFunctions = clone
+
+{- | Write 7 at index 0 of the clone, and only then read the original.
+
+The write must be forced first: a read of the original made before it would see @[1, 2]@ even through a clone that shared the original's storage.
+-}
+writeThenReadBoth :: Array Int %1 -> Array Int %1 -> ([Int], [Int])
+writeThenReadBoth original cloned = case LA.toList (LA.set 0 7 cloned) of
+  Ur inClone -> case LA.toList original of
+    Ur inOriginal -> (inOriginal, inClone)
+
+{- | Clone a shared array of @[1, 2]@, write to the clone, and read both arrays.
+
+Expected @([1, 2], [7, 2])@: a clone that shared the original's storage would give @([7, 2], [7, 2])@.
+The write happens inside the lifetime, while the original is still borrowed, and the bind forces it before the original is read.
+-}
+writeToArrayClone :: ([Int], [Int])
+{-# NOINLINE writeToArrayClone #-}
+writeToArrayClone = unur do
+  LA.fromList [1, 2 :: Int] \arr -> move do
+    linearly \lin -> runBO lin Control.do
+      (borrowed, lend) <- borrowM arr
+      Ur shared <- Control.pure (share borrowed)
+      cloned <- clone shared
+      Ur inClone <- Control.pure (LA.toList (LA.set 0 7 cloned))
+      pureAfter case LA.toList (reclaim lend) of
+        Ur inOriginal -> (inOriginal, inClone)
+
+{- | Clone a shared array of @[1, 2]@, write 9 into the original once it is reclaimed, and only then read the clone.
+
+Expected @([9, 2], [1, 2])@: the copy must be complete inside 'clone', before the lifetime ends.
+A clone left as an unevaluated copy would copy the original only when read, after the write, and give @[9, 2]@.
+The clone is read lazily, in the second component, so that forcing the pair does not read it before the write.
+-}
+cloneBeforeLaterWrite :: ([Int], [Int])
+{-# NOINLINE cloneBeforeLaterWrite #-}
+cloneBeforeLaterWrite = unur do
+  LA.fromList [1, 2 :: Int] \arr -> move do
+    linearly \lin -> runBO lin Control.do
+      (borrowed, lend) <- borrowM arr
+      Ur shared <- Control.pure (share borrowed)
+      cloned <- clone shared
+      pureAfter case LA.toList (LA.set 0 9 (reclaim lend)) of
+        Ur inOriginal -> (inOriginal, unur (LA.toList cloned))
+
+-- | 'cloneBeforeLaterWrite' through a reference to the array, whose 'Clone' clones its contents with the array's.
+refCloneBeforeLaterWrite :: ([Int], [Int])
+{-# NOINLINE refCloneBeforeLaterWrite #-}
+refCloneBeforeLaterWrite = unur do
+  LA.fromList [1, 2 :: Int] \arr -> move do
+    linearly \lin -> runBO lin Control.do
+      ref <- asksLinearly (Ref.new arr)
+      (borrowed, lend) <- borrowM ref
+      Ur shared <- Control.pure (share borrowed)
+      cloned <- clone shared
+      pureAfter case LA.toList (LA.set 0 9 (Ref.free (reclaim lend))) of
+        Ur inOriginal -> (inOriginal, unur (LA.toList (Ref.free cloned)))
+
+{- | Clone one evaluated array of @[0, 0]@ in both branches of a 'parBO', write each branch's number into its clone, and read the clones and the original.
+
+Expected @([1, 0], [2, 0], [0, 0])@: the clones are arrays of their own, and the original is only read.
+-}
+parallelArrayClones :: ([Int], [Int], [Int])
+{-# NOINLINE parallelArrayClones #-}
+parallelArrayClones = unur do
+  LA.alloc 2 (0 :: Int) \arr -> move do
+    linearly \lin -> runBO lin Control.do
+      (borrowed, lend) <- borrowM arr
+      Ur shared <- Control.pure (share borrowed)
+      (Ur first, Ur second) <- parBO (cloneAndWrite 1 shared) (cloneAndWrite 2 shared)
+      pureAfter case LA.toList (reclaim lend) of
+        Ur original -> (first, second, original)
+  where
+    cloneAndWrite :: Int -> Share α (Array Int) -> BO α (Ur [Int])
+    cloneAndWrite k shared = Control.do
+      cloned <- clone shared
+      Control.pure (LA.toList (LA.set 0 k cloned))
+
+{- | Clone a reference to an array of @[1, 2]@ through a shared borrow, then write to the clone's array and read both.
+
+Expected @([1, 2], [7, 2])@: 'Clone' of a 'Ref' clones its contents, here through the array's instance.
+-}
+cloneRefOfArray :: ([Int], [Int])
+{-# NOINLINE cloneRefOfArray #-}
+cloneRefOfArray = unur do
+  LA.fromList [1, 2 :: Int] \arr -> move do
+    linearly \lin -> runBO lin Control.do
+      ref <- asksLinearly (Ref.new arr)
+      (borrowed, lend) <- borrowM ref
+      Ur shared <- Control.pure (share borrowed)
+      cloned <- clone shared
+      pureAfter (writeThenReadBoth (Ref.free (reclaim lend)) (Ref.free cloned))
+
+{- | Clone a shared empty array, and read the sizes of the clone and the original.
+
+Expected @(0, 0)@: the instance checks that its copy is not the original, and a runtime that shared one empty array among all would fail that check here.
+-}
+cloneEmptyArray :: (Int, Int)
+{-# NOINLINE cloneEmptyArray #-}
+cloneEmptyArray = unur do
+  LA.alloc 0 (0 :: Int) \arr -> move do
+    linearly \lin -> runBO lin Control.do
+      (borrowed, lend) <- borrowM arr
+      Ur shared <- Control.pure (share borrowed)
+      cloned <- clone shared
+      pureAfter case (LA.size cloned, LA.size (reclaim lend)) of
+        ((Ur inClone, cloned'), (Ur inOriginal, original')) -> cloned' `lseq` original' `lseq` (inClone, inOriginal)
 
 clonedUr :: (Int, Int)
 {-# NOINLINE clonedUr #-}
@@ -230,19 +355,61 @@ test_clone =
         loopClones 5 @?= [Nothing, Nothing, Nothing, Nothing, Nothing]
     , testCase "two clones of one hash map collected from a loop share no slot array" do
         twoLiveFromLoop @?= (Just 999, Just 0)
-    , testCase "the documented recipe for a hand-written instance keeps the clones of a loop apart" do
-        Recipe.loopArrayClones 5 @?= [0, 0, 0, 0, 0]
-    , testCase "two clones collected from a loop through the documented recipe share no array" do
-        Recipe.twoArrayClonesFromLoop @?= (999, 0)
+    , testCase "writing to a clone of an Array leaves the original unchanged" do
+        writeToArrayClone @?= ([1, 2], [7, 2])
+    , testCase "both branches of a parBO clone one Array into arrays of their own" do
+        parallelArrayClones @?= ([1, 0], [2, 0], [0, 0])
+    , testCase "a clone of an Array is complete before a later write to the original" do
+        cloneBeforeLaterWrite @?= ([9, 2], [1, 2])
+    , testCase "a clone of a Ref of an Array is complete before a later write to the original" do
+        refCloneBeforeLaterWrite @?= ([9, 2], [1, 2])
+    , testCase "copy of a shared Array is rejected, and the message points to clone" do
+        assertDeferredTypeError "clone a shared borrow of it inside BO" copyOfSharedArray
+    , testCase "copy of a shared linear-base Vector is rejected" do
+        assertDeferredTypeError "has no Clone instance either" copyOfSharedVector
+    , testCase "a clone of a Ref of an Array holds an array of its own" do
+        cloneRefOfArray @?= ([1, 2], [7, 2])
+    , testCase "an empty Array can be cloned" do
+        cloneEmptyArray @?= (0, 0)
+    , testCase "clones of one Array taken in a loop are arrays of their own" do
+        ArrayLoops.loopArrayClones 5 @?= [0, 0, 0, 0, 0]
+    , testCase "two clones of one Array collected from a loop share no array" do
+        ArrayLoops.twoArrayClonesFromLoop @?= (999, 0)
+    , testCase "two clones of one Ref of an Array collected from a loop share no array" do
+        ArrayLoops.twoRefOfArrayClonesFromLoop @?= (999, 0)
     , testCase "a Ref cannot be cloned when its contents are Dupable but not Clone" do
         assertDeferredTypeError "Clone DupableOnly" refOfDupableOnly
     , testCase "a boxed Vector cannot be cloned when its elements are Dupable but not Clone" do
         assertDeferredTypeError "Clone DupableOnly" vectorOfDupableOnly
     ]
 
+{- | The example of a hand-written instance in the header of "Control.Monad.Borrow.Pure.Clone" is the library's instance for arrays, line for line, so that the example compiles and does what the tests above check.
+
+It reads the source, relative to the package directory, where @cabal test@ runs the suite.
+-}
+test_cloneExample :: TestTree
+test_cloneExample =
+  testCase "the hand-written example in the Clone documentation is the library's instance" do
+    source <- NonLinear.lines NonLinear.<$> NonLinear.readFile "src/Control/Monad/Borrow/Pure/Clone.hs"
+    let example =
+          NonLinear.map untrack
+            NonLinear.. NonLinear.takeWhile (List.isPrefixOf ">")
+            NonLinear.$ NonLinear.dropWhile (NonLinear./= "> instance Clone (Array a) where") source
+        code =
+          NonLinear.take (NonLinear.length example) NonLinear.$
+            NonLinear.dropWhile (NonLinear./= "instance Clone (Array a) where") source
+    assertBool "the example is missing" (NonLinear.length example NonLinear.> 10)
+    example @?= code
+  where
+    untrack :: NonLinear.String -> NonLinear.String
+    untrack ('>' : ' ' : rest) = rest
+    untrack ">" = ""
+    untrack other = other
+
+-- | Force a value that must be a deferred type error, catching only a 'TypeError', and check its message.
 assertDeferredTypeError :: NonLinear.String -> a -> Assertion
 assertDeferredTypeError expectedFragment value = do
-  result <- try @SomeException (evaluate value)
+  result <- try @TypeError (evaluate value)
   case result of
     Left exception ->
       assertBool

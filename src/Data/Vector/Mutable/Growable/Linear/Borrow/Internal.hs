@@ -25,6 +25,7 @@ import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )
+import Control.Monad.Borrow.Pure.Utils (evaluateStored)
 import Data.IntSet qualified as IntSet
 import Data.Ref.Linear.Internal qualified as Ref
 import Data.Unrestricted.Linear qualified as Ur
@@ -493,7 +494,7 @@ set ::
   BO β (a, Mut α (GrowableVector a))
 {-# INLINE set #-}
 set index =
-  Unsafe.toLinear2 \ !value vector@(UnsafeAlias growable) -> Control.do
+  Unsafe.toLinear2 \value vector@(UnsafeAlias growable) -> Control.do
     Ur (logicalSize, buffer) <- readHeader growable
     if index < 0 || index >= logicalSize
       then
@@ -504,8 +505,10 @@ set index =
               <> show logicalSize
           )
       else unsafeSystemIOToBO do
+        -- WHNF forcing stays inside the guarded run; see Note [Demand stays inside a BO run] in "Control.Monad.Borrow.Pure.BO.Internal".
+        stored <- evaluateStored value
         !oldValue <- MV.unsafeRead buffer index
-        MV.unsafeWrite buffer index value
+        MV.unsafeWrite buffer index stored
         NonLinear.pure (oldValue, vector)
 
 -- | Unchecked 'set'. The index must satisfy @0 <= index < size@.
@@ -517,11 +520,13 @@ unsafeSet ::
   BO β (a, Mut α (GrowableVector a))
 {-# INLINE unsafeSet #-}
 unsafeSet index =
-  Unsafe.toLinear2 \ !value vector@(UnsafeAlias growable) -> Control.do
+  Unsafe.toLinear2 \value vector@(UnsafeAlias growable) -> Control.do
     Ur (_, buffer) <- readHeader growable
     unsafeSystemIOToBO do
+      -- WHNF forcing stays inside the guarded run; see Note [Demand stays inside a BO run] in "Control.Monad.Borrow.Pure.BO.Internal".
+      stored <- evaluateStored value
       !oldValue <- MV.unsafeRead buffer index
-      MV.unsafeWrite buffer index value
+      MV.unsafeWrite buffer index stored
       NonLinear.pure (oldValue, vector)
 
 -- | Linearly transform an initialized element and return an auxiliary result.
@@ -568,15 +573,18 @@ updateElement ::
 {-# INLINE updateElement #-}
 updateElement buffer index action vector = Control.do
   value <- unsafeSystemIOToBO (MV.unsafeRead buffer index)
-  (!result, !updatedValue) <- action value
+  (result, updatedValue) <- action value
+  -- WHNF forcing stays inside the guarded run; see Note [Demand stays inside a BO run] in "Control.Monad.Borrow.Pure.BO.Internal".
+  -- The write evaluates what it stores.
+  result <- unsafeSystemIOToBO (Unsafe.toLinear evaluateStored result)
   () <- writeElement buffer index updatedValue
   Control.pure (result, vector)
 
--- | Write an element into a buffer view obtained from 'readHeader'.
+-- | Write an element into a buffer view obtained from 'readHeader', evaluated where the write runs.
 writeElement :: MV.IOVector a -> Int -> a %1 -> BO β ()
 {-# INLINE writeElement #-}
 writeElement buffer index =
-  Unsafe.toLinear \value -> unsafeSystemIOToBO (MV.unsafeWrite buffer index value)
+  Unsafe.toLinear \value -> unsafeSystemIOToBO (evaluateStored value NonLinear.>>= MV.unsafeWrite buffer index)
 
 -- | Linearly transform an initialized element.
 modify ::
@@ -741,7 +749,7 @@ push ::
   BO β (Mut α (GrowableVector a))
 {-# INLINE push #-}
 push =
-  Unsafe.toLinear2 \ !value vector -> Control.do
+  Unsafe.toLinear2 \value vector -> Control.do
     ((), vector) <-
       withHeader
         ( Unsafe.toLinear \(Header logicalSize buffer) ->
@@ -801,7 +809,9 @@ writeAt ::
 {-# INLINE writeAt #-}
 writeAt =
   Unsafe.toLinear3 \index value target -> unsafeSystemIOToBO do
-    MV.unsafeWrite target index value
+    -- WHNF forcing stays inside the guarded run; see Note [Demand stays inside a BO run] in "Control.Monad.Borrow.Pure.BO.Internal".
+    stored <- evaluateStored value
+    MV.unsafeWrite target index stored
     NonLinear.pure target
 
 growTo ::

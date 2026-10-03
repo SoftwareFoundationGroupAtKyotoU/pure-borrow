@@ -1,11 +1,15 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 
 module Data.Ref.LinearSpec (
   module Data.Ref.LinearSpec,
 ) where
 
-import Control.Monad.Borrow.Pure (linearly)
+import Control.Exception (ErrorCall (..), evaluate, try)
+import Control.Functor.Linear qualified as Control
+import Control.Monad.Borrow.Pure (linearly, modifyBO)
+import Control.Monad.Borrow.Pure.Affine (aff, pop)
 import Data.Ref.Linear qualified as Ref
 import Prelude.Linear
 import Test.Tasty (TestTree, testGroup)
@@ -42,4 +46,26 @@ test_atomicModify =
         atomicModifyPair 0 @?= (0, 5)
     , testCase "atomicModify_ on a list" do
         atomicModifyList [8] @?= [7, 8]
+    ]
+
+{- | A reference to a value that raises, borrowed, and dropped with 'aff' without anything reading it.
+
+'Ref.new' evaluates what it stores as the reference is evaluated, which borrowing it does, so this raises; see Note [Stored contents are evaluated after noDuplicate#] in "Data.Ref.Linear.Unlifted.Internal".
+Freeing the reference would raise however it was stored.
+-}
+droppedUnread :: ()
+{-# NOINLINE droppedUnread #-}
+droppedUnread = linearly \lin -> case dup lin of
+  (l1, l2) -> case modifyBO (Ref.new (error "a stored placeholder" :: Int) l1) l2 (\mut -> Control.pure (consume mut)) of
+    ((), ref) -> pop (aff ref)
+
+test_new :: TestTree
+test_new =
+  testGroup
+    "Ref.new"
+    [ testCase "evaluates what it stores before anything reads it" do
+        result <- try (evaluate droppedUnread)
+        case result of
+          Left (ErrorCall message) -> message @?= "a stored placeholder"
+          Right () -> assertFailure "the stored value was not evaluated"
     ]

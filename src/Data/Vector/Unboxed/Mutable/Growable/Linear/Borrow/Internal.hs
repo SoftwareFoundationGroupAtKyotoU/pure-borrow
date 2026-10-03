@@ -132,7 +132,10 @@ constant =
   GHC.noinline \count value linear ->
     fromVector (U.replicate count value) linear
 
--- | \(O(n)\). Move a linear list into a new vector.
+{- | \(O(n)\). Move a linear list into a new vector.
+
+Each element is evaluated to weak head normal form as it is stored, as the fixed vector's @fromList@ does; see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+-}
 fromList ::
   (U.Unbox a) =>
   [a] %1 ->
@@ -472,6 +475,8 @@ set ::
   BO β (a, Mut α (GrowableVector a))
 {-# INLINE set #-}
 set index =
+  -- The value is evaluated with a bang, which GHC can turn into strictness of a caller, unlike the boxed vectors' writes: hiding the demand would make a caller that computes an unboxed element build a thunk for it, which tripled the allocation of an update loop.
+  -- See Note [Stored contents are evaluated after noDuplicate#] in "Data.Ref.Linear.Unlifted.Internal".
   Unsafe.toLinear2 \ !value vector@(UnsafeAlias growable) -> Control.do
     Ur (logicalSize, buffer) <- readHeader growable
     if index < 0 || index >= logicalSize

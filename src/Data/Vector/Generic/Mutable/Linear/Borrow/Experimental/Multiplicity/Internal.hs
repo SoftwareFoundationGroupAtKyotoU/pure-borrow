@@ -141,7 +141,13 @@ instance (G.Vector v a) => Clone (Vector Many v a) where
     Vector Control.<$> unsafeSystemIOToBO (GM.clone vector)
   {-# INLINE clone #-}
 
-instance (G.Vector v a, Dupable a) => Clone (Vector One v a) where
+{- | Each element is cloned through a shared borrow of it, with its own 'Clone', into a fresh vector.
+
+The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same vector at once.
+See Note [Cloning the contents of a shared borrow] in @Data.Ref.Linear.Internal@.
+-}
+instance (G.Vector v a, Clone a) => Clone (Vector One v a) where
+  clone :: forall α. Share α (Vector One v a) %1 -> BO α (Vector One v a)
   clone = Unsafe.toLinear \(UnsafeAlias (Vector source)) ->
     Vector Control.<$> unsafeSystemIOToBO do
       let !length_ = GM.length source
@@ -150,7 +156,7 @@ instance (G.Vector v a, Dupable a) => Clone (Vector One v a) where
             | index >= length_ = NonLinear.pure ()
             | otherwise = do
                 value <- GM.unsafeRead source index
-                let (!_, !clonedValue) = dup value
+                clonedValue <- unsafeBOToSystemIO (clone @a @α (UnsafeAlias value))
                 GM.unsafeWrite target index clonedValue
                 go (index + 1)
       go 0

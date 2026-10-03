@@ -16,7 +16,11 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   It rejects a borrow of an `Either e a` or `(e, a)` with "Use splitEither directly!" or "Use splitPair instead!".
 - `assocBOEq`, `assocBorrowEq` and `assocLendEq` are removed, since they let a program prove any two lifetimes equal and reclaim a resource while it was still borrowed.
   Use `assocLBO`, `assocRBO`, `assocBorrowL`, `assocBorrowR`, `assocLendL` or `assocLendR` instead.
-- `Clone` for `Ref` requires `Clone` of the contents instead of `Dupable`, since cloning through `Dupable` could consume the original or hand it to the clone while a `Share` could still read it.
+- `modifyBoxedVector` requires `Movable a` and passes every element through `move` on the way out, one extra \(O(n)\) pass: its callback could store a linearly owned value, such as a `Ref`, into the GC-owned result.
+- `modifyBoxedMVector` is renamed `unsafeModifyBoxedMVector`, with the same `Movable` requirement.
+  The caller keeps the storage, so after catching an exception from it the storage must not be read or reused.
+  The old name remains only as a compile-time error that names the replacement and that obligation.
+- `Clone` for `Ref`, the boxed `Vector` and the multiplicity vector requires `Clone` of the contents instead of `Dupable`, since cloning through `Dupable` could consume the original or hand it to the clone while a `Share` could still read it.
   A `Copyable` type gets the instance with `deriving via AsCopyable T instance Clone T`, a record or sum of clonable fields with `deriving anyclass instance Clone T` and a linear-generics `Generic` instance, and an immutable type such as `Text` can be stored as `Ur Text`.
   Contents that are `Clone` but not `Dupable`, as in `Ref (Vector (Ref Int))`, can now be cloned.
 - The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)` or a `(<:)` instance for `Maybe`; delete the orphan.
@@ -50,6 +54,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### New
 
+- `Consumable` for the boxed `Vector` of `Data.Vector.Mutable.Linear.Borrow`, which gives a vector of non-`Movable` elements, such as `Ref`s, a way out.
 - `Clone` for `Ur`, `Sum`, `Product`, `Min`, `Max`, `Arg` and `Complex`.
 - `Clone` for the owned hash map of `Data.HashMap.RobinHood.Mutable.Linear`, which copies its slot array; the borrow-aware hash map clones through it.
 - `DistributesAlias` for `NonEmpty`.
@@ -57,12 +62,18 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
 - `Control.Monad.Borrow.Pure.BO.Unsafe` exports `restoreWithEnd`, `reviveAliasWithEnd#`, `endHere` and `withEndL`, for a delimiter of your own that discharges an `After`.
 
+### Clarified
+
+- The callback of `unsafeInplace` must only rearrange elements, never duplicate, drop or replace one; `unsafeFromMutable` requires every element to be initialised.
+
 ### Performance
 
 - `parBO` is slower and allocates more, for its exception handling: a fork-join whose branches do little is noticeably slower, and the divide-and-conquer FFT and quicksort built on `parBO` slightly so.
   Its finished threads also stay in memory longer.
 - `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.
 - Owner-level operations on a `Ref` are slower when the program runs on several capabilities, and unchanged on one.
+- `clone` of a boxed vector of references allocates about 25% more than 0.1.0.0, 4.16 MB against 3.31 MB per clone of 100,000 `Ref Int`s, because each element's clone is a new `Ref`, allocated when the clone is taken rather than left as a thunk.
+  `clone` of a vector of values such as `Int` allocates exactly what it did in 0.1.0.0.
 - Stealing work from the deque of `Control.Concurrent.Queue.ChaseLev` is slower, more so on x86-64, though the work-stealing quicksort and FFT show no measurable slowdown.
 - Allocations that take a `Linearly` token, such as `Ref.new` and the constructors of the vectors, are slightly slower.
 - `foldBorrow` over a list or `NonEmpty` allocates more.

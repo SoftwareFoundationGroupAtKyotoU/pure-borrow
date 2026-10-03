@@ -32,7 +32,7 @@ module Control.Monad.Borrow.Pure (
   -- ** Lifetime
   Lifetime,
   type (/\),
-  type (<=) (),
+  type (<=),
   type (>=),
   type Static,
   neverEnds,
@@ -394,11 +394,11 @@ There is an experimental interface abstracting the reborrowable borrows in "Cont
 @
 type 'Mut' α a = 'Borrow' 'Mut α a
 type 'Share' α a = 'Borrow' 'Share α a
-type 'Borrow' bk α a = 'Alias' ('Borrow bk) α a
-type 'Lend' α a = 'Alias' 'Lend α a
+type 'Borrow' bk α a = 'Alias' ('Borrow bk α) a
+type 'Lend' α a = 'Alias' ('Lend α) a
 @
 
-Hence, if you see @'Borrow' bk α a@ in a function, it can be either 'Mut' or 'Share'. If you see @'Alias' ak α a@, it may also be a 'Lend'.
+Hence, if you see @'Borrow' bk α a@ in a function, it can be either 'Mut' or 'Share'. If you see @'Alias' ak a@, it may also be a 'Lend'.
 
 "Control.Monad.Borrow.Pure.Experimental.Borrows" provides an experimental API for treating a bundle of multiple borrows in the same lifetime at once.
 
@@ -459,7 +459,8 @@ For possibly mutable types, you can still 'clone' them out of borrows linearly i
 'clone' :: 'Clone' a => 'Share' α a %1 -> 'BO' α a
 @
 
-This includes, for example, 'Data.Ref.Linear.Ref' or 'Data.Vector.Mutable.Linear.Borrow.Vector'.
+This includes, for example, a 'Data.Ref.Linear.Ref' or a 'Data.Vector.Mutable.Linear.Borrow.Vector' whose contents are 'Clone' themselves.
+Each piece of the contents is cloned through a 'Share' of it, so the original is only read.
 The fact that the 'clone'd value is only accessible inside 'BO' ensures that we cannot leak mutable states inside @a@ into /unrestricted/ contexts -- otherwise, we can introduce mutable values into unrestricted context via @'move' :: 'Share' α a -> 'Ur' ('Share' α a)@.
 
 In performance-sensitive loops, moving a whole structured value can be a sign
@@ -473,8 +474,8 @@ unrestricted fields in 'Ur' rather than moving the enclosing structure.
 You can do case-splitting on 'Borrow's - for example:
 
 @
-'splitPair' :: 'Alias' ak α (a, b) %1 -> ('Alias' ak α a, 'Alias' ak α b)
-'splitEither' :: 'Alias' ak α ('Either' a b) %1 -> 'Either' ('Alias' ak α a) ('Alias' ak α b)
+'splitPair' :: 'Alias' ak (a, b) %1 -> ('Alias' ak a, 'Alias' ak b)
+'splitEither' :: 'Alias' ak ('Either' a b) %1 -> 'Either' ('Alias' ak a) ('Alias' ak b)
 @
 
 For other datatypes, you can use 'split' to split general parametric types into borrows.
@@ -483,6 +484,13 @@ It is morally an instance method of the 'DistributesAlias' class, and you can de
 We also provide experimental splitting on record types in "Data.Record.Linear.Borrow.Experimental.PatternMatch" and "Data.Record.Linear.Borrow.Experimental.Split".
 -}
 
+{- | Run a computation on every focus of a traversal in parallel, through 'Par'.
+
+An exception from any focus is rethrown unchanged, but unlike @mapConcurrently@ from @async@, the computations for the other foci are not all stopped.
+The traversal nests one 'parBO' per focus, and a failure stops only the computation it is paired with.
+A list is traversed with the rest of the list nested to the right, so a failure of the last element stops every other element on its way up, while a failure of the first element stops only the computation holding the rest of the list, whose elements then run to completion.
+See 'parBO' for when the exception arrives.
+-}
 mapConcurrentlyOf ::
   Traversal s t a b ->
   (a %1 -> BO α b) ->
@@ -490,6 +498,7 @@ mapConcurrentlyOf ::
   BO α t
 mapConcurrentlyOf l f = runPar . traverseOf l (Par . f)
 
+-- | 'mapConcurrentlyOf' with its arguments flipped.
 forConcurrentlyOf ::
   Traversal s t a b ->
   s %1 ->

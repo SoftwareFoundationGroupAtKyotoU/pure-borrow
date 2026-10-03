@@ -70,24 +70,40 @@ instance NFData (Witness'' a b) where
 
 deriving instance Show (Witness'' a b)
 
-type (<=) :: Lifetime -> Lifetime -> Constraint
-class α <= β where
+{- | @α@ ends no later than @β@.
+
+The safe modules export only its synonym '(<=)', so no instance can be written against them.
+-}
+type SubLifetime :: Lifetime -> Lifetime -> Constraint
+class SubLifetime α β where
   -- | The witness of the relation.
   witness :: Witness α β
+
+{- | @α <= β@: the lifetime @α@ ends no later than @β@, so anything valid for @β@ is valid for @α@.
+
+It is a synonym, so that the safe modules can export it without letting anyone write an instance; GHC's messages name the class behind it, @SubLifetime@.
+The library derives it from these rules: every lifetime ends no later than itself and than 'Static'; @α /\\ β@ ends no later than @α@ and than @β@; and @α@ ends no later than @β /\\ γ@ when it ends no later than both.
+It does not chain hypotheses: from @α >= β@ and @β >= γ@ in a signature it does not derive @α >= γ@, and GHC reports that it could not deduce @γ <=!! α@; add @α >= γ@ to the signature.
+In general, when GHC asks for a constraint such as @β <=!! α@, which the safe modules do not name, add @α >= β@ to the signature.
+When GHC instead reports overlapping instances for @SubLifetime@ with a lifetime it made up, such as @α0@, it cannot tell which lifetime is meant: with @step :: (α >= β) => Share α Int -> Share β Int@, the intermediate one of @step (step s)@, say, or one that occurs only in constraints.
+Name that lifetime with a type application, as in @step \@α \@γ (step \@α \@α s)@, or drop the constraints on a lifetime that does not occur in the type.
+-}
+type (<=) :: Lifetime -> Lifetime -> Constraint
+type (<=) = SubLifetime
 
 -- | Flipped version of '<='.
 type (>=) :: Lifetime -> Lifetime -> Constraint
 type α >= β = β <= α
 
-instance (α <= β, α <= γ) => α <= β /\ γ where
+instance (α <= β, α <= γ) => SubLifetime α (β /\ γ) where
   witness = Inf witness witness
   {-# NOINLINE witness #-}
 
-instance α <= Static where
+instance SubLifetime α Static where
   witness = Top
   {-# NOINLINE witness #-}
 
-instance {-# INCOHERENT #-} (α <=! β) => α <= β where
+instance {-# INCOHERENT #-} (α <=! β) => SubLifetime α β where
   witness = Inherit' witness'
   {-# NOINLINE witness #-}
 

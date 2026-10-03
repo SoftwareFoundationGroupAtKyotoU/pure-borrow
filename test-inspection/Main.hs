@@ -1,5 +1,6 @@
 module Main (main) where
 
+import PureBorrow.Inspection.Barriers qualified as Barriers
 import PureBorrow.Inspection.Fft qualified as Fft
 import PureBorrow.Inspection.GenericGrowableUnrestricted qualified as GenericGrowableUnrestricted
 import PureBorrow.Inspection.MultiStoreScan qualified as MultiStoreScan
@@ -13,10 +14,12 @@ main =
   defaultMain $
     testGroup
       "optimized Core"
-      [ Fft.tests
+      [ Barriers.tests
+      , Fft.tests
       , GenericGrowableUnrestricted.tests
       , MultiStoreScan.tests
       , QSort.tests
       , Sublifetime.tests
+      , Sublifetime.barrierTests
       , WorklistResume.tests
       ]

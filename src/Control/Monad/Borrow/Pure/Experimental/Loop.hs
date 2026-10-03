@@ -44,7 +44,6 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
   toListOf,
   toList,
   foldBorrow,
-  foldBorrowOf,
   GenericFoldable,
   genericFoldMap,
   ifoldMapDefault,
@@ -53,7 +52,6 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.BO.Unsafe
 import Control.Monad.Borrow.Pure.Experimental.Reborrowable
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Bifunctor.Linear qualified as Bi
@@ -116,13 +114,14 @@ ifoldMapDefault :: (Foldable t) => IndexedFold Int (t a) a
 {-# INLINE ifoldMapDefault #-}
 ifoldMapDefault = ifoldMapDefaultOf foldMap
 
-foldBorrowOf :: Fold s a %1 -> Fold (Borrow bk α s) (Borrow bk α a)
-{-# INLINE foldBorrowOf #-}
-foldBorrowOf fld k = fld (k . UnsafeAlias) . unsafeUnalias
+{- | Fold over the borrows of the elements of a borrowed structure.
 
-foldBorrow :: (Foldable t) => Fold (Borrow bk α (t a)) (Borrow bk α a)
+The structure is split with 'split' first, so this is available only for immutable containers, such as lists and 'Maybe'.
+A mutable container has no 'DistributesAlias' instance: folding it through a borrow would read its elements in pure code, where the reads could run after the borrow's lifetime had ended.
+-}
+foldBorrow :: (Foldable t, DistributesAlias t) => Fold (Borrow bk α (t a)) (Borrow bk α a)
 {-# INLINE foldBorrow #-}
-foldBorrow = foldBorrowOf foldMap
+foldBorrow k = foldMap k . split
 
 traverse_ :: (Foldable t, Data.Applicative m) => (a %1 -> m ()) -> t a %1 -> m ()
 {-# INLINE traverse_ #-}

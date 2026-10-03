@@ -185,12 +185,18 @@ test-suite pure-borrow-test
   other-modules:
     Control.Concurrent.DivideConquer.LinearSpec
     Control.Concurrent.Queue.ChaseLevSpec
+    Control.Monad.Borrow.Pure.BO.TypingCases
     Control.Monad.Borrow.Pure.BOSpec
     Control.Monad.Borrow.Pure.CopyableSpec
     Control.Monad.Borrow.Pure.Experimental.Borrows.TypingCases
     Control.Monad.Borrow.Pure.Experimental.BorrowsSpec
+    Control.Monad.Borrow.Pure.Experimental.Loop.TypingCases
+    Control.Monad.Borrow.Pure.Experimental.LoopSpec
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
+    Control.Monad.Borrow.Pure.ParBOSpec
+    Data.Coerce.Directed.TypingCases
+    Data.Coerce.DirectedSpec
     Data.HashMap.RobinHood.Mutable.Linear.BorrowSpec
     Data.HashMap.RobinHood.Mutable.LinearSpec
     Data.HashMap.RobinHood.Mutable.LinearSpec.Cases
@@ -249,6 +255,7 @@ test-suite pure-borrow-inspection
   main-is: Main.hs
   -- cabal-gild: discover test-inspection --exclude=test-inspection/Main.hs
   other-modules:
+    PureBorrow.Inspection.Barriers
     PureBorrow.Inspection.Fft
     PureBorrow.Inspection.Flags
     PureBorrow.Inspection.GenericGrowableUnrestricted
@@ -272,6 +279,8 @@ test-suite pure-borrow-inspection
     tasty-inspection-testing,
     vector,
 
+-- The owner kernels and the forced-token kernels, with GHC's state hack switched off.
+-- The flag is set for the whole component because it did not take effect in one module's OPTIONS_GHC of pure-borrow-test; see test-no-state-hack/Main.hs.
 test-suite pure-borrow-doctests
   import: defaults
 
@@ -349,6 +358,7 @@ benchmark pure-borrow-bench
   -- cabal-gild: discover bench/suite --exclude=bench/suite/Main.hs
   other-modules:
     PureBorrow.Bench.CopyAt
+    PureBorrow.Bench.ForkJoin
     PureBorrow.Bench.Growable
     PureBorrow.Bench.HashMap
     PureBorrow.Bench.Ingredients

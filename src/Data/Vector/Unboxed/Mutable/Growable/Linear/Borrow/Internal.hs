@@ -16,7 +16,6 @@ module Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow.Internal (
 ) where
 
 import Control.Functor.Linear qualified as Control
-import Control.Monad.Borrow.Pure.Affine (aff, pop)
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Internal (unsafeSrunBO_)
 import Control.Monad.Borrow.Pure.BO.Unsafe
@@ -25,8 +24,7 @@ import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )
-import Data.Ref.Linear qualified as Ref
-import Data.Ref.Linear.Borrow qualified as RefBorrow
+import Data.Ref.Linear.Internal qualified as Ref
 import Data.Unrestricted.Linear qualified as Ur
 import Data.Vector.Unboxed qualified as U
 import Data.Vector.Unboxed.Mutable qualified as UM
@@ -273,55 +271,48 @@ consumeInitialized =
               go (index + 1)
      in unsafePerformIO (go 0)
 
-toRefMut ::
-  Mut α (GrowableVector a) %1 ->
-  Mut α (Ref.Ref (Header a))
-{-# INLINE toRefMut #-}
-toRefMut =
-  unsafeMapAlias
-    (Unsafe.toLinear \(GrowableVector ref) -> ref)
+-- | Read the header inside 'BO'. See Note [Growable header reads] in "Data.Vector.Mutable.Growable.Linear.Borrow.Internal".
+readHeader :: GrowableVector a -> BO β (Ur (Int, UM.IOVector a))
+{-# INLINE readHeader #-}
+readHeader (GrowableVector ref) =
+  (Unsafe.toLinear \(Header logicalSize buffer) -> Ur (logicalSize, buffer))
+    Control.<$> Ref.unsafeReadRefBO ref
 
-fromRefMut ::
-  Mut α (Ref.Ref (Header a)) %1 ->
-  Mut α (GrowableVector a)
-{-# INLINE fromRefMut #-}
-fromRefMut =
-  unsafeMapAlias
-    (Unsafe.toLinear GrowableVector)
-
+-- | Read, transform and write back the header inside 'BO'. See Note [Growable header reads] in "Data.Vector.Mutable.Growable.Linear.Borrow.Internal".
 withHeader ::
   (α >= β) =>
   (Header a %1 -> BO β (result, Header a)) %1 ->
   Mut α (GrowableVector a) %1 ->
   BO β (result, Mut α (GrowableVector a))
 {-# INLINE withHeader #-}
-withHeader action vector = Control.do
-  (result, ref) <- RefBorrow.update action (toRefMut vector)
-  Control.pure (result, fromRefMut ref)
+withHeader =
+  Unsafe.toLinear2 \action vector@(UnsafeAlias (GrowableVector ref)) -> Control.do
+    header <- Ref.unsafeReadRefBO ref
+    (result, header) <- action header
+    () <- Ref.unsafeWriteRefBO ref header
+    Control.pure (result, vector)
 
 -- | \(O(1)\). Return logical size and thread the borrow.
 size ::
-  (U.Unbox a) =>
+  (U.Unbox a, α >= β) =>
   Borrow bk α (GrowableVector a) %1 ->
-  (Ur Int, Borrow bk α (GrowableVector a))
+  BO β (Ur Int, Borrow bk α (GrowableVector a))
 {-# INLINE size #-}
 size =
-  Unsafe.toLinear \vector@(UnsafeAlias (GrowableVector ref)) ->
-    case Ref.unsafeReadRef ref of
-      (Header logicalSize _, duplicateRef) ->
-        pop (aff duplicateRef) `lseq` (Ur logicalSize, vector)
+  Unsafe.toLinear \vector@(UnsafeAlias growable) -> Control.do
+    Ur (logicalSize, _) <- readHeader growable
+    Control.pure (Ur logicalSize, vector)
 
 -- | \(O(1)\). Return allocation capacity and thread the borrow.
 capacity ::
-  (U.Unbox a) =>
+  (U.Unbox a, α >= β) =>
   Borrow bk α (GrowableVector a) %1 ->
-  (Ur Int, Borrow bk α (GrowableVector a))
+  BO β (Ur Int, Borrow bk α (GrowableVector a))
 {-# INLINE capacity #-}
 capacity =
-  Unsafe.toLinear \vector@(UnsafeAlias (GrowableVector ref)) ->
-    case Ref.unsafeReadRef ref of
-      (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq` (Ur (UM.length buffer), vector)
+  Unsafe.toLinear \vector@(UnsafeAlias growable) -> Control.do
+    Ur (_, buffer) <- readHeader growable
+    Control.pure (Ur (UM.length buffer), vector)
 
 -- | Borrow an initialized element at an index.
 get ::
@@ -330,19 +321,20 @@ get ::
   Borrow bk α (GrowableVector a) %1 ->
   BO β (Borrow bk α a)
 {-# INLINE get #-}
-get index vector =
-  case size vector of
-    (Ur logicalSize, vector) ->
-      if index < 0 || index >= logicalSize
-        then
-          error
-            ( "get: index "
-                <> show index
-                <> " out of bounds for length "
-                <> show logicalSize
-            )
-            vector
-        else unsafeGet index vector
+get index =
+  Unsafe.toLinear \(UnsafeAlias growable) -> Control.do
+    Ur (logicalSize, buffer) <- readHeader growable
+    if index < 0 || index >= logicalSize
+      then
+        error
+          ( "get: index "
+              <> show index
+              <> " out of bounds for length "
+              <> show logicalSize
+          )
+      else
+        UnsafeAlias
+          Control.<$> unsafeSystemIOToBO (UM.unsafeRead buffer index)
 
 -- | Unchecked 'get'. The index must satisfy @0 <= index < size@.
 unsafeGet ::
@@ -351,13 +343,11 @@ unsafeGet ::
   Borrow bk α (GrowableVector a) %1 ->
   BO β (Borrow bk α a)
 {-# INLINE unsafeGet #-}
-unsafeGet =
-  Unsafe.toLinear2 \index (UnsafeAlias (GrowableVector ref)) ->
-    case Ref.unsafeReadRef ref of
-      (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          UnsafeAlias
-            Control.<$> unsafeSystemIOToBO (UM.unsafeRead buffer index)
+unsafeGet index =
+  Unsafe.toLinear \(UnsafeAlias growable) -> Control.do
+    Ur (_, buffer) <- readHeader growable
+    UnsafeAlias
+      Control.<$> unsafeSystemIOToBO (UM.unsafeRead buffer index)
 
 -- | Borrow the first initialized element.
 head ::
@@ -381,12 +371,14 @@ last ::
   Borrow bk α (GrowableVector a) %1 ->
   BO β (Borrow bk α a)
 {-# INLINE last #-}
-last vector =
-  case size vector of
-    (Ur logicalSize, vector) ->
-      if logicalSize <= 0
-        then error "last: empty vector" vector
-        else unsafeGet (logicalSize - 1) vector
+last =
+  Unsafe.toLinear \(UnsafeAlias growable) -> Control.do
+    Ur (logicalSize, buffer) <- readHeader growable
+    if logicalSize <= 0
+      then error "last: empty vector"
+      else
+        UnsafeAlias
+          Control.<$> unsafeSystemIOToBO (UM.unsafeRead buffer (logicalSize - 1))
 
 -- | Unchecked 'last'. The vector must be non-empty.
 unsafeLast ::
@@ -394,9 +386,11 @@ unsafeLast ::
   Borrow bk α (GrowableVector a) %1 ->
   BO β (Borrow bk α a)
 {-# INLINE unsafeLast #-}
-unsafeLast vector =
-  case size vector of
-    (Ur logicalSize, vector) -> unsafeGet (logicalSize - 1) vector
+unsafeLast =
+  Unsafe.toLinear \(UnsafeAlias growable) -> Control.do
+    Ur (logicalSize, buffer) <- readHeader growable
+    UnsafeAlias
+      Control.<$> unsafeSystemIOToBO (UM.unsafeRead buffer (logicalSize - 1))
 
 -- | Copy an initialized element through a shared borrow.
 copyAt ::
@@ -405,9 +399,25 @@ copyAt ::
   Share α (GrowableVector a) ->
   BO β (Ur a)
 {-# INLINE copyAt #-}
-copyAt index vector = Control.do
-  Ur !value <- move Control.<$> get index vector
-  Control.pure $! Ur $! copy value
+copyAt index (UnsafeAlias growable) = Control.do
+  Ur (logicalSize, buffer) <- readHeader growable
+  if index < 0 || index >= logicalSize
+    then
+      error
+        ( "copyAt: index "
+            <> show index
+            <> " out of bounds for length "
+            <> show logicalSize
+        )
+    else copyElement buffer index
+
+-- | Copy an element out of a buffer view obtained from 'readHeader'.
+copyElement :: (U.Unbox a, Copyable a) => UM.IOVector a -> Int -> BO β (Ur a)
+{-# INLINE copyElement #-}
+copyElement buffer index = unsafeSystemIOToBO do
+  !value <- UM.unsafeRead buffer index
+  let !copied = copy (UnsafeAlias value)
+  NonLinear.pure (Ur copied)
 
 -- | Copy an initialized element and retain the mutable borrow.
 copyAtMut ::
@@ -416,24 +426,18 @@ copyAtMut ::
   Mut α (GrowableVector a) %1 ->
   BO β (Ur a, Mut α (GrowableVector a))
 {-# INLINE copyAtMut #-}
-copyAtMut =
-  Unsafe.toLinear2 \index vector@(UnsafeAlias (GrowableVector ref)) ->
-    case Ref.unsafeReadRef ref of
-      (Header logicalSize buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          if index < 0 || index >= logicalSize
-            then
-              error
-                ( "copyAtMut: index "
-                    <> show index
-                    <> " out of bounds for length "
-                    <> show logicalSize
-                )
-                vector
-            else unsafeSystemIOToBO do
-              !value <- UM.unsafeRead buffer index
-              let !copied = copy (UnsafeAlias value)
-              NonLinear.pure (Ur copied, vector)
+copyAtMut index =
+  Unsafe.toLinear \vector@(UnsafeAlias growable) -> Control.do
+    Ur (logicalSize, buffer) <- readHeader growable
+    if index < 0 || index >= logicalSize
+      then
+        error
+          ( "copyAtMut: index "
+              <> show index
+              <> " out of bounds for length "
+              <> show logicalSize
+          )
+      else (\(Ur copied) -> (Ur copied, vector)) Control.<$> copyElement buffer index
 
 -- | Replace an initialized element and return the displaced value.
 set ::
@@ -443,20 +447,20 @@ set ::
   Mut α (GrowableVector a) %1 ->
   BO β (a, Mut α (GrowableVector a))
 {-# INLINE set #-}
-set index value vector =
-  case size vector of
-    (Ur logicalSize, vector) ->
-      if index < 0 || index >= logicalSize
-        then
-          error
-            ( "set: index "
-                <> show index
-                <> " out of bounds for length "
-                <> show logicalSize
-            )
-            value
-            vector
-        else unsafeSet index value vector
+set index =
+  Unsafe.toLinear2 \ !value vector@(UnsafeAlias growable) -> Control.do
+    Ur (logicalSize, buffer) <- readHeader growable
+    if index < 0 || index >= logicalSize
+      then
+        error
+          ( "set: index "
+              <> show index
+              <> " out of bounds for length "
+              <> show logicalSize
+          )
+      else unsafeSystemIOToBO do
+        !oldValue <- UM.unsafeExchange buffer index value
+        NonLinear.pure (oldValue, vector)
 
 -- | Unchecked 'set'. The index must satisfy @0 <= index < size@.
 unsafeSet ::
@@ -466,14 +470,12 @@ unsafeSet ::
   Mut α (GrowableVector a) %1 ->
   BO β (a, Mut α (GrowableVector a))
 {-# INLINE unsafeSet #-}
-unsafeSet =
-  Unsafe.toLinear3 \index !value vector@(UnsafeAlias (GrowableVector ref)) ->
-    case Ref.unsafeReadRef ref of
-      (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          unsafeSystemIOToBO do
-            !oldValue <- UM.unsafeExchange buffer index value
-            NonLinear.pure (oldValue, vector)
+unsafeSet index =
+  Unsafe.toLinear2 \ !value vector@(UnsafeAlias growable) -> Control.do
+    Ur (_, buffer) <- readHeader growable
+    unsafeSystemIOToBO do
+      !oldValue <- UM.unsafeExchange buffer index value
+      NonLinear.pure (oldValue, vector)
 
 -- | Linearly transform an initialized element and return an auxiliary result.
 update ::
@@ -483,20 +485,35 @@ update ::
   Mut α (GrowableVector a) %1 ->
   BO β (result, Mut α (GrowableVector a))
 {-# INLINE update #-}
-update index action vector =
-  case size vector of
-    (Ur logicalSize, vector) ->
-      if index < 0 || index >= logicalSize
-        then
-          error
-            ( "update: index "
-                <> show index
-                <> " out of bounds for length "
-                <> show logicalSize
-            )
-            action
-            vector
-        else unsafeUpdate index action vector
+update index =
+  Unsafe.toLinear2 \action vector@(UnsafeAlias growable) -> Control.do
+    Ur (logicalSize, buffer) <- readHeader growable
+    if index < 0 || index >= logicalSize
+      then
+        error
+          ( "update: index "
+              <> show index
+              <> " out of bounds for length "
+              <> show logicalSize
+          )
+      else updateElement buffer index action vector
+
+-- | Update an element of a buffer view obtained from 'readHeader', then hand back the growable borrow.
+updateElement ::
+  (U.Unbox a) =>
+  UM.IOVector a ->
+  Int ->
+  (a %1 -> BO β (result, a)) ->
+  Mut α (GrowableVector a) ->
+  BO β (result, Mut α (GrowableVector a))
+{-# INLINE updateElement #-}
+updateElement buffer index action vector = Control.do
+  value <- unsafeSystemIOToBO (UM.unsafeRead buffer index)
+  (!result, !updatedValue) <- action value
+  () <-
+    unsafeSystemIOToBO
+      (Unsafe.toLinear3 UM.unsafeWrite buffer index updatedValue)
+  Control.pure (result, vector)
 
 {- | Unchecked 'update'. The index must satisfy @0 <= index < size@.
 
@@ -511,16 +528,9 @@ unsafeUpdate ::
   BO β (result, Mut α (GrowableVector a))
 {-# INLINE unsafeUpdate #-}
 unsafeUpdate index =
-  Unsafe.toLinear2 \action vector@(UnsafeAlias (GrowableVector ref)) ->
-    case Ref.unsafeReadRef ref of
-      (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq` Control.do
-          value <- unsafeSystemIOToBO (UM.unsafeRead buffer index)
-          (!result, !updatedValue) <- action value
-          () <-
-            unsafeSystemIOToBO
-              (Unsafe.toLinear3 UM.unsafeWrite buffer index updatedValue)
-          Control.pure (result, vector)
+  Unsafe.toLinear2 \action vector@(UnsafeAlias growable) -> Control.do
+    Ur (_, buffer) <- readHeader growable
+    updateElement buffer index action vector
 
 -- | Linearly transform an initialized element.
 modify ::
@@ -546,26 +556,20 @@ swap ::
   Int ->
   BO β (Mut α (GrowableVector a))
 {-# INLINE swap #-}
-swap vector first second =
-  case size vector of
-    (Ur logicalSize, vector) ->
-      if first
-        < 0
-        || first
-        >= logicalSize
-        || second
-        < 0
-        || second
-        >= logicalSize
-        then
-          error
-            ( "swap: indices "
-                <> show (first, second)
-                <> " out of bounds for length "
-                <> show logicalSize
-            )
-            vector
-        else unsafeSwap vector first second
+swap =
+  Unsafe.toLinear3 \vector@(UnsafeAlias growable) first second -> Control.do
+    Ur (logicalSize, buffer) <- readHeader growable
+    if first < 0 || first >= logicalSize || second < 0 || second >= logicalSize
+      then
+        error
+          ( "swap: indices "
+              <> show (first, second)
+              <> " out of bounds for length "
+              <> show logicalSize
+          )
+      else unsafeSystemIOToBO do
+        UM.unsafeSwap buffer first second
+        NonLinear.pure vector
 
 -- | Unchecked 'swap'. Both indices must satisfy @0 <= index < size@.
 unsafeSwap ::
@@ -576,13 +580,11 @@ unsafeSwap ::
   BO β (Mut α (GrowableVector a))
 {-# INLINE unsafeSwap #-}
 unsafeSwap =
-  Unsafe.toLinear3 \vector@(UnsafeAlias (GrowableVector ref)) first second ->
-    case Ref.unsafeReadRef ref of
-      (Header _ buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          unsafeSystemIOToBO do
-            UM.unsafeSwap buffer first second
-            NonLinear.pure vector
+  Unsafe.toLinear3 \vector@(UnsafeAlias growable) first second -> Control.do
+    Ur (_, buffer) <- readHeader growable
+    unsafeSystemIOToBO do
+      UM.unsafeSwap buffer first second
+      NonLinear.pure vector
 
 -- | Ensure at least the requested absolute capacity.
 reserve ::
@@ -743,27 +745,22 @@ checkedAdd operation left right
 
 {- | Project a growable borrow to its fixed initialized prefix.
 
-The projection preserves borrow kind and lifetime and exposes no spare
-capacity or growth operation.
+The projection preserves borrow kind and lifetime and exposes no spare capacity or growth operation.
+It reads the header inside 'BO', so the prefix it sees is the one current at this point of the computation.
+A shared result is bound linearly, like the result of any 'BO' action, while readers such as 'Data.Vector.Unboxed.Mutable.Linear.Borrow.copyAt' take a 'Share' unrestricted, so 'move' it before its first read: @Ur content \<- move Control.\<$\> getContents shared@.
 
-Where a transaction branches, prefer projecting once at its entry --
-@let %1 !content = 'getContents' borrow@ -- over projecting separately inside
-each branch. Both are correct and consume the growable occurrence exactly
-once; the entry form simply gives the optimizer one header read to place
-rather than one per surviving branch.
+Where a transaction branches, prefer projecting once at its entry -- @content <- 'getContents' borrow@ -- over projecting separately inside each branch.
+Both are correct and consume the growable occurrence exactly once; the entry form simply performs one header read rather than one per branch.
 -}
 getContents ::
-  (U.Unbox a) =>
+  (U.Unbox a, α >= β) =>
   Borrow bk α (GrowableVector a) %1 ->
-  Borrow bk α (Fixed.Vector a)
+  BO β (Borrow bk α (Fixed.Vector a))
 {-# INLINE getContents #-}
 getContents =
-  Unsafe.toLinear \(UnsafeAlias (GrowableVector ref)) ->
-    case Ref.unsafeReadRef ref of
-      (Header logicalSize buffer, duplicateRef) ->
-        pop (aff duplicateRef) `lseq`
-          UnsafeAlias
-            (Fixed.Internal.unsafeFromMutableSlice 0 logicalSize buffer)
+  Unsafe.toLinear \(UnsafeAlias growable) -> Control.do
+    Ur (logicalSize, buffer) <- readHeader growable
+    Control.pure $! UnsafeAlias (Fixed.Internal.unsafeFromMutableSlice 0 logicalSize buffer)
 
 -- | Borrow the fixed initialized prefix in a rank-2 no-growth scope.
 withContent ::
@@ -779,7 +776,8 @@ withContent =
   Unsafe.toLinear2 \vector action ->
     -- The growable borrow is handed back through `reviveAlias`, as the scalar delimiters do: see Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Pure.BO.Internal".
     unsafeSrunBO_ Control.do
-      result <- action (getContents (Unsafe.coerce vector))
+      contents <- getContents (Unsafe.coerce vector)
+      result <- action contents
       (result,) Control.<$> reviveAlias vector
 
 -- | A result-discarding variant of 'withContent'.

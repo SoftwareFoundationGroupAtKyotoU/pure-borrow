@@ -56,8 +56,8 @@ boxedGrowth =
       vector <- Growable.push 1 vector
       vector <- Growable.extend (V.fromList [2, 3]) vector
       vector <- Growable.reserve 10 vector
-      (Ur logicalSize, vector) <- Control.pure (Growable.size vector)
-      (Ur allocated, vector) <- Control.pure (Growable.capacity vector)
+      (Ur logicalSize, vector) <- Growable.size vector
+      (Ur allocated, vector) <- Growable.capacity vector
       let !() = consume vector
       pureAfter
         ( (logicalSize, allocated)
@@ -256,7 +256,7 @@ mirroredSurface =
         borrowM
           (Growable.fromList @V.Vector [1, 2] ownerLinear)
       vector <- Growable.reserveAdditional 5 vector
-      (Ur allocated, vector) <- Control.pure (Growable.capacity vector)
+      (Ur allocated, vector) <- Growable.capacity vector
       (Ur first, vector) <- Growable.head vector
       (Ur unsafeFirst, vector) <- Growable.unsafeHead vector
       (Ur final, vector) <- Growable.last vector
@@ -311,7 +311,8 @@ directContentLength =
         borrowM
           (Growable.fromList @V.Vector [1, 2] ownerLinear)
       vector <- Growable.reserve 16 vector
-      case Fixed.size (preserveMutContent vector) of
+      content <- preserveMutContent vector
+      case Fixed.size content of
         (Ur logicalSize, content) ->
           let !() = consume content
            in pureAfter (logicalSize, freezeBoxed (reclaim lend))
@@ -324,10 +325,10 @@ sharedContentProjection =
       (vector, lend) <-
         borrowM
           (Growable.fromList @V.Vector [1, 2, 3] ownerLinear)
-      share vector & \(Ur shared) ->
-        move (preserveShareContent shared) & \(Ur content) -> Control.do
-          Ur observed <- Fixed.copyAt 1 content
-          pureAfter (observed, freezeBoxed (reclaim lend))
+      share vector & \(Ur shared) -> Control.do
+        Ur content <- move Control.<$> preserveShareContent shared
+        Ur observed <- Fixed.copyAt 1 content
+        pureAfter (observed, freezeBoxed (reclaim lend))
 
 withContentMutation :: [Int]
 withContentMutation =
@@ -355,7 +356,7 @@ explicitContentMutation =
           (Growable.fromList @V.Vector [1, 2, 3] ownerLinear)
       ((), vector) <-
         reborrowing vector \short -> Control.do
-          content <- Control.pure (Growable.getContents short)
+          content <- Growable.getContents short
           content <- Fixed.write 1 20 content
           Control.pure (consume content)
       vector <- Growable.push 4 vector
@@ -386,7 +387,7 @@ reprojectionAfterGrowth =
         borrowM (Growable.fromList @V.Vector [1, 2, 3] ownerLinear)
       (Ur before, vector) <-
         reborrowing vector \short -> Control.do
-          let %1 !content = Growable.getContents short
+          content <- Growable.getContents short
           case Fixed.size content of
             (Ur logicalSize, content) -> Control.do
               content <- Fixed.write 0 100 content
@@ -394,7 +395,7 @@ reprojectionAfterGrowth =
       vector <- Growable.extend (V.fromList [4 .. 64]) vector
       (Ur after, vector) <-
         reborrowing vector \short -> Control.do
-          let %1 !content = Growable.getContents short
+          content <- Growable.getContents short
           case Fixed.size content of
             (Ur logicalSize, content) -> Control.do
               (Ur preserved, content) <- Fixed.get 0 content

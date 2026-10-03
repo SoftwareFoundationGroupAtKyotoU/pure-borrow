@@ -6,6 +6,20 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Breaking changes
 
+- In the three growable vector modules, `size`, `capacity` and `getContents` are `BO` actions.
+  As pure functions of a borrow they could run after the borrow's lifetime had ended and the vector had grown, and GHC could serve one read for another, so they returned stale sizes and contents:
+
+    ```haskell
+    -- before
+    getContents :: Borrow bk α (GrowableVector a) %1 -> Borrow bk α (Fixed.Vector a)
+    -- after
+    getContents :: (α >= β) => Borrow bk α (GrowableVector a) %1 -> BO β (Borrow bk α (Fixed.Vector a))
+    ```
+
+  Write `content <- getContents borrow`.
+  A shared projection is bound linearly, while readers such as `Fixed.copyAt` take a shared borrow unrestricted, so move it before reading, even once: `Ur content <- move Control.<$> getContents shared`.
+  Every other header read of those modules now happens inside `BO` as well, at its place in the sequence.
+  If GHC then asks for a constraint such as `β <=!! α` in a helper's signature, add `α >= β`.
 - `LinearOnlyWitness` now has a `representational` role instead of the `phantom` one it had before, which unsoundly allowed virtually any type to derive `LinearOnly`.
 - `nowStatic :: BO α (Now Static)` replaces the top-level `nowStatic :: Now Static`, and has moved to `Control.Monad.Borrow.Pure.BO`.
   The previous, pure `nowStatic` could unsoundly let a `Linearly` token spill into a non-linear context.
@@ -65,6 +79,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 ### Performance
 
 - `modifyBoxedVector` is slower by one pass over the vector.
+- The growable vectors read and write their header inline, in the state thread, where 0.1.0.0 made an out-of-line call: a `push` that grows an unboxed vector, and the plural scope benchmark that threads a bundle, allocate 28% less, and the other growable and scope benchmarks are unchanged.
 - `parBO` is slower and allocates more, for its exception handling: a fork-join whose branches do little is noticeably slower, and the divide-and-conquer FFT and quicksort built on `parBO` slightly so.
   Its finished threads also stay in memory longer.
 - `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.

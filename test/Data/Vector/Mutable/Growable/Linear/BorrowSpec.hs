@@ -150,10 +150,11 @@ applyOperations (operation : operations) vector =
     ReserveAdditional additional -> Control.do
       vector <- Growable.reserveAdditional additional vector
       applyOperations operations vector
-    Replace rawIndex value ->
-      case Growable.size vector of
-        (Ur 0, vector) -> applyOperations operations vector
-        (Ur logicalSize, vector) -> Control.do
+    Replace rawIndex value -> Control.do
+      (Ur logicalSize, vector) <- Growable.size vector
+      if logicalSize NonLinear.== 0
+        then applyOperations operations vector
+        else Control.do
           let !index = NonLinear.abs rawIndex `NonLinear.mod` logicalSize
           (old, vector) <- Growable.set index value vector
           applyOperations operations (consume old `lseq` vector)
@@ -196,13 +197,14 @@ runOperations initialCapacity operations =
       (vector, lend) <-
         borrowM (Growable.withCapacity initialCapacity ownerLinear)
       vector <- applyOperations operations vector
-      Growable.size vector & \(Ur logicalSize, vector) ->
-        Growable.capacity vector & \(Ur finalCapacity, vector) -> DataFlow.do
-          consume vector
-          pureAfter $
-            case Growable.toVector (reclaim lend) of
+      (Ur logicalSize, vector) <- Growable.size vector
+      (Ur finalCapacity, vector) <- Growable.capacity vector
+      consume vector `lseq`
+        pureAfter
+          ( case Growable.toVector (reclaim lend) of
               Ur frozen ->
                 Ur (V.toList frozen, logicalSize, finalCapacity)
+          )
 
 test_model :: TestTree
 test_model =
@@ -255,7 +257,8 @@ directProjection =
     runBO runLinear Control.do
       (vector, lend) <- borrowM (Growable.withCapacity 8 ownerLinear)
       vector <- Growable.extend (V.fromList [3, 4, 5]) vector
-      Fixed.size (Growable.getContents vector) & \(Ur logicalSize, contents) -> Control.do
+      contents <- Growable.getContents vector
+      Fixed.size contents & \(Ur logicalSize, contents) -> Control.do
         (Ur value, contents) <- Fixed.copyAtMut 2 contents
         let !() = consume contents
         pureAfter $
@@ -324,7 +327,8 @@ sharedContentProjection =
               Ur second <- Fixed.copyAt 1 contents
               Control.pure (first, second)
         move returnedSharedVector & \(Ur sharedVector) -> Control.do
-          Ur third <- Fixed.copyAt 2 (Growable.getContents sharedVector)
+          Ur content <- move Control.<$> Growable.getContents sharedVector
+          Ur third <- Fixed.copyAt 2 content
           let !() = consume sharedVector
           pureAfter
             ( (first, second, third)
@@ -351,7 +355,8 @@ sharedDiscardingContentScope =
               Ur second <- Fixed.copyAt 1 contents
               Control.pure (first + second)
         move returnedSharedVector & \(Ur sharedVector) -> Control.do
-          Ur last <- Fixed.copyAt 2 (Growable.getContents sharedVector)
+          Ur content <- move Control.<$> Growable.getContents sharedVector
+          Ur last <- Fixed.copyAt 2 content
           pureAfter
             ( last
             , freezeList (reclaim lend)

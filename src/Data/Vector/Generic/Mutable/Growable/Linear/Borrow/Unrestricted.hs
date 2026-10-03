@@ -16,6 +16,9 @@ fixed-size unrestricted vector borrow over exactly the initialized prefix.
 restores the growable borrow afterward. Growth remains unavailable until every
 fixed content borrow has ended.
 
+Every operation that reads the header -- 'size', 'capacity', 'getContents' and the element accessors alike -- is a @BO@ action: growth replaces the header, so a read has to be ordered with the operations around it, and has to happen while the borrow's lifetime lasts.
+A shared projection is bound linearly, while readers take a shared borrow unrestricted, so move it before reading from it, even once: @Ur content <- move Control.\<$\> getContents shared@.
+
 The owner and mutable backing are linear, but entries are not element-owned.
 Constructing, growing, cloning, discarding, and materializing a vector therefore
 do not invoke @Consumable@, @Movable@, @Copyable@, or @Dupable@ operations on

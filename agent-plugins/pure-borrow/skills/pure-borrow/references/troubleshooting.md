@@ -1,7 +1,7 @@
 # Troubleshooting pure-borrow code
 
 The diagnostic examples originated with GHC 9.12.4 and pure-borrow 0.1; the remedies below target the 0.2 API.
-Wording can name the hidden classes `Ended` or `SubLifetime` instead of their public synonyms, and varies between compilers.
+Wording varies between compilers.
 For general multiplicity errors, see the linear-haskell skill's troubleshooting reference first.
 
 ## `Couldn't match type 'Many' with 'One' arising from multiplicity of 'mvec'`

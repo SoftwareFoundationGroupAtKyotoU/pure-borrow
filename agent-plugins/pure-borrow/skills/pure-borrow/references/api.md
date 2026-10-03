@@ -8,12 +8,12 @@ Always check the Haddock of the installed version when in doubt.
 ```haskell
 -- Lifetime is a kind; Static is the lifetime that never ends.
 type (/\) :: Lifetime -> Lifetime -> Lifetime   -- meet: the longest lifetime shorter than both
-type (<=) :: Lifetime -> Lifetime -> Constraint  -- sealed synonym: α is a sublifetime of β
+type (<=) :: Lifetime -> Lifetime -> Constraint  -- class: α is a sublifetime of β
 type α >= β = β <= α
 
 type BO :: Lifetime -> Type -> Type             -- computations during α; a control monad (abstract)
 newtype After α a = After ((End α) => a)        -- post-processing once α has ended
-type End :: Lifetime -> Constraint              -- sealed synonym: evidence that α has ended
+type End :: Lifetime -> Constraint              -- class: evidence that α has ended
 
 type Alias :: AliasKind -> Type -> Type         -- common zero-cost representation
 type Borrow bk α a = Alias ('Borrow bk α) a     -- either Mut or Share

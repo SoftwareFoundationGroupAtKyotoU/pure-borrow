@@ -8,7 +8,7 @@ Application code should import only the safe modules (no suffix); the linear-has
 - **No suffix**: the safe public API.
 - **`.Internal`**: the real definitions and `Unsafe*` constructors, hidden from Haddock; some escape hatches, such as `unsafeCastBO`, live only here.
 - **`.Unsafe`**: trusted escape hatches.
-  `Control.Monad.Borrow.Pure.BO.Unsafe` exports `BO (..)`, `Alias (..)`, `unsafeUnalias`, `unsafeMapAlias`, `unsafeCastAlias`, `reviveAlias`, and the conversions between `BO` and `IO`, linear `IO`, and `ST`; `Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe` exports token constructors, `LinearOnly`/`LinearOnlyWitness`, and the hidden capability class `Ended`; the public `End` is a sealed synonym.
+  `Control.Monad.Borrow.Pure.BO.Unsafe` exports `BO (..)`, `Alias (..)`, `unsafeUnalias`, `unsafeMapAlias`, `unsafeCastAlias`, `reviveAlias`, and the conversions between `BO` and `IO`, linear `IO`, and `ST`; `Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe` exports token constructors, `LinearOnly`/`LinearOnlyWitness`, and `End` with its method.
   Import only the names you need, and treat every use as a proof obligation: write down the invariant it relies on and why it holds.
 
 ## An owner type
@@ -49,7 +49,7 @@ A typical mutable container:
   Match a linear token using `UnsafeLinearlyToken`, `UnsafeNowToken`, or `UnsafeEndToken`, passing the field on when converting one token into another.
   The old names are pattern synonyms and cannot match linear values.
   Never replace these types with nullary constructors or newtypes; a function returning two tokens must be `NOINLINE` and applied through `noinline`, since two equal-looking tokens can let GHC merge allocations.
-- Public `(<=)`, `End`, and `(<:)` constraints are sealed synonyms; changing their hidden instances is a lifetime-soundness change, not an application extension point.
+- The instances of `(<=)`, `End`, and `(<:)` decide lifetime soundness: never write one of `(<=)` or `End`, and give a type of your own `(<:)` only by deriving it via `Generically` or `AsCoercible`, which the role of its witness checks.
 
 ## Effects and inlining
 

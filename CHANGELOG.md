@@ -2,6 +2,14 @@
 
 ## 0.2.0.0 - unreleased
 
+Each breaking change closes a soundness hole: a program that typechecks against 0.1.0.0 using only the safe modules and breaks an invariant of the library.
+
+### Breaking changes
+
+- `LinearOnlyWitness` now has a `representational` role instead of the `phantom` one it had before, which unsoundly allowed virtually any type to derive `LinearOnly`.
+- `nowStatic :: BO α (Now Static)` replaces the top-level `nowStatic :: Now Static`, and has moved to `Control.Monad.Borrow.Pure.BO`.
+  The previous, pure `nowStatic` could unsoundly let a `Linearly` token spill into a non-linear context.
+
 ### Fixed
 
 - The work-stealing scheduler behind `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` could run a task twice, running the mutable borrows it carries twice, and lose another, so that the call never returned: `qsortDC` occasionally hung, and under load could return a vector it had not sorted.

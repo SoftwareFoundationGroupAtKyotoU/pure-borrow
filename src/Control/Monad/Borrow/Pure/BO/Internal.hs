@@ -74,6 +74,19 @@ askLinearly :: BO α Linearly
 {-# NOINLINE askLinearly #-}
 askLinearly = GHC.noinline $ Control.pure UnsafeLinearly
 
+{- | A witness that the 'Static' lifetime is ongoing, which it always is.
+
+To run a @'BO' 'Static'@ action inside @'BO' β@, 'Data.Coerce.Directed.upcast' it: 'Static' outlives every lifetime.
+This token is for the APIs that take a 'Now' explicitly: 'execBO' runs a @'BO' 'Static'@ action with it directly, while 'sexecBO' and 'Control.Monad.Borrow.Pure.BO.scope_' take an action at @'Static' '/\' β@, to which a @'BO' 'Static'@ action has to be upcast first.
+They hand the token back; drop it with @'consume' ('Control.Monad.Borrow.Pure.Affine.aff' now)@.
+
+Like 'askLinearly', it is only available inside 'BO', so the token is always bound linearly, and 'withLinearly' cannot turn it into an unrestricted 'Linearly'.
+-}
+nowStatic :: BO α (Now Static)
+-- NOINLINE for the same reason as 'askLinearly': every bind must yield a distinct token.
+{-# NOINLINE nowStatic #-}
+nowStatic = GHC.noinline $ Control.pure UnsafeNow
+
 asksLinearlyM :: (Linearly %1 -> BO α r) %1 -> BO α r
 {-# INLINE asksLinearlyM #-}
 asksLinearlyM k = Control.do

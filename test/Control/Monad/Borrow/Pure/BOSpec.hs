@@ -13,14 +13,18 @@ module Control.Monad.Borrow.Pure.BOSpec (
   module Control.Monad.Borrow.Pure.BOSpec,
 ) where
 
+import Control.Exception qualified as Exception
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
+import Control.Monad.Borrow.Pure.Affine qualified as Affine
 import Control.Monad.Borrow.Pure.BO qualified as BO
+import Control.Monad.Borrow.Pure.BO.TypingCases (badEscapeStaticLinearly, badTopLevelStaticNow)
 import Control.Monad.Borrow.Pure.Experimental.Borrows qualified as Borrows
 import Control.Monad.Borrow.Pure.Experimental.Reborrowable qualified as Reborrowable
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Functor.Linear qualified as Data
 import Data.HashMap.RobinHood.Mutable.Linear.Borrow qualified as HashMap
+import Data.List qualified as List
 import Data.Ref.Linear qualified as Ref
 import Data.Ref.Linear.Borrow qualified as RefBorrow
 import Data.Type.Equality ((:~:))
@@ -28,9 +32,9 @@ import Data.Vector qualified as V
 import Data.Vector.Mutable.Growable.Linear.Borrow qualified as Growable
 import Data.Vector.Unboxed qualified as U
 import Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow qualified as Unboxed
-import Prelude.Linear (Ur (..), consume, dup, lseq, unur, ($), (&))
+import Prelude.Linear (lseq, unur, ($), (&))
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, (@?=))
+import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 import Unsafe.Linear qualified as Unsafe
 import Prelude (Int, Maybe (..), otherwise, show, (+), (-), (<>), (>=))
 import Prelude qualified as NonLinear
@@ -568,3 +572,48 @@ test_scopeRestoresAUsableBorrow =
       ]
     counts :: [Int]
     counts = [1, 2, 3, 5, 17, 33, 1025]
+
+-- | An action whose type fixes it to the static lifetime.
+staticAction :: BO.BO Static Int
+{-# NOINLINE staticAction #-}
+staticAction = Control.pure 42
+
+-- | Run a @BO Static@ action from inside @BO@ with the token of 'BO.nowStatic'.
+staticScopeExec :: Int
+{-# NOINLINE staticScopeExec #-}
+staticScopeExec = linearly \lin -> runBO_ lin Control.do
+  now <- BO.nowStatic
+  case BO.execBO staticAction now of
+    (now, value) -> Control.pure (consume (Affine.aff now) `lseq` value)
+
+-- | The same, by upcasting the action into the current lifetime.
+staticScopeUpcast :: Int
+{-# NOINLINE staticScopeUpcast #-}
+staticScopeUpcast = linearly \lin -> runBO_ lin (upcast staticAction)
+
+test_nowStatic :: TestTree
+test_nowStatic =
+  testGroup
+    "nowStatic"
+    [ testCase "runs a BO Static action with execBO inside BO" do
+        staticScopeExec @?= 42
+    , testCase "a BO Static action can also be upcast into BO" do
+        staticScopeUpcast @?= 42
+    , expectDeferred "is not a top-level value" "Couldn't match expected type" badTopLevelStaticNow
+    , expectDeferred "cannot mint an unrestricted Linearly" "Movable Linearly" badEscapeStaticLinearly
+    ]
+  where
+    expectDeferred :: NonLinear.String -> NonLinear.String -> a -> TestTree
+    expectDeferred description fragment value =
+      testCase description do
+        result <- Exception.try @Exception.SomeException (Exception.evaluate value)
+        case result of
+          NonLinear.Left exception ->
+            assertBool
+              ("unexpected deferred type error: " <> Exception.displayException exception)
+              -- GHC wraps long types across lines, so compare with whitespace collapsed.
+              ( NonLinear.unwords (NonLinear.words fragment)
+                  `List.isInfixOf` NonLinear.unwords (NonLinear.words (Exception.displayException exception))
+              )
+          NonLinear.Right _ ->
+            assertFailure ("expected a deferred type error containing " <> fragment)

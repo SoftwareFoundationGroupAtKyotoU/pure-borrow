@@ -1,5 +1,21 @@
 # Revision history for pure-borrow
 
+## 0.2.0.0 - unreleased
+
+### Fixed
+
+- The work-stealing scheduler behind `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` could run a task twice, running the mutable borrows it carries twice, and lose another, so that the call never returned: `qsortDC` occasionally hung, and under load could return a vector it had not sorted.
+  Its deque's `stealHalf` claimed a batch of tasks with one compare-and-swap, sized from a count that could be out of date, while the owner, popping from the other end without one, could reach into the batch.
+  It now takes a batch one task at a time, and so may return fewer than half the tasks when the owner or another thief takes some meanwhile.
+  The deque, `Control.Concurrent.Queue.ChaseLev`, could also put its elements in the wrong slots when it grew, and hand out `undefined`; and on ARM64 a thief could take what a slot held before the owner's write to it.
+  Both are fixed as well.
+
+### Performance
+
+- The work-stealing deque's `stealHalf` takes a batch one task at a time, with a compare-and-swap and two barriers for each, where 0.1.0.0 claimed the batch with one compare-and-swap (see "Fixed").
+  In the quicksort and FFT benchmarks most steal attempts find nothing and a batch holds one or two tasks, so their work-stealing variants show no measurable change in interleaved runs against the old deque: a pooled ratio of 1.00, with a 95% interval of about ±7%, at `-N4` and `-N10`.
+  On x86-64 the barrier between a thief's reads of `top` and `bottom` is now a full fence on every steal attempt, whose cost was not measured.
+
 ## 0.1.0.0 - 2026-09-19
 
 ### Breaking changes

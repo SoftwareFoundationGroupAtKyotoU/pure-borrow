@@ -44,7 +44,8 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
   toListOf,
   toList,
   foldBorrow,
-  foldBorrowOf,
+  foldBorrowVia,
+  traverseBorrowOf_,
   GenericFoldable,
   genericFoldMap,
   ifoldMapDefault,
@@ -53,7 +54,6 @@ module Control.Monad.Borrow.Pure.Experimental.Loop (
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
-import Control.Monad.Borrow.Pure.BO.Unsafe
 import Control.Monad.Borrow.Pure.Experimental.Reborrowable
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Bifunctor.Linear qualified as Bi
@@ -116,13 +116,23 @@ ifoldMapDefault :: (Foldable t) => IndexedFold Int (t a) a
 {-# INLINE ifoldMapDefault #-}
 ifoldMapDefault = ifoldMapDefaultOf foldMap
 
-foldBorrowOf :: Fold s a %1 -> Fold (Borrow bk α s) (Borrow bk α a)
-{-# INLINE foldBorrowOf #-}
-foldBorrowOf fld k = fld (k . UnsafeAlias) . unsafeUnalias
+{- | Fold over the borrows of the elements of a borrowed structure.
 
-foldBorrow :: (Foldable t) => Fold (Borrow bk α (t a)) (Borrow bk α a)
+This is @'foldBorrowVia' 'split'@, so the container needs a 'DistributesAlias' instance, as lists, 'Maybe' and 'NonEmpty' have.
+-}
+foldBorrow :: (Foldable t, DistributesAlias t) => Fold (Borrow bk α (t a)) (Borrow bk α a)
 {-# INLINE foldBorrow #-}
-foldBorrow = foldBorrowOf foldMap
+foldBorrow k = foldBorrowVia split k
+
+-- | Fold over the borrows that a splitter, such as 'split', makes from a borrow.
+foldBorrowVia :: (Foldable f) => (Borrow bk α s %1 -> f (Borrow bk α a)) -> Fold (Borrow bk α s) (Borrow bk α a)
+{-# INLINE foldBorrowVia #-}
+foldBorrowVia sp k = foldMap k . sp
+
+-- | Run an action on each element that a 'Fold' visits, in order.
+traverseBorrowOf_ :: (Data.Applicative m) => Fold s a %1 -> (a %1 -> m ()) -> s %1 -> m ()
+{-# INLINE traverseBorrowOf_ #-}
+traverseBorrowOf_ fld k = unAp . fld (Ap . k)
 
 traverse_ :: (Foldable t, Data.Applicative m) => (a %1 -> m ()) -> t a %1 -> m ()
 {-# INLINE traverse_ #-}
@@ -286,6 +296,14 @@ instance (Foldable f, Foldable g) => Foldable (f :+: g) where
   foldMap f = \case
     L1 x -> foldMap f x
     R1 y -> foldMap f y
+  {-# INLINE foldMap #-}
+
+instance Foldable Par1 where
+  foldMap f (Par1 a) = f a
+  {-# INLINE foldMap #-}
+
+instance (Foldable f, Foldable g) => Foldable (f :.: g) where
+  foldMap f (Comp1 x) = foldMap (foldMap f) x
   {-# INLINE foldMap #-}
 
 type GenericFoldable t = (Generic1 t, Foldable (Rep1 t))

@@ -10,6 +10,10 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `nowStatic :: BO α (Now Static)` replaces the top-level `nowStatic :: Now Static`, and has moved to `Control.Monad.Borrow.Pure.BO`.
   The previous, pure `nowStatic` could unsoundly let a `Linearly` token spill into a non-linear context.
 - Fix the bug where the subtyping relation `(<:)` wrongly made `Many` a subtype of `One`, which allowed any nonlinear function to be unsoundly upcast into a linear one.
+- `Control.Monad.Borrow.Pure.Experimental.Loop.foldBorrowOf` is removed: it ran the `Fold` purely on the value behind a borrow, so reads of a mutable container were not ordered by `BO` and could see writes made after the borrow's lifetime.
+  Replace `foldBorrowOf fld` with `foldBorrowVia sp` for a splitter `sp` such as `split`.
+  `foldBorrow`, which was `foldBorrowOf foldMap`, is now `foldBorrowVia split`, so it requires `DistributesAlias t`.
+  It rejects a borrow of an `Either e a` or `(e, a)` with "Use splitEither directly!" or "Use splitPair instead!".
 
 ### Fixed
 
@@ -18,9 +22,13 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   It now takes a batch one task at a time, and so may return fewer than half the tasks when the owner or another thief takes some meanwhile.
   The deque, `Control.Concurrent.Queue.ChaseLev`, could also put its elements in the wrong slots when it grew, and hand out `undefined`; and on ARM64 a thief could take what a slot held before the owner's write to it.
   Both are fixed as well.
+- Deriving `Control.Monad.Borrow.Pure.Experimental.Loop.Foldable` via `Generically1` failed for every type with a field mentioning its parameter, for lack of instances for `Par1` and `:.:`.
+  It still fails on a field that does not mention the parameter, such as `Int`.
 
 ### New
 
+- `DistributesAlias` for `NonEmpty`.
+- `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
 
 ### Performance
@@ -28,6 +36,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - The work-stealing deque's `stealHalf` takes a batch one task at a time, with a compare-and-swap and two barriers for each, where 0.1.0.0 claimed the batch with one compare-and-swap (see "Fixed").
   In the quicksort and FFT benchmarks most steal attempts find nothing and a batch holds one or two tasks, so their work-stealing variants show no measurable change in interleaved runs against the old deque: a pooled ratio of 1.00, with a 95% interval of about ±7%, at `-N4` and `-N10`.
   On x86-64 the barrier between a thief's reads of `top` and `bottom` is now a full fence on every steal attempt, whose cost was not measured.
+- `foldBorrow` over a list or `NonEmpty` builds the list of borrows that `split` makes: summing 10⁶ elements allocates 57.2 MB, against 16.6 MB for 0.1.0.0's `foldBorrow`.
 
 ## 0.1.0.0 - 2026-09-19
 

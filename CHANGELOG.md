@@ -20,6 +20,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Where you matched a linear token, write the constructor instead, as in `\(UnsafeLinearlyToken _) -> ()`.
   A token built with a pattern or a constructor is a constant, which GHC may share between allocations: build one only inside a function that is `NOINLINE` and applied through `noinline`.
   Where you take a token apart and return another, pass the field on; a function that returns two tokens must itself be `NOINLINE` and applied through `noinline`, as `dup2` is, since two tokens with the same field are one expression.
+- The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)` or a `(<:)` instance for `Maybe`; delete the orphan.
 
 ### Changed
 
@@ -49,6 +50,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### New
 
+- `Clone` for `Ur`, `Sum`, `Product`, `Min`, `Max`, `Arg` and `Complex`.
 - `DistributesAlias` for `NonEmpty`.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.

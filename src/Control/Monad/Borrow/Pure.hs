@@ -394,11 +394,11 @@ There is an experimental interface abstracting the reborrowable borrows in "Cont
 @
 type 'Mut' α a = 'Borrow' 'Mut α a
 type 'Share' α a = 'Borrow' 'Share α a
-type 'Borrow' bk α a = 'Alias' ('Borrow bk) α a
-type 'Lend' α a = 'Alias' 'Lend α a
+type 'Borrow' bk α a = 'Alias' ('Borrow bk α) a
+type 'Lend' α a = 'Alias' ('Lend α) a
 @
 
-Hence, if you see @'Borrow' bk α a@ in a function, it can be either 'Mut' or 'Share'. If you see @'Alias' ak α a@, it may also be a 'Lend'.
+Hence, if you see @'Borrow' bk α a@ in a function, it can be either 'Mut' or 'Share'. If you see @'Alias' ak a@, it may also be a 'Lend'.
 
 "Control.Monad.Borrow.Pure.Experimental.Borrows" provides an experimental API for treating a bundle of multiple borrows in the same lifetime at once.
 
@@ -459,7 +459,8 @@ For possibly mutable types, you can still 'clone' them out of borrows linearly i
 'clone' :: 'Clone' a => 'Share' α a %1 -> 'BO' α a
 @
 
-This includes, for example, 'Data.Ref.Linear.Ref' or 'Data.Vector.Mutable.Linear.Borrow.Vector'.
+This includes, for example, a 'Data.Ref.Linear.Ref' or a 'Data.Vector.Mutable.Linear.Borrow.Vector' whose contents are 'Clone' themselves.
+Each piece of the contents is cloned through a 'Share' of it, so the original is only read.
 The fact that the 'clone'd value is only accessible inside 'BO' ensures that we cannot leak mutable states inside @a@ into /unrestricted/ contexts -- otherwise, we can introduce mutable values into unrestricted context via @'move' :: 'Share' α a -> 'Ur' ('Share' α a)@.
 
 In performance-sensitive loops, moving a whole structured value can be a sign
@@ -473,8 +474,8 @@ unrestricted fields in 'Ur' rather than moving the enclosing structure.
 You can do case-splitting on 'Borrow's - for example:
 
 @
-'splitPair' :: 'Alias' ak α (a, b) %1 -> ('Alias' ak α a, 'Alias' ak α b)
-'splitEither' :: 'Alias' ak α ('Either' a b) %1 -> 'Either' ('Alias' ak α a) ('Alias' ak α b)
+'splitPair' :: 'Alias' ak (a, b) %1 -> ('Alias' ak a, 'Alias' ak b)
+'splitEither' :: 'Alias' ak ('Either' a b) %1 -> 'Either' ('Alias' ak a) ('Alias' ak b)
 @
 
 For other datatypes, you can use 'split' to split general parametric types into borrows.

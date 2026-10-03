@@ -14,8 +14,9 @@ module Data.Coerce.Directed.Internal (module Data.Coerce.Directed.Internal) wher
 
 import Data.Coerce (Coercible)
 import Data.Kind (Constraint, Type)
-import Data.Type.Ord
+import Data.List.NonEmpty (NonEmpty)
 import GHC.Base (Multiplicity (..))
+import GHC.TypeError (Assert, ErrorMessage (..), TypeError)
 import Generics.Linear
 import Prelude.Linear
 import Unsafe.Coerce (unsafeCoerce)
@@ -23,20 +24,46 @@ import Unsafe.Linear qualified as Unsafe
 
 infix 4 <:
 
--- Orphan instance!
-type instance Compare (a :: Multiplicity) (b :: Multiplicity) = CmpMult One Many
+{- | Whether a function of multiplicity @p@ can stand in for one of multiplicity @q@: a linear function can be used where an unrestricted one is expected, never the other way round.
 
-type CmpMult :: Multiplicity -> Multiplicity -> Ordering
-type family CmpMult p q where
-  CmpMult One One = EQ
-  CmpMult One Many = LT
-  CmpMult Many One = GT
-  CmpMult Many Many = EQ
+The equations are pairwise compatible, so each legitimate shape reduces even when a multiplicity is a variable: @m <= Many@, @One <= m@ and @m <= m@.
+-}
+type MultLe :: Multiplicity -> Multiplicity -> Bool
+type family MultLe p q where
+  MultLe p 'Many = 'True
+  MultLe 'One q = 'True
+  MultLe p p = 'True
+  MultLe 'Many 'One = 'False
+
+-- | @p <= q@ on multiplicities, with an error that says which order is meant.
+type MultiplicityLe :: Multiplicity -> Multiplicity -> Constraint
+type MultiplicityLe p q =
+  Assert
+    (MultLe p q)
+    ( TypeError
+        ( 'Text "Cannot satisfy: multiplicity "
+            ':<>: 'ShowType p
+            ':<>: 'Text " <= "
+            ':<>: 'ShowType q
+            ':$$: 'Text "The upcast needs a function of multiplicity "
+            ':<>: 'ShowType p
+            ':<>: 'Text " to stand in for one of multiplicity "
+            ':<>: 'ShowType q
+            ':<>: 'Text ", which is not known to be possible:"
+            ':$$: 'Text "a linear function can stand in for an unrestricted one, but not the other way round."
+            ':$$: 'Text "That function may be a part of the value, such as an argument of a function, where the direction is reversed."
+            ':$$: 'Text "Where the multiplicities are variables, require the upcast itself in the signature, as in ((a %p -> b) <: (a %q -> b))."
+        )
+    )
 
 data SubtypeWitness a b = UnsafeSubtype
 
 type role SubtypeWitness nominal representational
 
+{- | @a <: b@: a value of @a@ can be used as a value of @b@, through zero-cost 'upcast'.
+Mainly used to coerce types containing lifetimes, such as @t'Control.Monad.Borrow.Pure.BO' α@ or @t'Control.Monad.Borrow.Pure.Mut' α@, properly.
+You can use 'AsCoercible' with the @DerivingVia@ extension to derive the upcast relation between coercible types.
+-}
 class a <: b where
   subtype :: SubtypeWitness a b
 
@@ -46,6 +73,10 @@ upcast = Unsafe.toLinear unsafeCoerce
 instance {-# INCOHERENT #-} (Coercible a b) => a <: b where
   subtype = UnsafeSubtype
 
+{- | A target for deriving '(<:)' between representationally equal types, for use where their representation is hidden, such as outside the module that defines a newtype.
+
+In that module, write @deriving via 'AsCoercible' T instance S '<:' T@.
+-}
 newtype AsCoercible a = AsCoercible {runAsCoercible :: a}
 
 instance (Coercible a b) => a <: AsCoercible b where
@@ -55,6 +86,16 @@ deriving via
   Generically [b]
   instance
     (a <: b) => [a] <: [b]
+
+deriving via
+  Generically (Maybe b)
+  instance
+    (a <: b) => Maybe a <: Maybe b
+
+deriving via
+  Generically (NonEmpty b)
+  instance
+    (a <: b) => NonEmpty a <: NonEmpty b
 
 deriving via
   Generically (a', b')
@@ -72,7 +113,7 @@ deriving via
     (a <: a', b <: b', c <: c') => (a, b, c) <: (a', b', c')
 
 instance
-  (a' <: a, b <: b', p Data.Type.Ord.<= q) =>
+  (a' <: a, b <: b', MultiplicityLe p q) =>
   (a %p -> b) <: (a' %q -> b')
   where
   subtype = UnsafeSubtype

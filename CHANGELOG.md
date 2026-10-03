@@ -16,6 +16,15 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   It rejects a borrow of an `Either e a` or `(e, a)` with "Use splitEither directly!" or "Use splitPair instead!".
 - `assocBOEq`, `assocBorrowEq` and `assocLendEq` are removed, since they let a program prove any two lifetimes equal and reclaim a resource while it was still borrowed.
   Use `assocLBO`, `assocRBO`, `assocBorrowL`, `assocBorrowR`, `assocLendL` or `assocLendR` instead.
+- `Clone` for `Ref` requires `Clone` of the contents instead of `Dupable`, and clones each piece of the contents through a shared borrow of it, without consuming the original or writing to it.
+  `dup2` consumes its argument, and linear-base's laws do not say which of its two copies, if either, is the original.
+  With a `Dupable` that returns two fresh copies, 0.1.0.0 consumed the original twice, and with one that returns the original second, a clone that kept the first copy would hand the original to the clone while a live `Share` could still read it.
+  Give the contents a `Clone` instance.
+  A `Copyable` type gets one with `deriving via AsCopyable T instance Clone T`, with `AsCopyable` from `Control.Monad.Borrow.Pure.Clone`.
+  A record or sum type of clonable fields gets one with `deriving anyclass instance Clone T`, once it has the `Generic` instance of linear-generics, from `$(deriveGeneric ''T)` of `Generics.Linear.TH`, which takes `TemplateHaskell` and `TypeFamilies`.
+  An immutable, GC-owned type with neither, such as `Text` or `ByteString`, can be stored as `Ur Text`, since `Clone (Ur a)` shares its payload.
+  A type of your own that owns a resource needs an instance written through `Control.Monad.Borrow.Pure.BO.Unsafe`, under the obligations stated on `Clone`.
+  Contents that are `Dupable` but none of these, such as linear-base's mutable arrays, can no longer be cloned through a borrow without an instance of that kind; contents that are `Clone` but not `Dupable`, as in `Ref (Vector (Ref Int))`, now can be.
 - The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)` or a `(<:)` instance for `Maybe`; delete the orphan.
 
 ### Changed
@@ -25,6 +34,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   A branch in a loop that does not allocate cannot be stopped until the loop ends; compile the module that contains such a loop with `-fno-omit-yields` if the rethrow must be prompt.
   An asynchronous exception to the caller, such as a `timeout`, does not stop the branches: forcing the interrupted value again collects their results, and a value that is dropped instead leaves them running to completion.
   A computation's thread stays in memory after it finishes: the second computation's until the first one finishes, and the first computation's until the thread running `parBO` runs again; `Par` and `mapConcurrentlyOf` over a list put the short computation first.
+- `Data.Ref.Linear.Borrow.update`, `modify`, `swap` and `readShare`, and the hash map's queries and `take`, `take_` and `swap`, read and write inside `BO`, at their place in the sequence; a write could previously land only when its result was forced, after the lifetime had ended.
 - `reclaim` forces the `EndToken` it is discharged with; `withEnd` leaves it alone.
 
 ### Fixed
@@ -32,7 +42,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - A pure read of an owner handed back by `runBO`, `runBOLend`, `modifyBO`, `modifyBO_`, `reclaim` or a scope that discharges an `After` sees the writes made during the scope; at `-O2` it could return what the owner held before the scope.
 - `reclaim` fails on a bottom `EndToken` given to `withEnd`, instead of handing back an owner whose borrows are still live.
 - Every allocation made with a `Linearly` token returns a fresh resource, even when the token is forced or the `runBO` that makes it has no free variables; at `-O2` two such allocations could return one reference.
-- A run of `runBO` or `modifyBO` performs its effects once, even when several threads force it, as both branches of a `parBO` can through a `Share`.
+- `Data.Ref.Linear.new`, `atomicModify`, `atomicModify_` and `unsafeWriteRef`, and runs of `runBO` and `modifyBO`, perform their effects once, even when several threads force the same call, as both branches of a `parBO` can through a `Share`; an increment could be applied twice, and two branches could see different references.
+- `Data.Ref.Linear.atomicModify_` could crash or store an ill-typed value, and `atomicModify` stored the old value rather than the new one.
 - The work-stealing scheduler behind `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` runs every task exactly once; it could run a task twice and lose another, so that `qsortDC` occasionally hung or returned a vector it had not sorted.
 - `stealHalf` of `Control.Concurrent.Queue.ChaseLev` may return fewer than half the tasks, and the deque no longer misplaces its elements when it grows or, on ARM64, hands a thief what a slot held before the owner's write.
 - Deriving `Control.Monad.Borrow.Pure.Experimental.Loop.Foldable` via `Generically1` failed for every type with a field mentioning its parameter, for lack of instances for `Par1` and `:.:`.
@@ -45,6 +56,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 ### New
 
 - `Clone` for `Ur`, `Sum`, `Product`, `Min`, `Max`, `Arg` and `Complex`.
+- `Clone` for the owned hash map of `Data.HashMap.RobinHood.Mutable.Linear`, which copies its slot array; the borrow-aware hash map clones through it.
 - `DistributesAlias` for `NonEmpty`.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
@@ -55,9 +67,16 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `parBO` is slower and allocates more, for its exception handling: a fork-join whose branches do little is noticeably slower, and the divide-and-conquer FFT and quicksort built on `parBO` slightly so.
   Its finished threads also stay in memory longer.
 - `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.
+- The `noDuplicate#` guard costs about 9 ns per owner-level `Ref` operation with several capabilities, and nothing with one.
 - Stealing work from the deque of `Control.Concurrent.Queue.ChaseLev` is slower, more so on x86-64, though the work-stealing quicksort and FFT show no measurable slowdown.
 - Allocations that take a `Linearly` token, such as `Ref.new` and the constructors of the vectors, are slightly slower.
 - `foldBorrow` over a list or `NonEmpty` allocates more.
+
+### Known issues
+
+- A pure value whose evaluation writes memory it did not allocate can perform those writes twice if two threads force it at the same moment, for example both branches of a `parBO` reading it through a `Share`.
+  `Ref`'s pure operations and `runBO`/`modifyBO` computations are protected, but the owned hash map's `insert`, `delete` and `alter` in `Data.HashMap.RobinHood.Mutable.Linear` are not: force such a result before storing it where several branches can reach it, e.g. `Ref.new $! HashMap.insert k v m`.
+  The protection holds under GHC's default lazy blackholing; `-feager-blackholing` on the module that builds the value can defeat it, and single-capability programs are unaffected.
 
 ## 0.1.0.0 - 2026-09-19
 

@@ -147,7 +147,9 @@ library
     Data.Record.Linear.Borrow.Experimental.Split
     Data.Ref.Linear
     Data.Ref.Linear.Borrow
+    Data.Ref.Linear.Internal
     Data.Ref.Linear.Unlifted
+    Data.Ref.Linear.Unlifted.Internal
     Data.Unique.Linear
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted.Internal
@@ -195,11 +197,13 @@ test-suite pure-borrow-test
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
     Control.Monad.Borrow.Pure.ParBOSpec
+    Control.Monad.Borrow.Pure.SharedEffectSpec
     Data.Coerce.Directed.TypingCases
     Data.Coerce.DirectedSpec
     Data.HashMap.RobinHood.Mutable.Linear.BorrowSpec
     Data.HashMap.RobinHood.Mutable.LinearSpec
     Data.HashMap.RobinHood.Mutable.LinearSpec.Cases
+    Data.Ref.LinearSpec
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted.TypingCases
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.UnrestrictedSpec
     Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity.TypingCases

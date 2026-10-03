@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
@@ -33,6 +34,8 @@ type family CmpMult p q where
   CmpMult Many Many = EQ
 
 data SubtypeWitness a b = UnsafeSubtype
+
+type role SubtypeWitness nominal representational
 
 class a <: b where
   subtype :: SubtypeWitness a b

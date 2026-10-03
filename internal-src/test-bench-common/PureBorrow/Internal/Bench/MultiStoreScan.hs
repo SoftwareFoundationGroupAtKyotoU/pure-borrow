@@ -182,13 +182,13 @@ data FixedUnrestrictedStore = FixedUnrestrictedStore
 
 multiStoreScanBoxedContentProjection ::
   Mut α (Growable.GrowableVector V.Vector (Int, Int)) %1 ->
-  Mut α (Fixed.Vector V.Vector (Int, Int))
+  BO α (Mut α (Fixed.Vector V.Vector (Int, Int)))
 {-# INLINE multiStoreScanBoxedContentProjection #-}
 multiStoreScanBoxedContentProjection = Growable.getContents
 
 multiStoreScanUnboxedContentProjection ::
   Mut α (Growable.GrowableVector U.Vector Int) %1 ->
-  Mut α (Fixed.Vector U.Vector Int)
+  BO α (Mut α (Fixed.Vector U.Vector Int))
 {-# INLINE multiStoreScanUnboxedContentProjection #-}
 multiStoreScanUnboxedContentProjection = Growable.getContents
 
@@ -628,12 +628,12 @@ multiStoreScanPureBorrowOwningBenchmarkRoot input =
                 let %1 !(payloadBorrow, scoreBorrow, linkBorrow) =
                       growableRootBorrows
                         .@ (owningPayloadField, owningScoreField, owningLinkField)
-                let %1 !payloadContent =
-                      OwningBoxedGrowable.getContents payloadBorrow
-                let %1 !scoreContent =
-                      OwningUnboxedGrowable.getContents scoreBorrow
-                let %1 !linkContent =
-                      OwningUnboxedGrowable.getContents linkBorrow
+                payloadContent <-
+                  OwningBoxedGrowable.getContents payloadBorrow
+                scoreContent <-
+                  OwningUnboxedGrowable.getContents scoreBorrow
+                linkContent <-
+                  OwningUnboxedGrowable.getContents linkBorrow
                 ( Ur digest
                   , nextBorrow
                   , weightBorrow
@@ -689,12 +689,12 @@ multiStoreScanPureBorrowFixedUnrestrictedBenchmarkRoot input =
                 let %1 !(payloadBorrow, scoreBorrow, linkBorrow) =
                       growableRootBorrows
                         .@ (owningPayloadField, owningScoreField, owningLinkField)
-                let %1 !payloadContent =
-                      OwningBoxedGrowable.getContents payloadBorrow
-                let %1 !scoreContent =
-                      OwningUnboxedGrowable.getContents scoreBorrow
-                let %1 !linkContent =
-                      OwningUnboxedGrowable.getContents linkBorrow
+                payloadContent <-
+                  OwningBoxedGrowable.getContents payloadBorrow
+                scoreContent <-
+                  OwningUnboxedGrowable.getContents scoreBorrow
+                linkContent <-
+                  OwningUnboxedGrowable.getContents linkBorrow
                 ( Ur digest
                   , nextBorrow
                   , weightBorrow
@@ -936,9 +936,9 @@ multiStoreScanPureBorrowDirectBenchmarkRoot input =
                       fixedRootBorrows .@ (nextField, weightField, markField)
                 let %1 !(payloadBorrow, scoreBorrow, linkBorrow) =
                       growableRootBorrows .@ (payloadField, scoreField, linkField)
-                let %1 !payloadContent = Growable.getContents payloadBorrow
-                let %1 !scoreContent = Growable.getContents scoreBorrow
-                let %1 !linkContent = Growable.getContents linkBorrow
+                payloadContent <- Growable.getContents payloadBorrow
+                scoreContent <- Growable.getContents scoreBorrow
+                linkContent <- Growable.getContents linkBorrow
                 ( Ur digest
                   , nextBorrow
                   , weightBorrow
@@ -1009,12 +1009,12 @@ multiStoreScanPureBorrowNestedBenchmarkRoot input =
                         :- scoreBorrow
                         :- linkBorrow
                         :- BNil -> Control.do
-                          let %1 !payloadContent =
-                                Growable.getContents payloadBorrow
-                          let %1 !scoreContent =
-                                Growable.getContents scoreBorrow
-                          let %1 !linkContent =
-                                Growable.getContents linkBorrow
+                          payloadContent <-
+                            Growable.getContents payloadBorrow
+                          scoreContent <-
+                            Growable.getContents scoreBorrow
+                          linkContent <-
+                            Growable.getContents linkBorrow
                           ( Ur digest
                             , nextBorrow
                             , weightBorrow
@@ -1069,9 +1069,9 @@ multiStoreScanPureBorrowDirectRoot input =
                         fixedRootBorrows .@ (nextField, weightField, markField)
                   let %1 !(payloadBorrow, scoreBorrow, linkBorrow) =
                         growableRootBorrows .@ (payloadField, scoreField, linkField)
-                  let %1 !payloadContent = Growable.getContents payloadBorrow
-                  let %1 !scoreContent = Growable.getContents scoreBorrow
-                  let %1 !linkContent = Growable.getContents linkBorrow
+                  payloadContent <- Growable.getContents payloadBorrow
+                  scoreContent <- Growable.getContents scoreBorrow
+                  linkContent <- Growable.getContents linkBorrow
                   ( Ur trace
                     , nextBorrow
                     , weightBorrow
@@ -1147,12 +1147,12 @@ multiStoreScanPureBorrowNestedRoot input =
                           :- scoreBorrow
                           :- linkBorrow
                           :- BNil -> Control.do
-                            let %1 !payloadContent =
-                                  Growable.getContents payloadBorrow
-                            let %1 !scoreContent =
-                                  Growable.getContents scoreBorrow
-                            let %1 !linkContent =
-                                  Growable.getContents linkBorrow
+                            payloadContent <-
+                              Growable.getContents payloadBorrow
+                            scoreContent <-
+                              Growable.getContents scoreBorrow
+                            linkContent <-
+                              Growable.getContents linkBorrow
                             ( Ur trace
                               , nextBorrow
                               , weightBorrow

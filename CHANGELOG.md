@@ -6,6 +6,20 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Breaking changes
 
+- In the three growable vector modules, `size`, `capacity` and `getContents` are `BO` actions.
+  As pure functions of a borrow they could run after the borrow's lifetime had ended and the vector had grown, and GHC could serve one read for another, so they returned stale sizes and contents:
+
+    ```haskell
+    -- before
+    getContents :: Borrow bk α (GrowableVector a) %1 -> Borrow bk α (Fixed.Vector a)
+    -- after
+    getContents :: (α >= β) => Borrow bk α (GrowableVector a) %1 -> BO β (Borrow bk α (Fixed.Vector a))
+    ```
+
+  Write `content <- getContents borrow`.
+  A shared projection is bound linearly, while readers such as `Fixed.copyAt` take a shared borrow unrestricted, so move it before reading, even once: `Ur content <- move Control.<$> getContents shared`.
+  Every other header read of those modules now happens inside `BO` as well, at its place in the sequence.
+  If GHC then asks for a constraint such as `β <=!! α` in a helper's signature, add `α >= β`.
 - `LinearOnlyWitness` now has a `representational` role instead of the `phantom` one it had before, which unsoundly allowed virtually any type to derive `LinearOnly`.
 - `nowStatic :: BO α (Now Static)` replaces the top-level `nowStatic :: Now Static`, and has moved to `Control.Monad.Borrow.Pure.BO`.
   The previous, pure `nowStatic` could unsoundly let a `Linearly` token spill into a non-linear context.
@@ -80,6 +94,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Performance
 
+- The growable vectors read and write their header inline, in the state thread, where 0.1.0.0 made an out-of-line call: a `push` that grows an unboxed vector, and the plural scope benchmark that threads a bundle, allocate 28% less, and the other growable and scope benchmarks are unchanged.
 - `parBO` allocates about 13.5% more per call, 2627 bytes against 2314, for the exception handling.
   In time, it costs about 20 ns more per call at `-N1`: measured with interleaved runs against 0.1.0.0 on GHC 9.12.4, the fork-join benchmark, whose branches do almost nothing, runs 25–35% slower at `-N1` and 9–28% slower at `-N4`, and the divide-and-conquer FFT on 2^20 points runs 9% slower.
   On the quicksort of 32,768 elements at `-N10`, where the unchanged introsort varies by ±2% between rounds, the divide-and-conquer version built on `parBO` runs 2% slower, in every round; the budgeted parallel and the sequential versions are unchanged within that noise, and the work-stealing version, which does not use `parBO`, was 2–8% faster before the deque fix below, which changes it by no measurable amount.

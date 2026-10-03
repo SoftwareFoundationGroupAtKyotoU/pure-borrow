@@ -62,7 +62,7 @@ instance LinearOnly (GrowableVector v a) where
 
 instance
   ( Unsatisfiable
-      (ShowType (GrowableVector v a) :<>: Text " cannot be copied!")
+      (ShowType (GrowableVector v a) :<>: Text " cannot be copied!" :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead.")
   ) =>
   Copyable (GrowableVector v a)
   where

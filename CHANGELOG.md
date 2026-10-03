@@ -17,6 +17,13 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
   Bind the result with `<-`, and `move` a shared projection before passing it to a reader that takes it unrestricted, such as `Fixed.copyAt`: `Ur content <- move Control.<$> getContents shared`.
   A helper that calls one of them may need `α >= β` in its signature.
+- `(<:)` no longer has an instance to `Generically`: it trusted the `Rep` of a `Generic` instance, which anyone can write by hand, so a `Rep` that omitted a lifetime, with `from` and `to` left as `error`, let `upcast` lengthen any borrow from the safe modules, without a warning.
+  `deriving via Generically (T b) instance (a <: b) => T a <: T b` is now rejected with a message that names the replacement, `deriveSubtype` from `Data.Coerce.Directed.Unsafe`.
+  `deriveSubtype ''T` reads the declaration of `T` itself and gives each parameter the variance its fields allow; its Haddock has its caveat about mutable data structures, the extensions it needs, where to splice it, and the types it refuses.
+  Unlike the `Generically` instance, it refuses a type whose constructors are not in scope, unqualified and unambiguous, where it is spliced, and a type that mentions itself at other arguments than its parameters, as `data Nested a = Flat a | Nest (Nested [a])` does.
+  For such a type of your own, write the instance with `UnsafeSubtype`, under the promise in `Data.Coerce.Directed.Unsafe`, or convert by hand, matching each constructor and upcasting each field; a type whose constructors are hidden can be related only where they are in scope.
+  A parameter that no field mentions stays fixed in the derived instance, but `upcast` still converts whatever `coerce` converts: give such a parameter a nominal role if it must stay fixed.
+  The instances for lists, `Maybe`, `NonEmpty`, pairs, `Either` and triples, which went through `Generically`, keep their contexts, and `genericUpcast` still converts between two instantiations of one data type without an instance.
 - `LinearOnlyWitness` now has a `representational` role instead of the `phantom` one it had before, which unsoundly allowed virtually any type to derive `LinearOnly`.
 - `nowStatic :: BO α (Now Static)` replaces the top-level `nowStatic :: Now Static`, and has moved to `Control.Monad.Borrow.Pure.BO`.
   The previous, pure `nowStatic` could unsoundly let a `Linearly` token spill into a non-linear context.
@@ -94,11 +101,14 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `DistributesAlias` for `NonEmpty`.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
+- `Data.Coerce.Directed.Unsafe` exports `deriveSubtype`, a Template Haskell macro that declares `(<:)` between two instantiations of a data type of your own, field by field, from its declaration; read the caveat in its Haddock before using it.
 - `Control.Monad.Borrow.Pure.BO.Unsafe` exports `restoreWithEnd`, `reviveAliasWithEnd#`, `endHere` and `withEndL`, for a delimiter of your own that discharges an `After`.
 
 ### Performance
 
 - `modifyBoxedVector` is slower by one pass over the vector.
+- An instance from `deriveSubtype` has one constraint per field type in its context, and code built without optimisation, such as GHCi or a module at `-O0`, allocates those dictionaries on each `upcast` in a polymorphic function: 264 bytes for a record of five fields, against 40 for an instance whose context is a single `a <: a'`.
+  A type's reference to itself in its own context costs nothing, and with `-O1` or `-O2` nothing is allocated.
 - A `push` that grows an unboxed growable vector allocates less; the other operations of the growable vectors are unchanged.
 - `parBO` is slower and allocates more, for its exception handling: a fork-join whose branches do little is noticeably slower, and the divide-and-conquer FFT and quicksort built on `parBO` slightly so.
   Its finished threads also stay in memory longer.

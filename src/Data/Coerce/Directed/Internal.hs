@@ -1,7 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -16,7 +15,7 @@ import Data.Coerce (Coercible)
 import Data.Kind (Constraint, Type)
 import Data.List.NonEmpty (NonEmpty)
 import GHC.Base (Multiplicity (..))
-import GHC.TypeError (Assert, ErrorMessage (..), TypeError)
+import GHC.TypeError (Assert, ErrorMessage (..), TypeError, Unsatisfiable, unsatisfiable)
 import Generics.Linear
 import Prelude.Linear
 import Unsafe.Coerce (unsafeCoerce)
@@ -63,6 +62,7 @@ type role SubtypeWitness nominal representational
 {- | @a <: b@: a value of @a@ can be used as a value of @b@, through zero-cost 'upcast'.
 Mainly used to coerce types containing lifetimes, such as @t'Control.Monad.Borrow.Pure.BO' α@ or @t'Control.Monad.Borrow.Pure.Mut' α@, properly.
 You can use 'AsCoercible' with the @DerivingVia@ extension to derive the upcast relation between coercible types.
+For a data type of your own, 'Data.Coerce.Directed.Unsafe.deriveSubtype' derives it field by field; read its caveat first.
 -}
 class a <: b where
   subtype :: SubtypeWitness a b
@@ -82,35 +82,23 @@ newtype AsCoercible a = AsCoercible {runAsCoercible :: a}
 instance (Coercible a b) => a <: AsCoercible b where
   subtype = UnsafeSubtype
 
-deriving via
-  Generically [b]
-  instance
-    (a <: b) => [a] <: [b]
+instance (a <: b) => [a] <: [b] where
+  subtype = UnsafeSubtype
 
-deriving via
-  Generically (Maybe b)
-  instance
-    (a <: b) => Maybe a <: Maybe b
+instance (a <: b) => Maybe a <: Maybe b where
+  subtype = UnsafeSubtype
 
-deriving via
-  Generically (NonEmpty b)
-  instance
-    (a <: b) => NonEmpty a <: NonEmpty b
+instance (a <: b) => NonEmpty a <: NonEmpty b where
+  subtype = UnsafeSubtype
 
-deriving via
-  Generically (a', b')
-  instance
-    (a <: a', b <: b') => (a, b) <: (a', b')
+instance (a <: a', b <: b') => (a, b) <: (a', b') where
+  subtype = UnsafeSubtype
 
-deriving via
-  Generically (Either a' b')
-  instance
-    (a <: a', b <: b') => Either a b <: Either a' b'
+instance (a <: a', b <: b') => Either a b <: Either a' b' where
+  subtype = UnsafeSubtype
 
-deriving via
-  Generically (a', b', c')
-  instance
-    (a <: a', b <: b', c <: c') => (a, b, c) <: (a', b', c')
+instance (a <: a', b <: b', c <: c') => (a, b, c) <: (a', b', c') where
+  subtype = UnsafeSubtype
 
 instance
   (a' <: a, b <: b', MultiplicityLe p q) =>
@@ -145,8 +133,17 @@ instance (GSubtype l l', GSubtype r r') => GSubtype (l :+: r) (l' :+: r') where
 
 type GenericSubtype a b = (Generic a, Generic b, GSubtype (Rep a) (Rep b))
 
-instance (GenericSubtype a b) => a <: Generically b where
-  subtype = UnsafeSubtype
+-- 'genericUpcast' stays: unlike 'upcast', it calls 'from' and 'to'.
+instance
+  ( Unsatisfiable
+      ( 'Text "(<:) can no longer be derived via Generically: it trusted the Rep of a Generic instance, which anyone can write by hand."
+          ':$$: 'Text "Derive the instance with deriveSubtype from Data.Coerce.Directed.Unsafe, which reads the declaration itself; read its caveat about mutable data structures first."
+          ':$$: 'Text "genericUpcast converts a value without an instance."
+      )
+  ) =>
+  a <: Generically b
+  where
+  subtype = unsatisfiable
 
 genericUpcast :: (GenericSubtype a b) => a %1 -> b
 genericUpcast = to . gupcast . from

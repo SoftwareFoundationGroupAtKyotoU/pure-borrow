@@ -108,6 +108,7 @@ library
     random,
     stm,
     stm-chans,
+    template-haskell,
     vector,
     vector-algorithms,
 
@@ -137,6 +138,7 @@ library
     Control.Syntax.DataFlow
     Data.Coerce.Directed
     Data.Coerce.Directed.Internal
+    Data.Coerce.Directed.TH.Internal
     Data.Coerce.Directed.Unsafe
     Data.Comonad.Linear
     Data.HashMap.RobinHood.Mutable.Linear
@@ -208,6 +210,7 @@ test-suite pure-borrow-test
     Control.Monad.Borrow.Pure.OrderingSpec.Owners
     Control.Monad.Borrow.Pure.ParBOSpec
     Control.Monad.Borrow.Pure.SharedEffectSpec
+    Data.Coerce.Directed.DeriveSubtype.Types
     Data.Coerce.Directed.TypingCases
     Data.Coerce.DirectedSpec
     Data.HashMap.RobinHood.Mutable.Linear.BorrowSpec

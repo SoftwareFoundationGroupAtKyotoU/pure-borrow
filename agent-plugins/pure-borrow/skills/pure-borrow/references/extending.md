@@ -49,7 +49,7 @@ A typical mutable container:
   Match a linear token using `UnsafeLinearlyToken`, `UnsafeNowToken`, or `UnsafeEndToken`, passing the field on when converting one token into another.
   The old names are pattern synonyms and cannot match linear values.
   Never replace these types with nullary constructors or newtypes; a function returning two tokens must be `NOINLINE` and applied through `noinline`, since two equal-looking tokens can let GHC merge allocations.
-- The instances of `(<=)`, `End`, and `(<:)` decide lifetime soundness: never write one of `(<=)` or `End`, and give a type of your own `(<:)` only by deriving it via `Generically` or `AsCoercible`, which the role of its witness checks.
+- The instances of `(<=)`, `End`, and `(<:)` decide lifetime soundness: never write one of `(<=)` or `End`, and give a type of your own `(<:)` only through `deriveSubtype`, under its caveat about mutable data structures, or by deriving it via `AsCoercible`, which the role of its witness checks.
 
 ## Effects and inlining
 

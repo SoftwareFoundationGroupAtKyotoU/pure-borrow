@@ -23,7 +23,7 @@
       "name": "pure-borrow",
       "source": "./agent-plugins/pure-borrow",
       "description": "Skill for Rust-style borrowing in Linear Haskell with the pure-borrow library: BO monad, lifetimes, Mut/Share/Lend borrows, and pure parallelism.",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "author": {
         "name": "Hiromi Ishii"
       },

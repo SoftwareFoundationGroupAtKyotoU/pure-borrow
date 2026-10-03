@@ -432,8 +432,12 @@ srunBO_ k = srunBO Control.do a <- k; Control.pure $ After a
 srunBO_ = \bo -> unsafeCastBO bo
 #endif
 
-{- | A parallel comoutation applicative functor for 'BO' monad.
+{- | A parallel computation applicative functor for 'BO' monad.
 All the computations chained by '<*>' or 'liftA2' will be executed in parallel.
+
+Each '<*>' is a 'parBO', so a traversal nests them.
+An exception is rethrown unchanged, but unlike @mapConcurrently@ from @async@, the computations of the other elements are not all stopped: a failure stops only the computation it is paired with in its 'parBO', and whatever that one had started runs to completion.
+See 'parBO'.
 -}
 newtype Par α a = Par (BO α a)
   deriving newtype (Data.Functor, Control.Functor)

@@ -31,9 +31,11 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `modifyBoxedMVector` is renamed `unsafeModifyBoxedMVector`, with the same `Movable` requirement.
   The caller keeps the storage, so after catching an exception from it the storage must not be read or reused.
 - `Clone` for `Ref`, the boxed `Vector` and the multiplicity vector requires `Clone` of the contents instead of `Dupable`, since cloning through `Dupable` could consume the original or hand it to the clone while a `Share` could still read it.
-  A `Copyable` type gets the instance with `deriving via AsCopyable T instance Clone T`, a record or sum of clonable fields with `deriving anyclass instance Clone T` and a linear-generics `Generic` instance, and an immutable type such as `Text` can be stored as `Ur Text`.
-  Contents that are `Clone` but not `Dupable`, as in `Ref (Vector (Ref Int))`, can now be cloned.
-- The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)` or a `(<:)` instance for `Maybe`; delete the orphan.
+  A `Copyable` type gets the instance with `deriving via AsCopyable T instance Clone T`, a record or sum of clonable fields with `deriving anyclass instance Clone T` and a linear-generics `Generic` instance, a newtype with `deriving newtype Clone`, and an immutable type such as `Text` can be stored as `Ur Text`.
+  Contents that are `Clone` but not `Dupable`, as in `Ref (Vector (Ref Int))`, can now be cloned, and linear-base's `Array`, `Vector`, `HashMap` and `Set` still can.
+- The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)`, `Clone (Array a)`, `Clone` for a boxed growable or unboxed vector, or a `(<:)` instance for `Maybe`; delete the orphan.
+  Call sites of an old shallow vector-cloning orphan now need `Clone a`, since those vectors own their elements.
+  An orphan as general as the new instance, such as `Clone (Array a)`, is rejected with "Duplicate instance declarations"; a narrower one, such as `Clone (Array Int)`, compiles, and each use of it is rejected with "Overlapping instances".
 
 ### Changed
 
@@ -53,6 +55,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `Data.Ref.Linear.new`, `atomicModify`, `atomicModify_` and `unsafeWriteRef`, and runs of `runBO` and `modifyBO`, perform their effects once, even when several threads force the same call, as both branches of a `parBO` can through a `Share`; an increment could be applied twice, and two branches could see different references.
 - `Data.Ref.Linear.atomicModify_` crashed on a `Ref Int`, and on a `Ref` of a list stored the new head instead of the new list.
   `atomicModify` stored the first component of its function's result, meant to be returned, instead of the second, the new contents.
+- Cloning one shared `Ref` of a linear-base `Array` more than once, as a loop does, gave every clone the same array at `-O2`: GHC made the pure `dup2` of the contents once for all the clones, so a write to one clone reached them all.
+  Each clone now copies the array.
 - The work-stealing scheduler behind `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` runs every task exactly once; it could run a task twice and lose another, so that `qsortDC` occasionally hung or returned a vector it had not sorted.
 - `stealHalf` of `Control.Concurrent.Queue.ChaseLev` may return fewer than half the tasks, and the deque no longer misplaces its elements when it grows or, on ARM64, hands a thief what a slot held before the owner's write.
 - Deriving `Control.Monad.Borrow.Pure.Experimental.Loop.Foldable` via `Generically1` failed for every type with a field mentioning its parameter, for lack of instances for `Par1` and `:.:`.
@@ -62,11 +66,18 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 - `divideAndConquer` and `divideAndConquer'` require `divide` and `conquer` to raise no exception: they do not propagate one raised during the parallel computation, and block instead.
 - The callback of `unsafeInplace` must only rearrange elements, never duplicate, drop or replace one; `unsafeFromMutable` requires every element to be initialised.
+- `copy` of mutable containers is rejected with a message pointing to `clone` inside `BO`, including linear-base's `Array`, `Vector`, `HashMap` and `Set` and pure-borrow's references and vectors.
 
 ### New
 
 - `Consumable` for the boxed `Vector` of `Data.Vector.Mutable.Linear.Borrow`, which gives a vector of non-`Movable` elements, such as `Ref`s, a way out.
 - `Clone` for `Ur`, `Sum`, `Product`, `Min`, `Max`, `Arg` and `Complex`.
+- `Clone` for linear-base's `Array`, `Vector`, `HashMap` and `Set`, copying their backing arrays and sharing their GC-owned contents without constraints on the elements.
+  Vector and hash-map capacities are preserved.
+- Deep `Clone` for the boxed growable vector and the fixed and growable unboxed vectors, requiring `Clone a` (and `Unbox a` for the unboxed families).
+  Growable copies retain length and capacity and clone only initialized elements.
+- `Clone` and `Copyable` for `Identity`, `Down`, `Const`, `Dual`, semigroup `First` and `Last`, `WrappedMonoid`, `Any`, `All`, `Alt`, and tuples through arity six.
+  Newtype wrappers delegate to the contained value's instance; an unboxed representation does not imply a shallow copy is safe.
 - `Clone` for the owned hash map of `Data.HashMap.RobinHood.Mutable.Linear`, which copies its slot array; the borrow-aware hash map clones through it.
 - `DistributesAlias` for `NonEmpty`.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
@@ -82,14 +93,24 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.
 - Owner-level operations on a `Ref` are slower when the program runs on several capabilities, and unchanged on one.
 - `clone` of a boxed vector of references allocates more, since it copies each reference when the clone is taken; `clone` of a vector of values such as `Int` allocates as before.
+- `clone` of a linear-base `Array`, and so of a `Ref` or boxed `Vector` of arrays, copies each array in one pass with the array's own `dup2`, as 0.1.0.0 did through `Dupable`.
+  It costs a bare `cloneMutableArray#` plus about 2.5 ns and 16 bytes per clone on GHC 9.12 and later; on 9.10, whose `evaluate` allocates a thunk around the copy, it costs 48 bytes and about 5 ns more, or 30 ns more at 1,000 elements.
+  Code that clones one borrow repeatedly, as a loop does, now pays for a copy per clone, where 0.1.0.0 made one copy and gave it to every clone (see "Fixed").
+- Deep cloning the element-owning unboxed vectors visits each initialized element through its `Clone` instance.
+  On GHC 9.12.4/AArch64 macOS at `-O2`, cloning 100,000 `Int`s took 37.8 µs with specialization versus 13.4 µs for a safe ST buffer copy, with about 0.80 MB allocated by both.
+  Through a polymorphic dictionary boundary, the clone took 908 µs and allocated 4.00 MB; a vector of `(Int, Double)` took 2.71 ms and 8.80 MB versus 25.0 µs and 1.60 MB for the storage copy.
+  These are eleven rotated samples at `-N1`, excluding source setup and final materialization; they compare deep cloning with copying plain data, not with a previous equivalent instance.
+  Growable unboxed clones showed comparable costs; linear-base wrapper clones copy the whole backing capacity, including spare slots.
+  A bulk-copy fast path would need an additional guarantee that copying the element representation implements its `Clone`; `Unbox` alone does not provide that guarantee.
 - Stealing work from the deque of `Control.Concurrent.Queue.ChaseLev` is slower, more so on x86-64, though the work-stealing quicksort and FFT show no measurable slowdown.
 - Allocations that take a `Linearly` token, such as `Ref.new` and the constructors of the vectors, are slightly slower.
 - `foldBorrow` over a list or `NonEmpty` allocates more.
 
 ### Known issues
 
-- `insert`, `delete` and `alter` of the owned hash map in `Data.HashMap.RobinHood.Mutable.Linear` can write twice when two threads force the same unevaluated call, as both branches of a `parBO` can through a `Share`; force such a result before storing it where several branches reach it, as in `Ref.new $! HashMap.insert k v m`.
+- `insert`, `delete` and `alter` of the owned hash map in `Data.HashMap.RobinHood.Mutable.Linear`, and linear-base's in-place operations such as `set`, `write` and `map` of `Data.Array.Mutable.Linear`, can run twice when two threads force the same unevaluated call, as both branches of a `parBO` can through a `Share`: `Array.map (+ 1)` can add 2, and a clone can copy an array halfway through an update.
   So can the pure operations of `Ref` and the runs of `runBO` and `modifyBO` in a module compiled with `-feager-blackholing`; a program on one capability is not affected.
+  Force such a call before storing it where several branches reach it, as in `Ref.new $! HashMap.insert k v m`, and each call that a record, a list or a vector holds.
 
 ## 0.1.0.0 - 2026-09-19
 

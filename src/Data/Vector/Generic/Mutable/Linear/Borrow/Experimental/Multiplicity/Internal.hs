@@ -102,7 +102,7 @@ instance LinearOnly (Vector p v a) where
   {-# INLINE linearOnly #-}
 
 instance
-  (Unsatisfiable (ShowType (Vector p v a) :<>: Text " cannot be copied!")) =>
+  (Unsatisfiable (ShowType (Vector p v a) :<>: Text " cannot be copied!" :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead.")) =>
   Copyable (Vector p v a)
   where
   copy = unsatisfiable

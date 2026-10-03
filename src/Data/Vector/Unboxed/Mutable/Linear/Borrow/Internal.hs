@@ -15,6 +15,7 @@ module Data.Vector.Unboxed.Mutable.Linear.Borrow.Internal (
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe
+import Control.Monad.Borrow.Pure.Clone
 import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnly (..),
@@ -53,10 +54,30 @@ instance LinearOnly (Vector a) where
   {-# INLINE linearOnly #-}
 
 instance
-  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copied!")) =>
+  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copied!" :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead.")) =>
   Copyable (Vector a)
   where
   copy = unsatisfiable
+
+{- | Clone every element through its own 'Clone' into independent storage.
+An unboxed representation may contain linear resources, so copying only the buffer is insufficient.
+See Note [Cloning the contents of a shared borrow] in Data.Ref.Linear.Internal and the lazy-field caveat in "Control.Monad.Borrow.Pure.Clone#lazy".
+-}
+instance (U.Unbox a, Clone a) => Clone (Vector a) where
+  clone :: forall α. Share α (Vector a) %1 -> BO α (Vector a)
+  clone = Unsafe.toLinear \(UnsafeAlias (Vector buffer)) -> unsafeSystemIOToBO do
+    let !count = UM.length buffer
+    target <- UM.unsafeNew count
+    let go !index
+          | index >= count = NonLinear.pure ()
+          | otherwise = do
+              value <- UM.unsafeRead buffer index
+              !copied <- unsafeBOToSystemIO (clone @a @α (UnsafeAlias value))
+              UM.unsafeWrite target index copied
+              go (index + 1)
+    go 0
+    NonLinear.pure (Vector target)
+  {-# INLINE clone #-}
 
 instance (U.Unbox a, Consumable a) => Consumable (Vector a) where
   consume =

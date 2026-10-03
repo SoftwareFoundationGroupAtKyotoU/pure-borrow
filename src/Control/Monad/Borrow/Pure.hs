@@ -461,6 +461,7 @@ For possibly mutable types, you can still 'clone' them out of borrows linearly i
 
 This includes, for example, a 'Data.Ref.Linear.Ref' or a 'Data.Vector.Mutable.Linear.Borrow.Vector' whose contents are 'Clone' themselves.
 Each piece of the contents is cloned through a 'Share' of it, so the original is only read.
+It also includes linear-base's t'Data.Array.Mutable.Linear.Array', whose elements are GC-owned: its clone is a new array that shares them.
 The fact that the 'clone'd value is only accessible inside 'BO' ensures that we cannot leak mutable states inside @a@ into /unrestricted/ contexts -- otherwise, we can introduce mutable values into unrestricted context via @'move' :: 'Share' α a -> 'Ur' ('Share' α a)@.
 
 In performance-sensitive loops, moving a whole structured value can be a sign

@@ -38,17 +38,23 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   With a `Dupable` that returns two fresh copies, 0.1.0.0 consumed the original twice, and with one that returns the original second, a clone that kept the first copy would hand the original to the clone while a live `Share` could still read it.
   Give the contents a `Clone` instance.
   A `Copyable` type gets one with `deriving via AsCopyable T instance Clone T`, with `AsCopyable` from `Control.Monad.Borrow.Pure.Clone`.
-  A record or sum type of clonable fields gets one with `deriving anyclass instance Clone T`, once it has the `Generic` instance of linear-generics, from `$(deriveGeneric ''T)` of `Generics.Linear.TH`, which takes `TemplateHaskell` and `TypeFamilies`.
+  A record or sum type of clonable fields gets one with `deriving anyclass instance Clone T`, once it has the `Generic` instance of linear-generics, from `$(deriveGeneric ''T)` of `Generics.Linear.TH`, which takes `DataKinds`, `TemplateHaskell` and `TypeFamilies`.
   An immutable, GC-owned type with neither, such as `Text` or `ByteString`, can be stored as `Ur Text`, since `Clone (Ur a)` shares its payload.
-  A type of your own that owns a resource needs an instance written through `Control.Monad.Borrow.Pure.BO.Unsafe`, under the obligations stated on `Clone`.
-  Contents that are `Dupable` but none of these, such as linear-base's mutable arrays, can no longer be cloned through a borrow without an instance of that kind; contents that are `Clone` but not `Dupable`, as in `Ref (Vector (Ref Int))`, now can be.
+  A newtype over a type that has an instance gets one with `deriving newtype Clone`.
+  A type that holds a resource with no instance needs one written by hand, as the header of `Control.Monad.Borrow.Pure.Clone` describes.
+  For another package's type, write it for a newtype over that type rather than as an orphan, which an instance added later by this library or by that package would break.
+  Contents that are `Clone` but not `Dupable`, as in `Ref (Vector (Ref Int))`, can now be cloned.
+  Contents that are `Dupable` but none of the above can no longer be cloned through a borrow.
+  Linear-base's `Array`, `Vector`, `HashMap` and `Set` keep being cloned through dedicated instances that copy their backing storage and share their GC-owned elements, as 0.1.0.0 did through `Dupable`.
 - `Linearly`, `Now` and `EndToken` carry a field, so that GHC cannot learn which value a token is, and `Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe` exports their constructors as `UnsafeLinearlyToken`, `UnsafeNowToken` and `UnsafeEndToken`.
   The old names `UnsafeLinearly`, `UnsafeNow` and `UnsafeEnd` remain as patterns, which build a token and match an unrestricted one as the constructors did.
   GHC does not let a pattern synonym match a linearly bound value, and rejects such a match with "Couldn't match type ‘Many’ with ‘One’" arising from "a non-linear pattern" "(pattern synonyms aren't linear)", or, in a `case`, arising from the "multiplicity of" the variable matched.
   Where you matched a linear token, write the constructor instead, as in `\(UnsafeLinearlyToken _) -> ()`.
   A token built with a pattern or a constructor is a constant, which GHC may share between allocations: build one only inside a function that is `NOINLINE` and applied through `noinline`.
   Where you take a token apart and return another, pass the field on; a function that returns two tokens must itself be `NOINLINE` and applied through `noinline`, as `dup2` is, since two tokens with the same field are one expression.
-- The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)` or a `(<:)` instance for `Maybe`; delete the orphan.
+- The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)`, `Clone (Array a)`, `Clone` for a boxed growable or unboxed vector, or a `(<:)` instance for `Maybe`; delete the orphan.
+  Call sites of an old shallow vector-cloning orphan now need `Clone a`, since those vectors own their elements.
+  An orphan as general as the new instance, such as `Clone (Array a)`, is rejected with "Duplicate instance declarations"; a narrower one, such as `Clone (Array Int)`, compiles, and each use of it is rejected with "Overlapping instances".
 
 ### Changed
 
@@ -70,6 +76,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Without anything forced, a `runBO` whose action has no free variables, such as `runBO_ lin (asksLinearly (Ref.new 0))`, was computed once for the whole program, and every call returned the same reference.
 - `Data.Ref.Linear.new`, `atomicModify`, `atomicModify_` and `unsafeWriteRef`, and computations run by `runBO` and `modifyBO`, performed their effects once per thread when several threads forced the same unevaluated call, for example one stored in a `Ref` and read through a `Share` by both branches of a `parBO`: an increment could be applied twice, and two branches could see different references.
 - `Data.Ref.Linear.atomicModify_` could crash or store an ill-typed value, and `atomicModify` stored the old value rather than the new one.
+- Cloning one shared `Ref` of a linear-base `Array` more than once, as a loop does, gave every clone the same array at `-O2`: GHC made the pure `dup2` of the contents once for all the clones, so a write to one clone reached them all.
+  Each clone now copies the array.
 - The work-stealing scheduler behind `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` could run a task twice, running the mutable borrows it carries twice, and lose another, so that the call never returned: `qsortDC` occasionally hung, and under load could return a vector it had not sorted.
   Its deque's `stealHalf` claimed a batch of tasks with one compare-and-swap, sized from a count that could be out of date, while the owner, popping from the other end without one, could reach into the batch.
   It now takes a batch one task at a time, and so may return fewer than half the tasks when the owner or another thief takes some meanwhile.
@@ -82,6 +90,12 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 - `Consumable` for the boxed `Vector` of `Data.Vector.Mutable.Linear.Borrow`, which gives a vector of non-`Movable` elements, such as `Ref`s, a way out.
 - `Clone` for `Ur`, `Sum`, `Product`, `Min`, `Max`, `Arg` and `Complex`.
+- `Clone` for linear-base's `Array`, `Vector`, `HashMap` and `Set`, copying their backing arrays and sharing their GC-owned contents without constraints on the elements.
+  Vector and hash-map capacities are preserved.
+- Deep `Clone` for the boxed growable vector and the fixed and growable unboxed vectors, requiring `Clone a` (and `Unbox a` for the unboxed families).
+  Growable copies retain length and capacity and clone only initialized elements.
+- `Clone` and `Copyable` for `Identity`, `Down`, `Const`, `Dual`, semigroup `First` and `Last`, `WrappedMonoid`, `Any`, `All`, `Alt`, and tuples through arity six.
+  Newtype wrappers delegate to the contained value's instance; an unboxed representation does not imply a shallow copy is safe.
 - `Clone` for the owned hash map of `Data.HashMap.RobinHood.Mutable.Linear`, which copies its slot array; the borrow-aware hash map clones through it.
 - `DistributesAlias` for `NonEmpty`.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
@@ -91,6 +105,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 ### Clarified
 
 - The callback of `unsafeInplace` must only rearrange elements, never duplicate, drop or replace one; `unsafeFromMutable` requires every element to be initialised.
+- `copy` of mutable containers is rejected with a message pointing to `clone` inside `BO`, including linear-base's `Array`, `Vector`, `HashMap` and `Set` and pure-borrow's references and vectors.
 
 ### Performance
 
@@ -104,6 +119,15 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - The `noDuplicate#` guard costs about 9 ns per owner-level `Ref` operation with several capabilities, and nothing with one.
 - `clone` of a boxed vector of references allocates about 25% more than 0.1.0.0, 4.16 MB against 3.31 MB per clone of 100,000 `Ref Int`s, because each element's clone is a new `Ref`, allocated when the clone is taken rather than left as a thunk.
   `clone` of a vector of values such as `Int` allocates exactly what it did in 0.1.0.0.
+- `clone` of a linear-base `Array`, and so of a `Ref` or boxed `Vector` of arrays, copies each array in one pass with the array's own `dup2`, as 0.1.0.0 did through `Dupable`.
+  It costs a bare `cloneMutableArray#` plus about 2.5 ns and 16 bytes per clone on GHC 9.12 and later; on 9.10, whose `evaluate` allocates a thunk around the copy, it costs 48 bytes and about 5 ns more, or 30 ns more at 1,000 elements.
+  Code that clones one borrow repeatedly, as a loop does, now pays for a copy per clone, where 0.1.0.0 made one copy and gave it to every clone (see "Fixed").
+- Deep cloning the element-owning unboxed vectors visits each initialized element through its `Clone` instance.
+  On GHC 9.12.4/AArch64 macOS at `-O2`, cloning 100,000 `Int`s took 37.8 µs with specialization versus 13.4 µs for a safe ST buffer copy, with about 0.80 MB allocated by both.
+  Through a polymorphic dictionary boundary, the clone took 908 µs and allocated 4.00 MB; a vector of `(Int, Double)` took 2.71 ms and 8.80 MB versus 25.0 µs and 1.60 MB for the storage copy.
+  These are eleven rotated samples at `-N1`, excluding source setup and final materialization; they compare deep cloning with copying plain data, not with a previous equivalent instance.
+  Growable unboxed clones showed comparable costs; linear-base wrapper clones copy the whole backing capacity, including spare slots.
+  A bulk-copy fast path would need an additional guarantee that copying the element representation implements its `Clone`; `Unbox` alone does not provide that guarantee.
 - The work-stealing deque's `stealHalf` takes a batch one task at a time, with a compare-and-swap and two barriers for each, where 0.1.0.0 claimed the batch with one compare-and-swap (see "Fixed").
   In the quicksort and FFT benchmarks most steal attempts find nothing and a batch holds one or two tasks, so their work-stealing variants show no measurable change in interleaved runs against the old deque: a pooled ratio of 1.00, with a 95% interval of about ±7%, at `-N4` and `-N10`.
   On x86-64 the barrier between a thief's reads of `top` and `bottom` is now a full fence on every steal attempt, whose cost was not measured.
@@ -113,7 +137,11 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 - `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` do not propagate an exception raised by `divide` or `conquer`; the caller blocks instead.
 - A pure value whose evaluation writes memory it did not allocate can perform those writes twice if two threads force it at the same moment, for example both branches of a `parBO` reading it through a `Share`.
-  `Ref`'s pure operations and `runBO`/`modifyBO` computations are protected, but the owned hash map's `insert`, `delete` and `alter` in `Data.HashMap.RobinHood.Mutable.Linear` are not: force such a result before storing it where several branches can reach it, e.g. `Ref.new $! HashMap.insert k v m`.
+  `Ref`'s pure operations and `runBO`/`modifyBO` computations are protected, but the owned hash map's `insert`, `delete` and `alter` in `Data.HashMap.RobinHood.Mutable.Linear` are not.
+  Neither are linear-base's in-place operations: `set`, `write`, `unsafeSet`, `unsafeWrite`, `map` and `fmap` of `Data.Array.Mutable.Linear`, and linear-base's `Vector`, `HashMap` and `Set`, which are built on them.
+  Any field that stores such a call unevaluated, as `Ref.new` and `Data.Vector.Mutable.Linear.Borrow.fromList` do, or a lazy field of a record, a `Maybe` or a list, can have the call run twice when two branches read or clone it through a `Share` at once.
+  A lone write run twice writes the same value twice, but `map`, `fmap` and chains of reads and writes read what the first run wrote, and a clone taken meanwhile can copy what the second run has written so far: `Array.map (+ 1)` adds 2 to some elements, a clone can copy an array halfway through an update, or hold a value that a chain wrote to one place only on the way, and a `map` that changes the element type reads the first run's results at the wrong type and crashes the program.
+  Force such a call before storing it where several branches can reach it, e.g. `Ref.new $! HashMap.insert k v m` or `Ref.new $! Array.map f arr`; `$!` reaches only the outermost constructor, so force each call that a record, a list or a vector holds.
   The protection holds under GHC's default lazy blackholing; `-feager-blackholing` on the module that builds the value can defeat it, and single-capability programs are unaffected.
 
 ## 0.1.0.0 - 2026-09-19

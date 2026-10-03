@@ -43,16 +43,21 @@ import Control.Monad.Borrow.Pure.BO.Internal
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Array.Mutable.Linear (Array)
 import Data.Complex
+import Data.Functor.Const (Const (..))
+import Data.Functor.Identity (Identity (..))
+import Data.HashMap.Mutable.Linear (HashMap)
 import Data.Int
 import Data.Kind (Constraint, Type)
+import Data.Monoid qualified as Monoid
+import Data.Ord (Down (..))
 import Data.Semigroup qualified as Sem
+import Data.Set.Mutable.Linear (Set)
 import Data.Vector.Mutable.Linear (Vector)
 import Data.Word
-import GHC.TypeError (ErrorMessage (..))
+import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
 import Generics.Linear
 import Numeric.Natural (Natural)
 import Prelude.Linear
-import Prelude.Linear.Unsatisfiable (Unsatisfiable, unsatisfiable)
 import Unsafe.Linear qualified as Unsafe
 
 -- | Values that can be copied from a live borrow.
@@ -72,14 +77,36 @@ instance Copyable (Ur a) where
   {-# INLINE copy #-}
 
 instance
-  (Unsatisfiable (ShowType (Array a) :<>: Text " cannot be copied!")) =>
+  ( Unsatisfiable
+      ( ShowType (Array a)
+          :<>: Text " cannot be copied!"
+          :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead."
+      )
+  ) =>
   Copyable (Array a)
   where
   copy = unsatisfiable
 
 instance
-  (Unsatisfiable (ShowType (Vector a) :<>: Text " cannot be copied!")) =>
+  ( Unsatisfiable
+      ( ShowType (Vector a)
+          :<>: Text " cannot be copied!"
+          :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead."
+      )
+  ) =>
   Copyable (Vector a)
+  where
+  copy = unsatisfiable
+
+instance
+  (Unsatisfiable (ShowType (HashMap k v) :<>: Text " cannot be copied!" :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead.")) =>
+  Copyable (HashMap k v)
+  where
+  copy = unsatisfiable
+
+instance
+  (Unsatisfiable (ShowType (Set a) :<>: Text " cannot be copied!" :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead.")) =>
+  Copyable (Set a)
   where
   copy = unsatisfiable
 
@@ -120,6 +147,26 @@ deriving via UnsafeAssumeNoVar Double instance Copyable Double
 deriving via UnsafeAssumeNoVar Char instance Copyable Char
 
 deriving via UnsafeAssumeNoVar Bool instance Copyable Bool
+
+deriving newtype instance (Copyable a) => Copyable (Identity a)
+
+deriving newtype instance (Copyable a) => Copyable (Down a)
+
+deriving newtype instance (Copyable a) => Copyable (Const a b)
+
+deriving newtype instance (Copyable a) => Copyable (Sem.Dual a)
+
+deriving newtype instance (Copyable a) => Copyable (Sem.First a)
+
+deriving newtype instance (Copyable a) => Copyable (Sem.Last a)
+
+deriving newtype instance (Copyable a) => Copyable (Sem.WrappedMonoid a)
+
+deriving newtype instance (Copyable (f a)) => Copyable (Monoid.Alt f a)
+
+deriving via UnsafeAssumeNoVar Monoid.Any instance Copyable Monoid.Any
+
+deriving via UnsafeAssumeNoVar Monoid.All instance Copyable Monoid.All
 
 instance (Copyable a) => Copyable (Complex a) where
   copy = \(UnsafeAlias (!real :+ !imaginary)) ->
@@ -239,6 +286,16 @@ deriving via
   instance
     (Copyable a, Copyable b, Copyable c, Copyable d) =>
     Copyable (a, b, c, d)
+
+deriving via
+  Generically (a, b, c, d, e)
+  instance
+    (Copyable a, Copyable b, Copyable c, Copyable d, Copyable e) => Copyable (a, b, c, d, e)
+
+deriving via
+  Generically (a, b, c, d, e, f)
+  instance
+    (Copyable a, Copyable b, Copyable c, Copyable d, Copyable e, Copyable f) => Copyable (a, b, c, d, e, f)
 
 deriving via
   Generically (Either a b)

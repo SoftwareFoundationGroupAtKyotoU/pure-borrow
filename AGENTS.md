@@ -232,6 +232,9 @@ Borrow types are all one zero-cost representation, `Alias ak α a`:
   A function that takes a token apart and returns another passes the field on, as `newLifetime` and `endLifetime` do, even when it is `OPAQUE`: `OPAQUE` hides the body but not the demand signature, and a signature that shows the field unused lets GHC rebuild the token as a constant in a caller's worker.
   One that returns two tokens must be `NOINLINE` and applied through `noinline`, as `dup2` is, since two tokens with the same field are one expression.
   Only such a function, or an `OPAQUE` one that takes no token (`endHere`, `reviveAliasWithEnd#`), may build a token from constants.
+  A copy of a shared value must depend on something of its own, or GHC merges two copies of one value, as it did for the clones of a loop.
+  Make the copy with IO actions in the state thread, or pass a `Linearly` of its own to a copy function that is `NOINLINE` and applied through `noinline`, as `copyUnconsumed` in the Robin Hood table is.
+  Short of either, a pure copy does not do even when evaluated in the state thread, and neither does a token consumed beside the copy or passed to a function that is only `NOINLINE` or only `OPAQUE`.
   And `withEnd` does not force its token, which keeps it opaque until `reviveOwner` (Note [Owners handed back by reclaim]).
 
 The same rule applies wherever a binding's own body calls `unsafePerformIO`: mark it `NOINLINE`, and mark any class method that reaches one — `Consumable`'s `consume` for the vector owners is the recurring case.
@@ -240,8 +243,9 @@ This bites even when the action only *reads*, as an element-consuming traversal 
 `INLINE` on such a binding is a bug, not a tuning choice.
 An ordinary `IO` worker that does not itself call `unsafePerformIO` may stay `INLINE`; it is the `unsafePerformIO` occurrence that must be kept unique.
 
-A related obligation has its own Notes.
-A delimiter that hands back a borrow restores it through `reviveAlias`, while one that discharges an `After` takes its `EndToken` from the state thread rather than applying `UnsafeEnd` (Note [Restoring a borrow must break its Core identity], Note [Owners handed back by reclaim]).
+Two related obligations have their own Notes.
+A pure primitive that opens its own `runRW#` and allocates or writes must call `noDuplicate#` before the effect, as `unsafePerformIO` does, because a result stored unevaluated behind a `Share` can be forced by two threads at once (Note [Pure Ref primitives run their effects at most once]).
+And a delimiter that hands back a borrow restores it through `reviveAlias`, while one that discharges an `After` takes its `EndToken` from the state thread rather than applying `UnsafeEnd` (Note [Restoring a borrow must break its Core identity], Note [Owners handed back by reclaim]).
 
 ### Parallel divide-and-conquer — `src/Control/Concurrent/DivideConquer/Linear.hs`
 
@@ -285,6 +289,8 @@ Includes a demonstrative in-place parallel `qsort` (budgeted `parBO`; the heavie
   It is not an operation on `%Many` data and must not be used to process an unrestricted source.
   For example, a `V.Vector a ->` source and its elements are GC-owned, so cloning its buffer neither requires `Copyable a` nor calls `copy`.
   Evaluating `copy` must complete the copy and return its result in WHNF, so callers may rely on the copy having completed before the borrow is recovered or its lifetime ends.
+- **`Clone` of an element-owning container requires `Clone` of its contents:** clone each piece through a `Share` of it, and never consume the original or write to it.
+  Do not reach for `Dupable` there: `dup2` consumes its argument, and linear-base's laws do not say which of the two copies, if either, is the original (Note [Cloning the contents of a shared borrow] in `Data.Ref.Linear.Internal`).
 - **Moving into GC ownership requires `Movable`:** when a consuming operation transfers linearly owned contents into an unrestricted `Ur`-wrapped container, require `Movable`, not `Copyable`, and invoke `move` for every owned piece.
   A `Movable` instance may need to deep-copy before returning the GC-owned value; a bare constraint that is never used is not sufficient.
   `Copyable` instead describes copying from a live borrow.

@@ -14,6 +14,15 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Replace `foldBorrowOf fld` with `foldBorrowVia sp` for a splitter `sp` such as `split`.
   `foldBorrow`, which was `foldBorrowOf foldMap`, is now `foldBorrowVia split`, so it requires `DistributesAlias t`.
   It rejects a borrow of an `Either e a` or `(e, a)` with "Use splitEither directly!" or "Use splitPair instead!".
+- `Clone` for `Ref` requires `Clone` of the contents instead of `Dupable`, and clones each piece of the contents through a shared borrow of it, without consuming the original or writing to it.
+  `dup2` consumes its argument, and linear-base's laws do not say which of its two copies, if either, is the original.
+  With a `Dupable` that returns two fresh copies, 0.1.0.0 consumed the original twice, and with one that returns the original second, a clone that kept the first copy would hand the original to the clone while a live `Share` could still read it.
+  Give the contents a `Clone` instance.
+  A `Copyable` type gets one with `deriving via AsCopyable T instance Clone T`, with `AsCopyable` from `Control.Monad.Borrow.Pure.Clone`.
+  A record or sum type of clonable fields gets one with `deriving anyclass instance Clone T`, once it has the `Generic` instance of linear-generics, from `$(deriveGeneric ''T)` of `Generics.Linear.TH`, which takes `TemplateHaskell` and `TypeFamilies`.
+  An immutable, GC-owned type with neither, such as `Text` or `ByteString`, can be stored as `Ur Text`, since `Clone (Ur a)` shares its payload.
+  A type of your own that owns a resource needs an instance written through `Control.Monad.Borrow.Pure.BO.Unsafe`, under the obligations stated on `Clone`.
+  Contents that are `Dupable` but none of these, such as linear-base's mutable arrays, can no longer be cloned through a borrow without an instance of that kind; contents that are `Clone` but not `Dupable`, as in `Ref (Vector (Ref Int))`, now can be.
 - `Linearly`, `Now` and `EndToken` carry a field, so that GHC cannot learn which value a token is, and `Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe` exports their constructors as `UnsafeLinearlyToken`, `UnsafeNowToken` and `UnsafeEndToken`.
   The old names `UnsafeLinearly`, `UnsafeNow` and `UnsafeEnd` remain as patterns, which build a token and match an unrestricted one as the constructors did.
   GHC does not let a pattern synonym match a linearly bound value, and rejects such a match with "Couldn't match type ‘Many’ with ‘One’" arising from "a non-linear pattern" "(pattern synonyms aren't linear)", or, in a `case`, arising from the "multiplicity of" the variable matched.
@@ -29,17 +38,19 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   A branch in a loop that does not allocate cannot be stopped until the loop ends; compile the module that contains such a loop with `-fno-omit-yields` if the rethrow must be prompt.
   An asynchronous exception to the caller, such as a `timeout`, does not stop the branches: forcing the interrupted value again collects their results, and a value that is dropped instead leaves them running to completion.
   A computation's thread, stack included, about 1 KB, stays in memory after it finishes: the second computation's until the first one finishes, and the first computation's until the thread running `parBO` runs again; `Par` and `mapConcurrentlyOf` over a list put the short computation first.
+- `Data.Ref.Linear.Borrow.update`, `modify`, `swap` and `readShare`, and the hash map's queries and `take`, `take_` and `swap`, read and write inside `BO`, at their place in the sequence; a write could previously land only when its result was forced, after the lifetime had ended.
 - `reclaim` forces the `EndToken` it is discharged with; `withEnd` leaves it alone.
 
 ### Fixed
 
 - An owner handed back after a scope, by `runBO`, `runBOLend`, `modifyBO`, `modifyBO_`, the scopes that discharge an `After` or `reclaim` itself, could be read by a pure operation before the scope's writes, once GHC merged that read with an earlier one: after `(r1, r2) <- dup2 r0`, a scope that bumped `r1` and then `Ref.free (reclaim lend)` returned the contents from before the bump at `-O2`, and for a `Ref (Ref a)` it handed out a second owner of a reference it had given away.
-  The owner now comes back through a barrier that depends on the end of the lifetime, also in a module compiled with `-fno-state-hack` or one that forces the `EndToken` it discharges an `After` with.
+  The owner now comes back through a barrier that depends on the end of the lifetime, also in a module compiled with `-fno-state-hack` or one that forces the `EndToken` it discharges an `After` with, and `dup2` on a `Ref` no longer hands back the reference it read.
 - `withEnd` given a bottom `EndToken`, which anyone can write, let `reclaim` hand an owner back while its borrows were still live, so that two `Mut`s reached one resource; it now fails instead.
 - Forcing a `Linearly` token, with a bang, `$!`, a strict field or a module compiled with `Strict`, let GHC merge the allocations made with it: after `case dup2 lin of (!l1, !l2)`, `Ref.new seed l1` and `Ref.new seed l2` were one reference, and a function that allocated a reference or a vector from a forced token returned the same one on every call.
   Forcing a `Now` made the end token of every lifetime one shared constant.
   Without anything forced, a `runBO` whose action has no free variables, such as `runBO_ lin (asksLinearly (Ref.new 0))`, was computed once for the whole program, and every call returned the same reference.
-- Computations run by `runBO` and `modifyBO` performed their effects once per thread when several threads forced the same unevaluated run, for example one read through a `Share` by both branches of a `parBO`.
+- `Data.Ref.Linear.new`, `atomicModify`, `atomicModify_` and `unsafeWriteRef`, and computations run by `runBO` and `modifyBO`, performed their effects once per thread when several threads forced the same unevaluated call, for example one stored in a `Ref` and read through a `Share` by both branches of a `parBO`: an increment could be applied twice, and two branches could see different references.
+- `Data.Ref.Linear.atomicModify_` could crash or store an ill-typed value, and `atomicModify` stored the old value rather than the new one.
 - The work-stealing scheduler behind `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` could run a task twice, running the mutable borrows it carries twice, and lose another, so that the call never returned: `qsortDC` occasionally hung, and under load could return a vector it had not sorted.
   Its deque's `stealHalf` claimed a batch of tasks with one compare-and-swap, sized from a count that could be out of date, while the owner, popping from the other end without one, could reach into the batch.
   It now takes a batch one task at a time, and so may return fewer than half the tasks when the owner or another thief takes some meanwhile.
@@ -51,6 +62,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 ### New
 
 - `Clone` for `Ur`, `Sum`, `Product`, `Min`, `Max`, `Arg` and `Complex`.
+- `Clone` for the owned hash map of `Data.HashMap.RobinHood.Mutable.Linear`, which copies its slot array; the borrow-aware hash map clones through it.
 - `DistributesAlias` for `NonEmpty`.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
@@ -64,6 +76,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Its finished threads also stay in memory longer: the parallel divide-and-conquer FFT benchmark on 2^20 points peaks at 137 MB at `-N1`, against about 105 MB for 0.1.0.0, and at 123 MB against 118 MB at `-N4`.
 - Every `reclaim`, every run of the `runBO` family, and every crossing of a scope that discharges an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) makes one or two more out-of-line calls; `sharing`, `reborrowing` and the `_` variants are unchanged.
 - Every run of the `runBO` family, `modifyBO` and `modifyBO_` included, allocates its lifetime tokens, the `Now` and the end token with its `Ur`, 48 bytes, where 0.1.0.0 used static tokens shared by all runs: a loop of `modifyBO_` allocates 80 bytes per iteration against 32, and the benchmarks that run `BO` once per iteration 48 bytes more.
+- The `noDuplicate#` guard costs about 9 ns per owner-level `Ref` operation with several capabilities, and nothing with one.
 - The work-stealing deque's `stealHalf` takes a batch one task at a time, with a compare-and-swap and two barriers for each, where 0.1.0.0 claimed the batch with one compare-and-swap (see "Fixed").
   In the quicksort and FFT benchmarks most steal attempts find nothing and a batch holds one or two tasks, so their work-stealing variants show no measurable change in interleaved runs against the old deque: a pooled ratio of 1.00, with a 95% interval of about ±7%, at `-N4` and `-N10`.
   On x86-64 the barrier between a thief's reads of `top` and `bottom` is now a full fence on every steal attempt, whose cost was not measured.
@@ -72,6 +85,9 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 ### Known issues
 
 - `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` do not propagate an exception raised by `divide` or `conquer`; the caller blocks instead.
+- A pure value whose evaluation writes memory it did not allocate can perform those writes twice if two threads force it at the same moment, for example both branches of a `parBO` reading it through a `Share`.
+  `Ref`'s pure operations and `runBO`/`modifyBO` computations are protected, but the owned hash map's `insert`, `delete` and `alter` in `Data.HashMap.RobinHood.Mutable.Linear` are not: force such a result before storing it where several branches can reach it, e.g. `Ref.new $! HashMap.insert k v m`.
+  The protection holds under GHC's default lazy blackholing; `-feager-blackholing` on the module that builds the value can defeat it, and single-capability programs are unaffected.
 
 ## 0.1.0.0 - 2026-09-19
 

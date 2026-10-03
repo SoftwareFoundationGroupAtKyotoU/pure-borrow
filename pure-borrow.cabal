@@ -194,6 +194,7 @@ test-suite pure-borrow-test
     Control.Monad.Borrow.Pure.Experimental.LoopSpec
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
+    Control.Monad.Borrow.Pure.ParBOSpec
     Data.Coerce.Directed.TypingCases
     Data.Coerce.DirectedSpec
     Data.HashMap.RobinHood.Mutable.Linear.BorrowSpec
@@ -358,6 +359,7 @@ benchmark pure-borrow-bench
   -- cabal-gild: discover bench/suite --exclude=bench/suite/Main.hs
   other-modules:
     PureBorrow.Bench.CopyAt
+    PureBorrow.Bench.ForkJoin
     PureBorrow.Bench.Growable
     PureBorrow.Bench.HashMap
     PureBorrow.Bench.Ingredients

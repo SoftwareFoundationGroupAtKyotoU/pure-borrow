@@ -272,6 +272,8 @@ test-suite pure-borrow-inspection
     tasty-inspection-testing,
     vector,
 
+-- The owner kernels and the forced-token kernels, with GHC's state hack switched off.
+-- The flag is set for the whole component because it did not take effect in one module's OPTIONS_GHC of pure-borrow-test; see test-no-state-hack/Main.hs.
 test-suite pure-borrow-doctests
   import: defaults
 

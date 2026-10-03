@@ -8,7 +8,7 @@ Keep agent-agnostic project instructions here, and keep tool-specific files as t
 
 **pure-borrow** realizes **Rust-style borrowing in Linear Haskell, purely** — compile-time ownership and memory safety with no runtime overhead, plus safe deterministic parallelism.
 It is the artifact of the paper *Pure Borrow: Linear Haskell Meets Rust-Style Borrowing* (Y. Matsushita & H. Ishii, PLDI 2026; [arXiv:2604.15290](https://arxiv.org/abs/2604.15290)).
-The package is already released on Hackage (version `0.0.0.0`); current work is **incremental improvement** (notably performance) of a published, paper-backed library — so preserve the public API and the soundness invariants unless a change is deliberate.
+The package is already released on Hackage (latest release `0.1.0.0`); current work is **incremental improvement** (notably performance) of a published, paper-backed library — so preserve the public API and the soundness invariants unless a change is deliberate.
 
 `Control.Monad.Borrow.Pure` is the umbrella module and carries the full Haddock tutorial; read it before designing changes to the core.
 
@@ -75,6 +75,11 @@ cabal test pure-borrow-test --test-options='-p "Lifetime"'   # run a subset by p
 
 `test/Control/Monad/Borrow/Pure/Lifetime/TypingCases.hs` holds type-level (compile-time) constraint checks, not runtime assertions.
 
+A test module compiled at `-O0`, as the `TypingCases` modules are, must also pass `-fno-ignore-interface-pragmas`.
+`-O0` implies `-fignore-interface-pragmas`, and within one `--make` session the first module that loads a library interface decides whether every module after it sees the library's unfoldings.
+After a plain `-O0` module, the `-O2` modules of `pure-borrow-test` called `Clone (Array a)` through its dictionary instead of inlining it as user code at `-O2` does, so a test of what the optimiser does to library code tested nothing.
+`bash ci/scripts/check-o0-test-modules.sh` checks this rule, and CI runs it.
+
 Two kinds of failing test look superficially alike here, and they encode opposite intentions.
 Never convert one into the other.
 
@@ -89,9 +94,14 @@ The suite then stays green while the limitation stands, and turns red the day th
 `test_should_pass` in `test/Control/Monad/Borrow/Pure/LifetimeSpec.hs` is the reference case: transitivity and monotonicity of the outlives relation *should* hold, and the layered `INCOHERENT` instances simply do not derive them today.
 Asserting a deferred type error there would claim the opposite — that we intend those properties to be underivable.
 
-Exception verified with GHC 9.12.4: linear multiplicity errors such as `Couldn't match type 'Many' with 'One'` are rejected while compiling the module even with `-fdefer-type-errors -Wno-deferred-type-errors`; they do not reach the runtime deferred-error path above.
-Put those cases in `test/typing-fail/` and validate their compile failure using the Cabal-selected compiler.
-Keep errors that GHC does defer in `TypingCases`.
+Exception verified with GHC 9.12.4: a multiplicity *usage* error, reported as `Couldn't match type 'Many' with 'One'` *arising from multiplicity of* a variable, is rejected while compiling the module even with `-fdefer-type-errors -Wno-deferred-type-errors`; it does not reach the runtime deferred-error path above.
+A mismatch between two arrow types (`Expected: Int %1 -> Int`, `Actual: Int -> Int`) is deferred like any other type error.
+An instance declaration that fails to typecheck is never observable at run time either: it is rejected outright, or its error is deferred into a method that nothing forces.
+Put the cases GHC does not defer, or whose deferred error no evaluation would reach, in `test/typing-fail/` and validate their compile failure using the Cabal-selected compiler.
+Each fixture names the diagnostic it must fail with in one or more `-- EXPECT: <text>` lines, free of GHC's locale-dependent quotation marks, and `bash ci/scripts/check-typing-fail.sh` compiles every fixture against the built library and checks that each is rejected with its text.
+Run it after `cabal build all`; CI runs it after the test suites.
+Keep errors that GHC does defer, and that forcing a value raises, in `TypingCases`.
+A deferred class constraint is raised only when its dictionary is forced, so a case whose function ignores the dictionary (as `upcast` or `withLinearly` do) needs an equality instead, or a method call that forces it.
 
 ### Benchmarks & profiling
 

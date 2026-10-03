@@ -1,6 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# OPTIONS_GHC -Wno-redundant-constraints -O0 #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints -O0 -fno-ignore-interface-pragmas #-}
 
 module Control.Monad.Borrow.Pure.LifetimeSpec (
   module Control.Monad.Borrow.Pure.LifetimeSpec,

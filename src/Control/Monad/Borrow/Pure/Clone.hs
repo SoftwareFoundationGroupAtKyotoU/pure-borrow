@@ -25,10 +25,12 @@ import Control.Monad.Borrow.Pure.BO.Internal
 import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Coerce (Coercible, coerce)
+import Data.Complex (Complex)
 import Data.Data (Proxy)
 import Data.Int
 import Data.Kind (Constraint, Type)
 import Data.List.NonEmpty (NonEmpty)
+import Data.Semigroup qualified as Sem
 import Data.Word
 import GHC.Exts (Multiplicity (..))
 import Generics.Linear
@@ -36,19 +38,52 @@ import Numeric.Natural
 import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
 
-{- | @'Clone' a@ is analogous o @'Copyable' a@, but requires cloned values
-to be accessible only inside the @'BO' α@ monad.
+{- | @'Clone' a@ is analogous to @'Copyable' a@, but a clone is available only inside the @'BO' α@ monad.
 
-The difference between 'Clone' and 'Copyable' is that the former allows for
-cloning a shared borrow of a /mutable/ or /linear/ value, while the latter requires cloning a shared borrow of an /immutable/ value.
-This is because we can leak @'Share' α a@ via 'Prelude.Linear.Movable' instance, and
-hence it can outlive the original @'BO' α@ lifetime, which allows leaking mutable states inside @a@ into /unrestricted/ contexts, which destroys the soundness severly.
+The difference between 'Clone' and 'Copyable' is that the former allows for cloning a shared borrow of a /mutable/ or /linear/ value, while the latter requires cloning a shared borrow of an /immutable/ value.
+This is because a @'Share' α a@ can be leaked through its t'Prelude.Linear.Movable' instance, and so outlive the lifetime @α@, which would leak the mutable state inside @a@ into /unrestricted/ contexts and destroy soundness.
+
+A container that owns its contents, such as t'Data.Ref.Linear.Ref' or the boxed vectors, clones them with their own 'Clone', so its instance requires @'Clone' a@; one whose contents are GC-owned copies them and requires nothing of them.
+A type gets an instance in one of these ways:
+
+* a 'Copyable' type, with @deriving via t'AsCopyable' T instance 'Clone' T@;
+* a record or sum type whose fields are 'Clone', from the default method, with @deriving anyclass instance 'Clone' T@ once it has the t'Generics.Linear.Generic' instance of linear-generics (@Generics.Linear.TH.deriveGeneric ''T@, which takes @TemplateHaskell@ and @TypeFamilies@, and linear-generics among the dependencies);
+* an immutable, GC-owned value, such as a @Text@, by storing it as @t'Ur' Text@, whose 'Clone' shares its payload;
+* a type that owns a resource of its own, with an instance written through "Control.Monad.Borrow.Pure.BO.Unsafe".
+
+Such an instance must leave the original to its owner: it must neither consume the original, nor write to it, nor hand the clone any part of it that the original owns linearly or that can be written to, since shared borrows of it may be live, in this thread or in a 'Control.Monad.Borrow.Pure.parBO' sibling.
+GC-owned, immutable parts may be shared, as the payload of an t'Ur' is.
+It must finish the copy inside the 'BO' action it returns, before the lifetime of the borrow ends.
+And each copy must depend on something of its own, or GHC merges the copies of two clones of one borrow into one, as it does in a loop that clones the same borrow.
+Either allocate and fill the copy with IO actions in the state thread, as the vector instances do under 'Control.Monad.Borrow.Pure.BO.Unsafe.unsafeSystemIOToBO', or pass a t'Control.Monad.Borrow.Pure.Linearly' taken with 'Control.Monad.Borrow.Pure.BO.askLinearly' to the function that makes the copy, and make that function @NOINLINE@ and apply it through 'GHC.Exts.noinline', as below.
+A pure copy is not enough however it is evaluated, even with @$!@ inside 'Control.Monad.Borrow.Pure.BO.Unsafe.unsafeSystemIOToBO'.
+Neither is consuming the token beside the copy, nor passing it to a function that is only @NOINLINE@ or only @OPAQUE@: such a function's demand signature shows that it ignores the token's field, and GHC may then drop the token on the way to it.
+For linear-base's arrays, whose elements are GC-owned, that gives the following, with "Control.Monad.Borrow.Pure" imported, @Alias (..)@ from "Control.Monad.Borrow.Pure.BO.Unsafe", 'Control.Monad.Borrow.Pure.BO.evaluateBO' from "Control.Monad.Borrow.Pure.BO", 'GHC.Exts.noinline', "Unsafe.Linear" as @Unsafe@ and "Data.Array.Mutable.Linear" as @Array@:
+
+> instance Clone (Array a) where
+>   clone = Unsafe.toLinear \(UnsafeAlias arr) -> Control.do
+>     lin <- askLinearly
+>     evaluateBO (copyArray arr lin)
+>
+> -- NOINLINE and applied through noinline, so that each copy depends on its own token.
+> copyArray :: Array a -> Linearly %1 -> Array a
+> {-# NOINLINE copyArray #-}
+> copyArray = noinline \arr lin -> lin `lseq` sliceAll arr
+>
+> sliceAll :: Array a -> Array a
+> sliceAll arr = case Array.size arr of
+>   (Ur n, _) -> case Array.slice 0 n arr of
+>     (_, copied) -> copied
 -}
 class Clone a where
   clone :: Share α a %1 -> BO α a
   default clone :: (GenericClone a) => Share α a %1 -> BO α a
   clone = genericClone
 
+{- | Derive 'Clone' from 'Copyable': the clone is a 'copy' taken inside 'BO'.
+
+Use it with @DerivingVia@ for types whose values are immutable, for example @deriving via AsCopyable T instance Clone T@.
+-}
 newtype AsCopyable a = AsCopyable a
   deriving newtype (Copyable)
 
@@ -89,6 +124,24 @@ deriving via AsCopyable Double instance Clone Double
 deriving via AsCopyable Float instance Clone Float
 
 deriving via AsCopyable () instance Clone ()
+
+-- The payload of 'Ur' is GC-owned, so the clone shares it rather than cloning it.
+deriving via AsCopyable (Ur a) instance Clone (Ur a)
+
+deriving via AsCopyable (Sum a) instance (Copyable a) => Clone (Sum a)
+
+deriving via AsCopyable (Product a) instance (Copyable a) => Clone (Product a)
+
+deriving via AsCopyable (Sem.Min a) instance (Copyable a) => Clone (Sem.Min a)
+
+deriving via AsCopyable (Sem.Max a) instance (Copyable a) => Clone (Sem.Max a)
+
+deriving via
+  AsCopyable (Sem.Arg a b)
+  instance
+    (Copyable a, Copyable b) => Clone (Sem.Arg a b)
+
+deriving via AsCopyable (Complex a) instance (Copyable a) => Clone (Complex a)
 
 type GenericClone a = (Generic a, GClone (Rep a))
 

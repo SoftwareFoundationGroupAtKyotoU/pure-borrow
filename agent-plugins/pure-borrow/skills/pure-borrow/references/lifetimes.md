@@ -6,7 +6,7 @@
   Its values form a free bounded lower semilattice: atomic lifetimes created by `runBO` and the scope combinators, the meet `α /\ β` (the longest lifetime shorter than both), and `Static`, which never ends.
 - `α <= β` means `α` is a sublifetime of `β`; `β >= α` reads "`β` outlives `α`".
   GHC can derive `α <= α`, `α /\ β <= α`, `α /\ β <= β`, `α <= Static`, `α <= β /\ γ` from `α <= β` and `α <= γ`, and reassociations of `/\`.
-- The public `(<=)`, `End`, and `(<:)` constraints are sealed synonyms for hidden classes; users cannot add instances, including through deriving.
+- `(<=)`, `End`, and `(<:)` are classes whose instances the library supplies; write none of your own, except `(<:)` for a type of your own, derived as in "Subtyping" below.
   Use the library's supplied constraints and `upcast` instead of manufacturing lifetime or subtyping evidence.
 - There is no type-checker plugin: the relation is implemented by layered `INCOHERENT` instances.
   Transitivity (`α <= β`, `β <= γ` ⊢ `α <= γ`) and monotonicity are **not** derived.
@@ -58,6 +58,18 @@ Some modules (for example the hash map) use one lifetime for both; call them in 
 `subShare :: (α >= β) => Share α a -> Share β a` is the inference-friendly special case for shared borrows.
 Type applications often help `upcast` pick the target lifetime.
 
+A type of your own gets the relation componentwise by deriving it via `Generically`, once it has the `Generic` instance of linear-generics (`$(deriveGeneric ''Two)`):
+
+```haskell
+import Generics.Linear (Generically (..)) -- the constructor too, not only the type
+
+deriving via Generically (Two b) instance (a <: b) => Two a <: Two b
+```
+
+In the module that defines a newtype, `deriving via AsCoercible Meters instance Int <: Meters`, with `AsCoercible (..)` imported from `Data.Coerce.Directed`, lets modules that cannot see its constructor upcast `Int` to `Meters`.
+A derivation needs the via type and the target to be representationally equal where it is written, which is why the constructor must be in scope.
+`genericUpcast` converts between two instantiations of one data type, such as `Two a` and `Two b`, without any instance.
+
 ## Ending lifetimes: `After` and `End`
 
 - `reclaim :: End α => Lend α a %1 -> a` needs `End α`, which exists only inside an `After α` value, i.e. once `α` has ended.
@@ -94,7 +106,7 @@ The lower-level token API (`Now`, `newLifetime`, `endLifetime`, `scope_`, `sexec
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | "`β` would escape its scope" / "Couldn't match type `β0` with …" in a scope | A borrow at the scope's private lifetime is being returned | Return only unrestricted data, the restored outer borrow, or an `After β` finaliser |
-| `No instance for (α <= β)` / `(β >= α)` | Lifetimes of the borrow and of the `BO` do not line up, or transitivity would be needed | Make the helper polymorphic with `(α >= β) =>`, `upcast`/`subShare` explicitly, or restate with `/\` |
-| `No instance for (End α)` | `reclaim` used outside `After` | Move it into `pureAfter`, or use `reclaim'` |
-| Ambiguous lifetime variables | A local binding with no signature | Add a signature, `ScopedTypeVariables`, or type applications |
+| `No instance for 'β <=!! α'` / `Could not deduce 'γ <=!! α'` | Lifetimes of the borrow and of the `BO` do not line up, or transitivity would be needed | Add `α >= β` to the signature, not the `<=!!` that GHC suggests: make the helper polymorphic with `(α >= β) =>`, `upcast`/`subShare` explicitly, or restate with `/\` |
+| `No instance for 'End α'` | `reclaim` used outside `After` | Move it into `pureAfter`, or use `reclaim'` |
+| `Overlapping instances for γ <= α0`, or an ambiguity error that suggests `AllowAmbiguousTypes` | GHC cannot determine a lifetime: an intermediate one, one in a local binding with no signature, or one that occurs only in constraints | Name it with a type application, as in `step @α @γ (step @α @α s)`, or add a signature; drop constraints on a lifetime that does not occur in the type |
 | Errors about impredicative instantiation | Passing a rank-2 continuation through `$` or a data constructor | Enable `ImpredicativeTypes`, use `BlockArguments` instead of `$` |

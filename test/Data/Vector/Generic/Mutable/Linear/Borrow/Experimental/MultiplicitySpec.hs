@@ -1,5 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NoImplicitPrelude #-}
@@ -13,7 +14,7 @@ import Control.Exception qualified as Exception
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (UnsafeAlias))
-import Control.Monad.Borrow.Pure.Clone (Clone (clone))
+import Control.Monad.Borrow.Pure.Clone (AsCopyable (..), Clone (clone))
 import Control.Monad.Borrow.Pure.Copyable (Copyable (copy))
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
@@ -59,6 +60,8 @@ instance Dupable Tracked where
       case unsafePerformIO
         (modifyIORef' (duplicateCalls tracked) NonLinear.succ) of
         () -> (tracked, tracked)
+
+deriving via AsCopyable Tracked instance Clone Tracked
 
 instance Movable Tracked where
   move =
@@ -269,11 +272,12 @@ test_owning =
           Exception.evaluate
             (setOwningElement copies consumes duplicates moves)
           readIORef consumes NonLinear.>>= (@?= 3)
-    , testCase "clone duplicates every owned element" $
+    , testCase "clone copies every owned element through a shared borrow of it" $
         withCounters \copies consumes duplicates moves -> do
           Exception.evaluate
             (cloneOwningVector copies consumes duplicates moves)
-          readIORef duplicates NonLinear.>>= (@?= 2)
+          readIORef copies NonLinear.>>= (@?= 2)
+          readIORef duplicates NonLinear.>>= (@?= 0)
           readIORef consumes NonLinear.>>= (@?= 4)
     , testCase "copyAtMut completes copying before owner recovery" $
         withCounters \copies consumes duplicates moves -> do
@@ -310,8 +314,8 @@ test_typing =
         assertDeferredTypeError "Couldn't match" badOwningGetCase
     , testCase "owning consumption requires Consumable elements" do
         assertDeferredTypeError "Consumable NoCapabilities" badConsumeCase
-    , testCase "owning clone requires Dupable elements" do
-        assertDeferredTypeError "Dupable" badCloneCase
+    , testCase "owning clone requires Clone elements" do
+        assertDeferredTypeError "Clone ConsumableOnly" badCloneCase
     , testCase "owning copyToVector requires Copyable elements" do
         assertDeferredTypeError "Copyable" badCopyCase
     ]

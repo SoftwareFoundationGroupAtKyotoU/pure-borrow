@@ -8,7 +8,7 @@ Keep agent-agnostic project instructions here, and keep tool-specific files as t
 
 **pure-borrow** realizes **Rust-style borrowing in Linear Haskell, purely** — compile-time ownership and memory safety with no runtime overhead, plus safe deterministic parallelism.
 It is the artifact of the paper *Pure Borrow: Linear Haskell Meets Rust-Style Borrowing* (Y. Matsushita & H. Ishii, PLDI 2026; [arXiv:2604.15290](https://arxiv.org/abs/2604.15290)).
-The package is already released on Hackage (version `0.0.0.0`); current work is **incremental improvement** (notably performance) of a published, paper-backed library — so preserve the public API and the soundness invariants unless a change is deliberate.
+The package is already released on Hackage (latest release `0.1.0.0`); current work is **incremental improvement** (notably performance) of a published, paper-backed library — so preserve the public API and the soundness invariants unless a change is deliberate.
 
 `Control.Monad.Borrow.Pure` is the umbrella module and carries the full Haddock tutorial; read it before designing changes to the core.
 
@@ -36,6 +36,8 @@ cabal build pure-borrow               # just the library
 cabal test                            # run all test suites
 cabal test pure-borrow-test           # main tasty suite only
 cabal test pure-borrow-doctests       # doctests (needs GHC >= 9.12.3)
+cabal test pure-borrow-no-state-hack  # owner kernels built with -fno-state-hack
+cabal test pure-borrow-unoptimised    # ordering kernels built at -O0, as GHCi runs them
 
 cabal bench qsort-bench               # parallel quicksort benchmark (tasty-bench)
 cabal bench fft-bench                 # parallel FFT benchmark (tasty-bench)
@@ -75,6 +77,17 @@ cabal test pure-borrow-test --test-options='-p "Lifetime"'   # run a subset by p
 
 `test/Control/Monad/Borrow/Pure/Lifetime/TypingCases.hs` holds type-level (compile-time) constraint checks, not runtime assertions.
 
+A test that needs different code-generation flags gets a component of its own, with the flags in its `ghc-options`, as `pure-borrow-no-state-hack` does.
+Set in one module's `OPTIONS_GHC` inside `pure-borrow-test`, `-fno-state-hack` did not take effect, and the tests stayed green against a library they fail when built as their own component.
+GHC also does not recompile a module when only that flag changes, so a negative control that toggles it must start from a clean build directory.
+
+A module of `pure-borrow-test` compiled at `-O0`, as its `TypingCases` modules are, must also pass `-fno-ignore-interface-pragmas`.
+`-O0` implies `-fignore-interface-pragmas`, and within one `--make` session the first module that loads a library interface decides whether every module after it sees the library's unfoldings.
+After a plain `-O0` module, the `-O2` modules of `pure-borrow-test` called `Clone (Array a)` through its dictionary instead of inlining it as user code at `-O2` does, so a test of what the optimiser does to library code tested nothing.
+`bash ci/scripts/check-o0-test-modules.sh` checks this rule, and CI runs it.
+With the flag, though, `-O0` still inlines the library's `INLINE` functions, which a user's `-O0` module or GHCi never sees.
+So a test of what an `-O0` user gets goes into a component of its own, with every module at plain `-O0`, as `pure-borrow-unoptimised` does.
+
 Two kinds of failing test look superficially alike here, and they encode opposite intentions.
 Never convert one into the other.
 
@@ -89,9 +102,14 @@ The suite then stays green while the limitation stands, and turns red the day th
 `test_should_pass` in `test/Control/Monad/Borrow/Pure/LifetimeSpec.hs` is the reference case: transitivity and monotonicity of the outlives relation *should* hold, and the layered `INCOHERENT` instances simply do not derive them today.
 Asserting a deferred type error there would claim the opposite — that we intend those properties to be underivable.
 
-Exception verified with GHC 9.12.4: linear multiplicity errors such as `Couldn't match type 'Many' with 'One'` are rejected while compiling the module even with `-fdefer-type-errors -Wno-deferred-type-errors`; they do not reach the runtime deferred-error path above.
-Put those cases in `test/typing-fail/` and validate their compile failure using the Cabal-selected compiler.
-Keep errors that GHC does defer in `TypingCases`.
+Exception verified with GHC 9.12.4: a multiplicity *usage* error, reported as `Couldn't match type 'Many' with 'One'` *arising from multiplicity of* a variable, is rejected while compiling the module even with `-fdefer-type-errors -Wno-deferred-type-errors`; it does not reach the runtime deferred-error path above.
+A mismatch between two arrow types (`Expected: Int %1 -> Int`, `Actual: Int -> Int`) is deferred like any other type error.
+An instance declaration that fails to typecheck is never observable at run time either: it is rejected outright, or its error is deferred into a method that nothing forces.
+Put the cases GHC does not defer, or whose deferred error no evaluation would reach, in `test/typing-fail/` and validate their compile failure using the Cabal-selected compiler.
+Each fixture names the diagnostic it must fail with in one or more `-- EXPECT: <text>` lines, free of GHC's locale-dependent quotation marks, and `bash ci/scripts/check-typing-fail.sh` compiles every fixture against the built library and checks that each is rejected with its text.
+Run it after `cabal build all`; CI runs it after the test suites.
+Keep errors that GHC does defer, and that forcing a value raises, in `TypingCases`.
+A deferred class constraint is raised only when its dictionary is forced, so a case whose function ignores the dictionary (as `upcast` or `withLinearly` do) needs an equality instead, or a method call that forces it.
 
 ### Benchmarks & profiling
 
@@ -215,14 +233,29 @@ Borrow types are all one zero-cost representation, `Alias ak α a`:
 
 - `Lifetime/Internal.hs` — the type-level algebra: `Lifetime = Al Nat | (:/\) | Static`, a free bounded lower-semilattice; `/\` is meet.
   The outlives relation `(<=)`/`(>=)` is a layered class hierarchy with explicit GADT witnesses and `INCOHERENT` instances that hand-implement transitivity/associativity of subtyping (no typechecker plugin).
+  The capability classes a user must never instantiate — `(<=)` (the class `SubLifetime`), `End` (`Ended`) and `(<:)` (`Subtype`) — are exported from the safe modules only as synonyms, which no instance can be written against; library instance heads therefore name the class, not the synonym.
+  `(<:)` takes both arguments, unlike the other two: a deriving clause would expand an eta-reduced synonym to the hidden class.
+  See Note [Sealing classes behind synonyms] in `Data/Coerce/Directed/Internal.hs` before changing the shape of any of them.
 - `Lifetime/Token/Internal.hs` — zero-cost value-level tokens (`Now`, `EndToken`/`End`, `newLifetime`), the `After α a` finalizer monad, and the linearity witnesses (`Linearly`, `linearly`, `LinearOnly`).
   Several `NOINLINE`/`noinline` annotations here deliberately defeat CSE / full-laziness that would otherwise duplicate linear tokens — **do not "clean these up".**
+  Likewise `Linearly`, `Now` and `EndToken` each keep a lazy field that nothing reads, so that a token forced by user code stays unknown to the optimizer; never make one a nullary constructor or a newtype (Note [Tokens carry a field]).
+  A function that takes a token apart and returns another passes the field on, as `newLifetime` and `endLifetime` do, even when it is `OPAQUE`: `OPAQUE` hides the body but not the demand signature, and a signature that shows the field unused lets GHC rebuild the token as a constant in a caller's worker.
+  One that returns two tokens must be `NOINLINE` and applied through `noinline`, as `dup2` is, since two tokens with the same field are one expression.
+  Only such a function, or an `OPAQUE` one that takes no token (`endHere`, `reviveAliasWithEnd#`), may build a token from constants.
+  A copy of a shared value must depend on something of its own, or GHC merges two copies of one value, as it did for the clones of a loop.
+  Make the copy with IO actions in the state thread, or pass a `Linearly` of its own to a copy function that is `NOINLINE` and applied through `noinline`, as `copyUnconsumed` in the Robin Hood table is.
+  Short of either, a pure copy does not do even when evaluated in the state thread, and neither does a token consumed beside the copy or passed to a function that is only `NOINLINE` or only `OPAQUE`.
+  And `withEnd` does not force its token, which keeps it opaque until `reviveOwner` (Note [Owners handed back by reclaim]).
 
 The same rule applies wherever a binding's own body calls `unsafePerformIO`: mark it `NOINLINE`, and mark any class method that reaches one — `Consumable`'s `consume` for the vector owners is the recurring case.
 Inlining hands GHC a licence the linear types do not: it can duplicate the call across use sites or float it out of a scope, and each surviving copy runs the effect again.
 This bites even when the action only *reads*, as an element-consuming traversal does, because running it twice consumes every element twice.
 `INLINE` on such a binding is a bug, not a tuning choice.
 An ordinary `IO` worker that does not itself call `unsafePerformIO` may stay `INLINE`; it is the `unsafePerformIO` occurrence that must be kept unique.
+
+Two related obligations have their own Notes.
+A pure primitive that opens its own `runRW#` and allocates or writes must call `noDuplicate#` before the effect, as `unsafePerformIO` does, because a result stored unevaluated behind a `Share` can be forced by two threads at once (Note [Pure Ref primitives run their effects at most once]).
+And a delimiter that hands back a borrow restores it through `reviveAlias`, while one that discharges an `After` takes its `EndToken` from the state thread rather than applying `UnsafeEnd` (Note [Restoring a borrow must break its Core identity], Note [Owners handed back by reclaim]).
 
 ### Parallel divide-and-conquer — `src/Control/Concurrent/DivideConquer/Linear.hs`
 
@@ -265,6 +298,8 @@ Includes a demonstrative in-place parallel `qsort` (budgeted `parBO`; the heavie
   It is not an operation on `%Many` data and must not be used to process an unrestricted source.
   For example, a `V.Vector a ->` source and its elements are GC-owned, so cloning its buffer neither requires `Copyable a` nor calls `copy`.
   Evaluating `copy` must complete the copy and return its result in WHNF, so callers may rely on the copy having completed before the borrow is recovered or its lifetime ends.
+- **`Clone` of an element-owning container requires `Clone` of its contents:** clone each piece through a `Share` of it, and never consume the original or write to it.
+  Do not reach for `Dupable` there: `dup2` consumes its argument, and linear-base's laws do not say which of the two copies, if either, is the original (Note [Cloning the contents of a shared borrow] in `Data.Ref.Linear.Internal`).
 - **Moving into GC ownership requires `Movable`:** when a consuming operation transfers linearly owned contents into an unrestricted `Ur`-wrapped container, require `Movable`, not `Copyable`, and invoke `move` for every owned piece.
   A `Movable` instance may need to deep-copy before returning the GC-owned value; a bare constraint that is never used is not sufficient.
   `Copyable` instead describes copying from a live borrow.

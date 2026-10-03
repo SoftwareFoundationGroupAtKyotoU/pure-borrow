@@ -21,6 +21,9 @@ module Data.HashMap.RobinHood.Mutable.Linear.Internal (
 
 import Control.Functor.Linear (asks, runReader)
 import Control.Functor.Linear qualified as Control
+import Control.Monad.Borrow.Pure.BO (askLinearly, evaluateBO)
+import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (..))
+import Control.Monad.Borrow.Pure.Clone (Clone (..))
 import Control.Monad.Borrow.Pure.Lifetime.Token (Linearly, withLinearly)
 import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnly (..),
@@ -219,6 +222,30 @@ instance Dupable (HashMap k v) where
     let %1 !(slots1, slots2) = dup slots
      in (HashMap size capa maxDIB slots1, HashMap size capa maxDIB slots2)
   {-# INLINE dup2 #-}
+
+{- | \(O(n)\). Copies the slot array, which is all a table owns: its keys and values are GC-owned, see Note [Element ownership] in @Data.HashMap.RobinHood.Mutable.Linear.Internal@.
+
+The table is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same table at once.
+-}
+instance Clone (HashMap k v) where
+  clone = Unsafe.toLinear \(UnsafeAlias table) -> Control.do
+    linear <- askLinearly
+    evaluateBO (copyUnconsumed table linear)
+  {-# INLINE clone #-}
+
+{- | \(O(n)\). A copy of a table that stays with its owner, for cloning it through a shared borrow.
+
+The table is not consumed: 'LA.size' and 'LA.slice' hand its slot array back unchanged, as the second and the first component of their results, and both are dropped here.
+Evaluate the copy inside the lifetime of the borrow, as 'clone' does with 'evaluateBO', so that it is taken before the owner can write to the table again.
+
+'NOINLINE', applied through 'GHC.noinline', and taking a 'Linearly' of its own, for the reason 'allocSlots' is: without a token, two copies of one table are the same expression, and GHC shared one copy between the clones of a loop, which then wrote to one slot array.
+-}
+copyUnconsumed :: HashMap k v -> Linearly %1 -> HashMap k v
+{-# NOINLINE copyUnconsumed #-}
+copyUnconsumed = GHC.noinline \(HashMap size capa maxDIB (Slots arr)) linear ->
+  linear `lseq` case LA.size arr of
+    (Ur physCapa, _) -> case LA.slice 0 physCapa arr of
+      (_, copied) -> HashMap size capa maxDIB (Slots copied)
 
 instance
   (Unsatisfiable ('Text "HashMap is only usable in linear context")) =>

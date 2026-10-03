@@ -13,14 +13,18 @@ module Control.Monad.Borrow.Pure.BOSpec (
   module Control.Monad.Borrow.Pure.BOSpec,
 ) where
 
+import Control.Exception qualified as Exception
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
+import Control.Monad.Borrow.Pure.Affine qualified as Affine
 import Control.Monad.Borrow.Pure.BO qualified as BO
+import Control.Monad.Borrow.Pure.BO.TypingCases (badEscapeStaticLinearly, badTopLevelStaticNow)
 import Control.Monad.Borrow.Pure.Experimental.Borrows qualified as Borrows
 import Control.Monad.Borrow.Pure.Experimental.Reborrowable qualified as Reborrowable
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Functor.Linear qualified as Data
 import Data.HashMap.RobinHood.Mutable.Linear.Borrow qualified as HashMap
+import Data.List qualified as List
 import Data.Ref.Linear qualified as Ref
 import Data.Ref.Linear.Borrow qualified as RefBorrow
 import Data.Type.Equality ((:~:))
@@ -28,9 +32,9 @@ import Data.Vector qualified as V
 import Data.Vector.Mutable.Growable.Linear.Borrow qualified as Growable
 import Data.Vector.Unboxed qualified as U
 import Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow qualified as Unboxed
-import Prelude.Linear (Ur (..), consume, dup, lseq, unur, ($), (&))
+import Prelude.Linear (lseq, unur, ($), (&))
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, (@?=))
+import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 import Unsafe.Linear qualified as Unsafe
 import Prelude (Int, Maybe (..), otherwise, show, (+), (-), (<>), (>=))
 import Prelude qualified as NonLinear
@@ -63,6 +67,11 @@ Note [Observing a borrow scope's writes through the borrow it restores]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The kernels below share one shape: read the length through a borrow, hand that borrow to a scope whose body grows the vector, then read the length again through the borrow the scope handed back.
 The second read must observe the growth.
+
+Since 0.2.0.0 they no longer discriminate a broken delimiter.
+Every read through a borrow now runs inside 'BO' (see Note [Growable header reads] in "Data.Vector.Mutable.Growable.Linear.Borrow.Internal"), so the second read is ordered after the growth whatever the delimiter hands back, and these kernels pass on a delimiter that returns the caller's own binder.
+They stay as functional tests of the scopes; the delimiter's obligation itself is pinned by the Core obligations in @pure-borrow-inspection@.
+What follows describes how they discriminated while the reads were pure.
 
 They live here rather than with the growable vector's own tests because the growable vector is the instrument, not the subject.
 What is under test is the delimiter -- see Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Pure.BO.Internal" -- and a growable vector is simply the resource this package ships whose length and buffer are read outside the state token, so a delimiter that hands back the caller's own binder lets common-subexpression elimination serve the second read from the first.
@@ -131,11 +140,11 @@ lengthAcrossReborrowing count =
     runBO runLinear Control.do
       (vector, lend) <-
         borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
-      Growable.size vector & \(Ur before, vector) -> Control.do
+      Growable.size vector Control.>>= \(Ur before, vector) -> Control.do
         ((), vector) <-
           reborrowing vector \short ->
             consume Data.<$> pushRange 0 count short
-        Growable.size vector & \(Ur after, vector) ->
+        Growable.size vector Control.>>= \(Ur after, vector) ->
           vector `lseq` pureAfter (report before after (reclaim lend))
 
 -- | 'reborrowing'': the scope returns its value @After@ the sublifetime.
@@ -147,11 +156,11 @@ lengthAcrossReborrowingAfter count =
     runBO runLinear Control.do
       (vector, lend) <-
         borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
-      Growable.size vector & \(Ur before, vector) -> Control.do
+      Growable.size vector Control.>>= \(Ur before, vector) -> Control.do
         ((), vector) <-
           reborrowing' vector \short ->
             (\short -> After (consume short)) Data.<$> pushRange 0 count short
-        Growable.size vector & \(Ur after, vector) ->
+        Growable.size vector Control.>>= \(Ur after, vector) ->
           vector `lseq` pureAfter (report before after (reclaim lend))
 
 -- | 'reborrowing_': the scope discards its value.
@@ -163,11 +172,11 @@ lengthAcrossReborrowingDiscarding count =
     runBO runLinear Control.do
       (vector, lend) <-
         borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
-      Growable.size vector & \(Ur before, vector) -> Control.do
+      Growable.size vector Control.>>= \(Ur before, vector) -> Control.do
         vector <-
           reborrowing_ vector \short ->
             consume Data.<$> pushRange 0 count short
-        Growable.size vector & \(Ur after, vector) ->
+        Growable.size vector Control.>>= \(Ur after, vector) ->
           vector `lseq` pureAfter (report before after (reclaim lend))
 
 -- | The same as 'lengthAcrossReborrowing', on the unboxed growable vector.
@@ -179,11 +188,11 @@ lengthAcrossReborrowingUnboxed count =
     runBO runLinear Control.do
       (vector, lend) <-
         borrowM (Unboxed.fromVector (U.fromList seeded) ownerLinear)
-      Unboxed.size vector & \(Ur before, vector) -> Control.do
+      Unboxed.size vector Control.>>= \(Ur before, vector) -> Control.do
         ((), vector) <-
           reborrowing vector \short ->
             consume Data.<$> pushRangeUnboxed 0 count short
-        Unboxed.size vector & \(Ur after, vector) ->
+        Unboxed.size vector Control.>>= \(Ur after, vector) ->
           vector `lseq` pureAfter (reportUnboxed before after (reclaim lend))
 
 {- | 'Growable.withContent', which delimits a fixed view of the growable vector the same way.
@@ -200,12 +209,12 @@ lengthAcrossContentScope count =
     runBO runLinear Control.do
       (vector, lend) <-
         borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
-      Growable.size vector & \(Ur before, vector) -> Control.do
+      Growable.size vector Control.>>= \(Ur before, vector) -> Control.do
         ((), vector) <-
           Growable.withContent vector \contents ->
             Control.pure (consume contents)
         vector <- pushRange 0 count vector
-        Growable.size vector & \(Ur after, vector) ->
+        Growable.size vector Control.>>= \(Ur after, vector) ->
           vector `lseq` pureAfter (report before after (reclaim lend))
 
 {- | The same read-grow-read shape, repeated inside a recursive 'BO' loop.
@@ -238,7 +247,7 @@ lengthsAcrossReborrowingLoop rounds =
           ((), vector) <-
             reborrowing vector \short ->
               consume Data.<$> Growable.push (100 + index) short
-          Growable.size vector & \(Ur seen, vector) -> Control.do
+          Growable.size vector Control.>>= \(Ur seen, vector) -> Control.do
             (Ur rest, vector) <- go (index + 1) vector
             Control.pure (Ur (seen : rest), vector)
 
@@ -279,7 +288,7 @@ writeAcrossReborrowing count =
       -- The read before the scope is what the bounds check inside 'Growable.modify'
       -- gets merged with; without it there is nothing for the stale read to be
       -- served from, and this kernel passes even on the broken delimiter.
-      Growable.size vector & \(Ur before, vector) -> Control.do
+      Growable.size vector Control.>>= \(Ur before, vector) -> Control.do
         vector <-
           reborrowing_ vector \short ->
             consume Data.<$> pushRange 0 count short
@@ -340,7 +349,7 @@ lengthAcrossPluralReborrowing count =
     runBO runLinear Control.do
       (vector, lend) <-
         borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
-      Growable.size vector & \(Ur before, vector) -> Control.do
+      Growable.size vector Control.>>= \(Ur before, vector) -> Control.do
         bundle <-
           Borrows.reborrowings_
             (vector Borrows.:- Borrows.BNil)
@@ -348,7 +357,7 @@ lengthAcrossPluralReborrowing count =
               consume Data.<$> pushRange 0 count short
         case bundle of
           vector Borrows.:- Borrows.BNil ->
-            Growable.size vector & \(Ur after, vector) ->
+            Growable.size vector Control.>>= \(Ur after, vector) ->
               vector `lseq` pureAfter (report before after (reclaim lend))
 
 {- | The plural delimiter over a bundle whose members are grown /unequally/.
@@ -370,8 +379,8 @@ lengthsAcrossUnequalPluralReborrowing count =
         borrowM (Growable.fromVector (V.fromList seeded) grownLinear)
       (kept, keptLend) <-
         borrowM (Growable.fromVector (V.fromList seeded) keptLinear)
-      Growable.size grown & \(Ur grownBefore, grown) ->
-        Growable.size kept & \(Ur keptBefore, kept) -> Control.do
+      Growable.size grown Control.>>= \(Ur grownBefore, grown) ->
+        Growable.size kept Control.>>= \(Ur keptBefore, kept) -> Control.do
           bundle <-
             Borrows.reborrowings_
               (grown Borrows.:- kept Borrows.:- Borrows.BNil)
@@ -379,8 +388,8 @@ lengthsAcrossUnequalPluralReborrowing count =
                 shortKept `lseq` (consume Data.<$> pushRange 0 count shortGrown)
           case bundle of
             grown Borrows.:- kept Borrows.:- Borrows.BNil ->
-              Growable.size grown & \(Ur grownAfter, grown) ->
-                Growable.size kept & \(Ur keptAfter, kept) ->
+              Growable.size grown Control.>>= \(Ur grownAfter, grown) ->
+                Growable.size kept Control.>>= \(Ur keptAfter, kept) ->
                   grown `lseq`
                     kept `lseq`
                       pureAfter
@@ -403,7 +412,7 @@ lengthAcrossPluralReborrowingValue count =
     runBO runLinear Control.do
       (vector, lend) <-
         borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
-      Growable.size vector & \(Ur before, vector) -> Control.do
+      Growable.size vector Control.>>= \(Ur before, vector) -> Control.do
         ((), bundle) <-
           Borrows.reborrowings
             (vector Borrows.:- Borrows.BNil)
@@ -411,7 +420,7 @@ lengthAcrossPluralReborrowingValue count =
               consume Data.<$> pushRange 0 count short
         case bundle of
           vector Borrows.:- Borrows.BNil ->
-            Growable.size vector & \(Ur after, vector) ->
+            Growable.size vector Control.>>= \(Ur after, vector) ->
               vector `lseq` pureAfter (report before after (reclaim lend))
 
 -- | The finalizing plural delimiter, whose continuation returns its result @After@ the sublifetime.
@@ -423,7 +432,7 @@ lengthAcrossPluralReborrowingAfter count =
     runBO runLinear Control.do
       (vector, lend) <-
         borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
-      Growable.size vector & \(Ur before, vector) -> Control.do
+      Growable.size vector Control.>>= \(Ur before, vector) -> Control.do
         ((), bundle) <-
           Borrows.reborrowings'
             (vector Borrows.:- Borrows.BNil)
@@ -432,7 +441,7 @@ lengthAcrossPluralReborrowingAfter count =
               Control.pure (Control.pure (consume short))
         case bundle of
           vector Borrows.:- Borrows.BNil ->
-            Growable.size vector & \(Ur after, vector) ->
+            Growable.size vector Control.>>= \(Ur after, vector) ->
               vector `lseq` pureAfter (report before after (reclaim lend))
 
 -- | The generic delimiter at @Muts@, which dispatches to the plural implementation.
@@ -444,7 +453,7 @@ lengthAcrossGenericLocallyPlural count =
     runBO runLinear Control.do
       (vector, lend) <-
         borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
-      Growable.size vector & \(Ur before, vector) -> Control.do
+      Growable.size vector Control.>>= \(Ur before, vector) -> Control.do
         bundle <-
           Reborrowable.locally_
             (vector Borrows.:- Borrows.BNil)
@@ -452,7 +461,7 @@ lengthAcrossGenericLocallyPlural count =
               consume Data.<$> pushRange 0 count short
         case bundle of
           vector Borrows.:- Borrows.BNil ->
-            Growable.size vector & \(Ur after, vector) ->
+            Growable.size vector Control.>>= \(Ur after, vector) ->
               vector `lseq` pureAfter (report before after (reclaim lend))
 
 {- | The generic delimiter, reached through 'Reborrowable' rather than by naming 'reborrowing_'.
@@ -467,11 +476,11 @@ lengthAcrossGenericLocally count =
     runBO runLinear Control.do
       (vector, lend) <-
         borrowM (Growable.fromVector (V.fromList seeded) ownerLinear)
-      Growable.size vector & \(Ur before, vector) -> Control.do
+      Growable.size vector Control.>>= \(Ur before, vector) -> Control.do
         vector <-
           Reborrowable.locally_ vector \short ->
             consume Data.<$> pushRange 0 count short
-        Growable.size vector & \(Ur after, vector) ->
+        Growable.size vector Control.>>= \(Ur after, vector) ->
           vector `lseq` pureAfter (report before after (reclaim lend))
 
 insertRange ::
@@ -568,3 +577,48 @@ test_scopeRestoresAUsableBorrow =
       ]
     counts :: [Int]
     counts = [1, 2, 3, 5, 17, 33, 1025]
+
+-- | An action whose type fixes it to the static lifetime.
+staticAction :: BO.BO Static Int
+{-# NOINLINE staticAction #-}
+staticAction = Control.pure 42
+
+-- | Run a @BO Static@ action from inside @BO@ with the token of 'BO.nowStatic'.
+staticScopeExec :: Int
+{-# NOINLINE staticScopeExec #-}
+staticScopeExec = linearly \lin -> runBO_ lin Control.do
+  now <- BO.nowStatic
+  case BO.execBO staticAction now of
+    (now, value) -> Control.pure (consume (Affine.aff now) `lseq` value)
+
+-- | The same, by upcasting the action into the current lifetime.
+staticScopeUpcast :: Int
+{-# NOINLINE staticScopeUpcast #-}
+staticScopeUpcast = linearly \lin -> runBO_ lin (upcast staticAction)
+
+test_nowStatic :: TestTree
+test_nowStatic =
+  testGroup
+    "nowStatic"
+    [ testCase "runs a BO Static action with execBO inside BO" do
+        staticScopeExec @?= 42
+    , testCase "a BO Static action can also be upcast into BO" do
+        staticScopeUpcast @?= 42
+    , expectDeferred "is not a top-level value" "Couldn't match expected type" badTopLevelStaticNow
+    , expectDeferred "cannot mint an unrestricted Linearly" "Movable Linearly" badEscapeStaticLinearly
+    ]
+  where
+    expectDeferred :: NonLinear.String -> NonLinear.String -> a -> TestTree
+    expectDeferred description fragment value =
+      testCase description do
+        result <- Exception.try @Exception.SomeException (Exception.evaluate value)
+        case result of
+          NonLinear.Left exception ->
+            assertBool
+              ("unexpected deferred type error: " <> Exception.displayException exception)
+              -- GHC wraps long types across lines, so compare with whitespace collapsed.
+              ( NonLinear.unwords (NonLinear.words fragment)
+                  `List.isInfixOf` NonLinear.unwords (NonLinear.words (Exception.displayException exception))
+              )
+          NonLinear.Right _ ->
+            assertFailure ("expected a deferred type error containing " <> fragment)

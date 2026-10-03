@@ -16,6 +16,7 @@ import Prelude.Linear
 
 -- This fixture must not typecheck: the outer mutable owner is captured by the
 -- content callback after the same linear capability has entered withContent_.
+-- EXPECT: arising from multiplicity of
 badGrowthWhileContentLive ::
   Mut α (Growable.GrowableVector Int) %1 ->
   BO α (Mut α (Growable.GrowableVector Int))

@@ -43,7 +43,6 @@ import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Internal
 import Control.Monad.Borrow.Pure.Experimental.Reborrowable
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe qualified as Unsafe.Token
 import Data.Coerce.Directed.Unsafe
 import Data.Kind
 import Prelude.Linear hiding (foldMap)
@@ -98,13 +97,13 @@ instance (k ~ 'Borrow 'Share α) => Movable (Aliases k xs) where
   move = Unsafe.toLinear Ur
   {-# INLINE move #-}
 
-instance (α >= β, xs <: ys, ys <: xs) => Muts α xs <: Muts β ys where
+instance (α >= β, xs <: ys, ys <: xs) => Subtype (Muts α xs) (Muts β ys) where
   subtype = UnsafeSubtype
 
-instance (α >= β, xs <: ys) => Shares α xs <: Shares β ys where
+instance (α >= β, xs <: ys) => Subtype (Shares α xs) (Shares β ys) where
   subtype = UnsafeSubtype
 
-instance (α <= β, a <: b) => Lends α a <: Lends β b where
+instance (α <= β, a <: b) => Subtype (Lends α a) (Lends β b) where
   subtype = UnsafeSubtype
 
 instance Reborrowable (Muts α) where
@@ -124,10 +123,10 @@ reborrows = Unsafe.toLinear \v -> (unsafeCoerce v, unsafeCoerce v)
 {- | Return a bundle of borrows to the caller of a delimiter, through a barrier the optimizer cannot see through.
 
 This is the plural counterpart of 'Control.Monad.Borrow.Pure.BO.Unsafe.reviveAlias', and it exists for the same reason.
-See Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Pure.BO.Internal".
+See Note [Restoring a borrow must break its Core identity] in @Control.Monad.Borrow.Pure.BO.Internal@.
 
 'reborrowings'' would otherwise restore the caller's own occurrence, since 'reborrows' hands the same value out as both borrow and lender and 'reclaim' is a newtype unwrap.
-It happens not to misbehave today, because 'reclaim'' is reached through 'withEnd', whose @withDict@ desugars through the wired-in @nospec@ and survives every Core-to-Core pass — but that is a coincidence of one desugaring, and it is exactly the kind of accident the Note argues a delimiter must not rest on.
+'reclaim' now hands its result back through the barrier of Note [Owners handed back by reclaim], but a delimiter restores its borrow through this barrier regardless, as the Note on 'Control.Monad.Borrow.Pure.BO.Unsafe.reviveAlias' requires.
 
 This is exported so that the Core obligations in @pure-borrow-inspection@ can state what the erased plural delimiters must compile to, barrier included.
 Exporting it weakens nothing: it is 'Control.Functor.Linear.pure' behind an @OPAQUE@, so the worst a caller can do with it is add a barrier that was not needed.
@@ -225,10 +224,12 @@ unsafeBorrowsScope_ = Unsafe.toLinear2 \muts k ->
 The plural finalizing delimiter, whose continuation returns its result 'After'
 the sublifetime.
 
-The 'EndToken' is the runtime-erased one, sound for the reason given on
+The 'EndToken' comes from 'Control.Monad.Borrow.Pure.BO.Unsafe.reviveAliasWithEnd#', which restores the bundle in the same call.
+Asserting that the sublifetime has ended is sound for the reason given on
 'Control.Monad.Borrow.Pure.BO.Unsafe.unsafeBorrowScope'': the continuation has
 returned by the time it is applied, so the sublifetime it was typechecked in is
 over, and the caller-fixed result type cannot mention it.
+Taking the token from the state thread makes whatever the 'After' reclaims depend on the scope's effects; see Note [Owners handed back by reclaim] in @Control.Monad.Borrow.Pure.BO.Internal@.
 -}
 unsafeBorrowsScope' ::
   forall α α' xs r.
@@ -239,7 +240,7 @@ unsafeBorrowsScope' ::
 unsafeBorrowsScope' = Unsafe.toLinear2 \muts k ->
   unsafeSrunBO_ Control.do
     after <- k (unsafeCastAliases muts)
-    (withEnd Unsafe.Token.UnsafeEnd after,) Control.<$> reviveAliases muts
+    restoreWithEnd muts after
 
 -- | A plural form of 'reborrowing''.
 reborrowings' ::

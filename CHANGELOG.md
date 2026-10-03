@@ -14,9 +14,26 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Replace `foldBorrowOf fld` with `foldBorrowVia sp` for a splitter `sp` such as `split`.
   `foldBorrow`, which was `foldBorrowOf foldMap`, is now `foldBorrowVia split`, so it requires `DistributesAlias t`.
   It rejects a borrow of an `Either e a` or `(e, a)` with "Use splitEither directly!" or "Use splitPair instead!".
+- `Linearly`, `Now` and `EndToken` carry a field, so that GHC cannot learn which value a token is, and `Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe` exports their constructors as `UnsafeLinearlyToken`, `UnsafeNowToken` and `UnsafeEndToken`.
+  The old names `UnsafeLinearly`, `UnsafeNow` and `UnsafeEnd` remain as patterns, which build a token and match an unrestricted one as the constructors did.
+  GHC does not let a pattern synonym match a linearly bound value, and rejects such a match with "Couldn't match type ‘Many’ with ‘One’" arising from "a non-linear pattern" "(pattern synonyms aren't linear)", or, in a `case`, arising from the "multiplicity of" the variable matched.
+  Where you matched a linear token, write the constructor instead, as in `\(UnsafeLinearlyToken _) -> ()`.
+  A token built with a pattern or a constructor is a constant, which GHC may share between allocations: build one only inside a function that is `NOINLINE` and applied through `noinline`.
+  Where you take a token apart and return another, pass the field on; a function that returns two tokens must itself be `NOINLINE` and applied through `noinline`, as `dup2` is, since two tokens with the same field are one expression.
+
+### Changed
+
+- `reclaim` forces the `EndToken` it is discharged with; `withEnd` leaves it alone.
 
 ### Fixed
 
+- An owner handed back after a scope, by `runBO`, `runBOLend`, `modifyBO`, `modifyBO_`, the scopes that discharge an `After` or `reclaim` itself, could be read by a pure operation before the scope's writes, once GHC merged that read with an earlier one: after `(r1, r2) <- dup2 r0`, a scope that bumped `r1` and then `Ref.free (reclaim lend)` returned the contents from before the bump at `-O2`, and for a `Ref (Ref a)` it handed out a second owner of a reference it had given away.
+  The owner now comes back through a barrier that depends on the end of the lifetime, also in a module compiled with `-fno-state-hack` or one that forces the `EndToken` it discharges an `After` with.
+- `withEnd` given a bottom `EndToken`, which anyone can write, let `reclaim` hand an owner back while its borrows were still live, so that two `Mut`s reached one resource; it now fails instead.
+- Forcing a `Linearly` token, with a bang, `$!`, a strict field or a module compiled with `Strict`, let GHC merge the allocations made with it: after `case dup2 lin of (!l1, !l2)`, `Ref.new seed l1` and `Ref.new seed l2` were one reference, and a function that allocated a reference or a vector from a forced token returned the same one on every call.
+  Forcing a `Now` made the end token of every lifetime one shared constant.
+  Without anything forced, a `runBO` whose action has no free variables, such as `runBO_ lin (asksLinearly (Ref.new 0))`, was computed once for the whole program, and every call returned the same reference.
+- Computations run by `runBO` and `modifyBO` performed their effects once per thread when several threads forced the same unevaluated run, for example one read through a `Share` by both branches of a `parBO`.
 - The work-stealing scheduler behind `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` could run a task twice, running the mutable borrows it carries twice, and lose another, so that the call never returned: `qsortDC` occasionally hung, and under load could return a vector it had not sorted.
   Its deque's `stealHalf` claimed a batch of tasks with one compare-and-swap, sized from a count that could be out of date, while the owner, popping from the other end without one, could reach into the batch.
   It now takes a batch one task at a time, and so may return fewer than half the tasks when the owner or another thief takes some meanwhile.
@@ -30,9 +47,12 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `DistributesAlias` for `NonEmpty`.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
+- `Control.Monad.Borrow.Pure.BO.Unsafe` exports `restoreWithEnd`, `reviveAliasWithEnd#`, `endHere` and `withEndL`, for a delimiter of your own that discharges an `After`: its end token must come from the state thread rather than from the `UnsafeEnd` constructor.
 
 ### Performance
 
+- Every `reclaim`, every run of the `runBO` family, and every crossing of a scope that discharges an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) makes one or two more out-of-line calls; `sharing`, `reborrowing` and the `_` variants are unchanged.
+- Every run of the `runBO` family, `modifyBO` and `modifyBO_` included, allocates its lifetime tokens, the `Now` and the end token with its `Ur`, 48 bytes, where 0.1.0.0 used static tokens shared by all runs: a loop of `modifyBO_` allocates 80 bytes per iteration against 32, and the benchmarks that run `BO` once per iteration 48 bytes more.
 - The work-stealing deque's `stealHalf` takes a batch one task at a time, with a compare-and-swap and two barriers for each, where 0.1.0.0 claimed the batch with one compare-and-swap (see "Fixed").
   In the quicksort and FFT benchmarks most steal attempts find nothing and a batch holds one or two tasks, so their work-stealing variants show no measurable change in interleaved runs against the old deque: a pooled ratio of 1.00, with a 95% interval of about ±7%, at `-N4` and `-N10`.
   On x86-64 the barrier between a thief's reads of `top` and `bottom` is now a full fence on every steal attempt, whose cost was not measured.

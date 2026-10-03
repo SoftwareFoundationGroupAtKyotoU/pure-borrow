@@ -228,12 +228,20 @@ Borrow types are all one zero-cost representation, `Alias ak α a`:
   The `INCOHERENT` instance `Coercible a b => a <: b`, and `deriving via` for `(<:)`, whose witness is representational in its target, rely on every lifetime parameter of the library having a nominal role: give one to any new type indexed by a lifetime, with a `type role` annotation where GHC would infer a weaker role.
 - `Lifetime/Token/Internal.hs` — zero-cost value-level tokens (`Now`, `EndToken`/`End`, `newLifetime`), the `After α a` finalizer monad, and the linearity witnesses (`Linearly`, `linearly`, `LinearOnly`).
   Several `NOINLINE`/`noinline` annotations here deliberately defeat CSE / full-laziness that would otherwise duplicate linear tokens — **do not "clean these up".**
+  Likewise `Linearly`, `Now` and `EndToken` each keep a lazy field that nothing reads, so that a token forced by user code stays unknown to the optimizer; never make one a nullary constructor or a newtype (Note [Tokens carry a field]).
+  A function that takes a token apart and returns another passes the field on, as `newLifetime` and `endLifetime` do, even when it is `OPAQUE`: `OPAQUE` hides the body but not the demand signature, and a signature that shows the field unused lets GHC rebuild the token as a constant in a caller's worker.
+  One that returns two tokens must be `NOINLINE` and applied through `noinline`, as `dup2` is, since two tokens with the same field are one expression.
+  Only such a function, or an `OPAQUE` one that takes no token (`endHere`, `reviveAliasWithEnd#`), may build a token from constants.
+  And `withEnd` does not force its token, which keeps it opaque until `reviveOwner` (Note [Owners handed back by reclaim]).
 
 The same rule applies wherever a binding's own body calls `unsafePerformIO`: mark it `NOINLINE`, and mark any class method that reaches one — `Consumable`'s `consume` for the vector owners is the recurring case.
 Inlining hands GHC a licence the linear types do not: it can duplicate the call across use sites or float it out of a scope, and each surviving copy runs the effect again.
 This bites even when the action only *reads*, as an element-consuming traversal does, because running it twice consumes every element twice.
 `INLINE` on such a binding is a bug, not a tuning choice.
 An ordinary `IO` worker that does not itself call `unsafePerformIO` may stay `INLINE`; it is the `unsafePerformIO` occurrence that must be kept unique.
+
+A related obligation has its own Notes.
+A delimiter that hands back a borrow restores it through `reviveAlias`, while one that discharges an `After` takes its `EndToken` from the state thread rather than applying `UnsafeEnd` (Note [Restoring a borrow must break its Core identity], Note [Owners handed back by reclaim]).
 
 ### Parallel divide-and-conquer — `src/Control/Concurrent/DivideConquer/Linear.hs`
 

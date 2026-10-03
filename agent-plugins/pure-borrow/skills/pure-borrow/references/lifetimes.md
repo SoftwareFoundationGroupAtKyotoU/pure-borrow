@@ -58,13 +58,21 @@ Some modules (for example the hash map) use one lifetime for both; call them in 
 `subShare :: (α >= β) => Share α a -> Share β a` is the inference-friendly special case for shared borrows.
 Type applications often help `upcast` pick the target lifetime.
 
-A type of your own gets the relation componentwise by deriving it via `Generically`, once it has the `Generic` instance of linear-generics (`$(deriveGeneric ''Two)`):
+A type of your own gets the relation field by field from `deriveSubtype`, a Template Haskell macro in `Data.Coerce.Directed.Unsafe` that reads the declaration of the type:
 
 ```haskell
-import Generics.Linear (Generically (..)) -- the constructor too, not only the type
+{-# LANGUAGE TemplateHaskell, UndecidableInstances #-} -- and LinearTypes, which implies MonoLocalBinds
+import Data.Coerce.Directed.Unsafe (deriveSubtype)
 
-deriving via Generically (Two b) instance (a <: b) => Two a <: Two b
+data Two a = Two a a
+
+deriveSubtype ''Two -- declares (a <: a') => Two a <: Two a'
 ```
+
+It treats each field as covariant, so never use it when defining a mutable data structure: if the type holds pure but mutable data of your own, this variance can violate soundness.
+Splice it after the declarations of the type and of every type in its recursive group; its Haddock lists the extensions it needs and the types it refuses.
+A parameter that no field mentions stays fixed in the instance, but `upcast` still converts whatever `coerce` converts, so give such a parameter a nominal role if it must stay fixed.
+Deriving `(<:)` via `Generically`, as 0.1.0.0 allowed, is rejected: it trusted a `Rep` that anyone can write by hand.
 
 In the module that defines a newtype, `deriving via AsCoercible Meters instance Int <: Meters`, with `AsCoercible (..)` imported from `Data.Coerce.Directed`, lets modules that cannot see its constructor upcast `Int` to `Meters`.
 A derivation needs the via type and the target to be representationally equal where it is written, which is why the constructor must be in scope.

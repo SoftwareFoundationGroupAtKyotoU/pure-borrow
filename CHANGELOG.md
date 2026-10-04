@@ -23,6 +23,11 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Changed
 
+- `parBO` rethrows a branch's exception, unchanged, once the other branch has stopped, instead of blocking forever or dying with `BlockedIndefinitelyOnMVar`; `Par`, `mapConcurrentlyOf`, `naiveDivideAndConquer` and the parallel `qsort` inherit this.
+  Stopping reaches only the other branch: whatever it had started with a nested `parBO` runs to completion, so `mapConcurrentlyOf` over a list stops none of the other elements when the first one throws, and all of them when the last one does.
+  A branch in a loop that does not allocate cannot be stopped until the loop ends; compile the module that contains such a loop with `-fno-omit-yields` if the rethrow must be prompt.
+  An asynchronous exception to the caller, such as a `timeout`, does not stop the branches: forcing the interrupted value again collects their results, and a value that is dropped instead leaves them running to completion.
+  A computation's thread, stack included, about 1 KB, stays in memory after it finishes: the second computation's until the first one finishes, and the first computation's until the thread running `parBO` runs again; `Par` and `mapConcurrentlyOf` over a list put the short computation first.
 - `reclaim` forces the `EndToken` it is discharged with; `withEnd` leaves it alone.
 
 ### Fixed
@@ -51,12 +56,20 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Performance
 
+- `parBO` allocates about 13.5% more per call, 2627 bytes against 2314, for the exception handling.
+  In time, it costs about 20 ns more per call at `-N1`: measured with interleaved runs against 0.1.0.0 on GHC 9.12.4, the fork-join benchmark, whose branches do almost nothing, runs 25–35% slower at `-N1` and 9–28% slower at `-N4`, and the divide-and-conquer FFT on 2^20 points runs 9% slower.
+  On the quicksort of 32,768 elements at `-N10`, where the unchanged introsort varies by ±2% between rounds, the divide-and-conquer version built on `parBO` runs 2% slower, in every round; the budgeted parallel and the sequential versions are unchanged within that noise, and the work-stealing version, which does not use `parBO`, was 2–8% faster before the deque fix below, which changes it by no measurable amount.
+  Its finished threads also stay in memory longer: the parallel divide-and-conquer FFT benchmark on 2^20 points peaks at 137 MB at `-N1`, against about 105 MB for 0.1.0.0, and at 123 MB against 118 MB at `-N4`.
 - Every `reclaim`, every run of the `runBO` family, and every crossing of a scope that discharges an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) makes one or two more out-of-line calls; `sharing`, `reborrowing` and the `_` variants are unchanged.
 - Every run of the `runBO` family, `modifyBO` and `modifyBO_` included, allocates its lifetime tokens, the `Now` and the end token with its `Ur`, 48 bytes, where 0.1.0.0 used static tokens shared by all runs: a loop of `modifyBO_` allocates 80 bytes per iteration against 32, and the benchmarks that run `BO` once per iteration 48 bytes more.
 - The work-stealing deque's `stealHalf` takes a batch one task at a time, with a compare-and-swap and two barriers for each, where 0.1.0.0 claimed the batch with one compare-and-swap (see "Fixed").
   In the quicksort and FFT benchmarks most steal attempts find nothing and a batch holds one or two tasks, so their work-stealing variants show no measurable change in interleaved runs against the old deque: a pooled ratio of 1.00, with a 95% interval of about ±7%, at `-N4` and `-N10`.
   On x86-64 the barrier between a thief's reads of `top` and `bottom` is now a full fence on every steal attempt, whose cost was not measured.
 - `foldBorrow` over a list or `NonEmpty` builds the list of borrows that `split` makes: summing 10⁶ elements allocates 57.2 MB, against 16.6 MB for 0.1.0.0's `foldBorrow`.
+
+### Known issues
+
+- `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` do not propagate an exception raised by `divide` or `conquer`; the caller blocks instead.
 
 ## 0.1.0.0 - 2026-09-19
 

@@ -32,7 +32,17 @@ module Control.Monad.Borrow.Pure.BO.Internal (
 ) where
 
 import Control.Applicative qualified as NonLinear
-import Control.Concurrent (forkIO, newEmptyMVar, putMVar, takeMVar)
+import Control.Concurrent (
+  MVar,
+  myThreadId,
+  newEmptyMVar,
+  putMVar,
+  readMVar,
+  throwTo,
+  tryPutMVar,
+  tryReadMVar,
+  tryTakeMVar,
+ )
 import Control.Exception (evaluate)
 import Control.Exception qualified as SystemIO
 import Control.Functor.Linear qualified as Control
@@ -55,9 +65,13 @@ import Data.Ord qualified as Ord
 import Data.Semigroup qualified as Sem
 import Data.Tuple (Solo (..))
 import Data.Type.Equality ((:~:) (Refl))
+import Data.Word (Word64)
 import GHC.Base (TYPE)
 import GHC.Base qualified as GHC
+import GHC.Conc (ThreadId (..))
+import GHC.Conc.Sync (fromThreadId)
 import GHC.Exts (Multiplicity (..), State#, runRW#)
+import GHC.IO (unsafeUnmask)
 import GHC.ST qualified as ST
 import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
 import Generics.Linear
@@ -66,6 +80,7 @@ import Prelude.Linear qualified as PL
 import System.IO.Linear qualified as L
 import Unsafe.Coerce (unsafeCoerce#)
 import Unsafe.Linear qualified as Unsafe
+import Prelude qualified as NonLinear
 
 -- NOTE: NOINLINE here is REALLY important, otherwise GHC will inline 'UnsafeLinearly' and common subexpression elimination
 -- causes severe soundness bug that the same expression reuses the same
@@ -275,20 +290,181 @@ unsafePerformEvaluateUndupableBO (BO f) = runBO# \s ->
   case f s of
     (# s, !a #) -> dropState# s `PL.lseq` a
 
--- | Run two computations in parallel, returning their results as a tuple.
+{- | Run two computations in parallel, each in its own thread, and return both results once both have finished.
+
+If either computation throws, 'parBO' stops the other one, waits until it has stopped, and rethrows the exception unchanged.
+If both throw, which of the two exceptions you get is unspecified.
+
+Only the other computation of the same 'parBO' is stopped.
+If it was itself waiting in a nested 'parBO' — as with 'Control.Monad.Borrow.Pure.Par', 'Control.Monad.Borrow.Pure.mapConcurrentlyOf' and the parallel @qsort@ of "Data.Vector.Mutable.Linear.Borrow", which nest one per element or per level — the computations it had started run to completion after the exception has reached you.
+For example, 'Control.Monad.Borrow.Pure.mapConcurrentlyOf' over a list pairs each element with the rest of the list, so when one element fails, the elements before it are stopped and those after it run to completion.
+
+A computation in a loop that never allocates cannot be stopped until the loop ends, so it delays the rethrow until then; compiling the module that contains the loop with @-fno-omit-yields@ makes it stoppable.
+An allocation limit, enabled with 'GHC.Conc.enableAllocationLimit', is not inherited by the threads that 'parBO' forks, so it does not bound their computations.
+
+An asynchronous exception delivered to the thread running 'parBO', such as from 'System.Timeout.timeout' or 'Control.Concurrent.killThread', does not stop the computations.
+If 'parBO' was running inside a pure value, forcing that value again resumes it and collects their results, so the value is not left broken; if the value is dropped instead, the computations run to completion.
+A timeout therefore bounds how long you wait, not how much work is done.
+
+A computation's thread, stack included, stays in memory for a while after it finishes, about 1 KB each: the second computation's until the first one finishes, and the first computation's until the thread running 'parBO' runs again, which on few capabilities can be long after.
+Put the shorter computation first where a chain of 'parBO's could keep many of them alive; 'Control.Monad.Borrow.Pure.Par' and 'Control.Monad.Borrow.Pure.mapConcurrentlyOf' over a list pair each element, first, with the rest of the list.
+A 'parBO' interrupted by an asynchronous exception while it waits for the first computation keeps that computation's thread until the interrupted value is resumed or dropped.
+
+In pure code none of this is observable, because the memory those computations write is reachable only from the failed or interrupted computation.
+Memory that came from 'System.IO.IO' or 'Control.Monad.ST.ST', as with 'Data.Vector.Mutable.Linear.Borrow.unsafeModifyBoxedMVector', is different: after catching an exception from such a computation, do not read or reuse it.
+
+See Note [parBO and exceptions] in @Control.Monad.Borrow.Pure.BO.Internal@.
+-}
 parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
-parBO = Unsafe.toLinear2 \a b -> unsafeSystemIOToBO do
+parBO = Unsafe.toLinear2 \a b ->
+  unsafeSystemIOToBO (parallelIO (unsafeBOToSystemIO a) (unsafeBOToSystemIO b))
+
+{-
+Note [parBO and exceptions]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+'parBO' forks one thread per branch.
+Each branch catches whatever its computation throws and reports it, exactly once, through its own 'MVar', which is empty until then, so a report never blocks.
+The parent reads the left report and then the right one, which keeps the success path to the two wake-ups a plain fork-join has.
+It reads them with 'readMVar' and never takes them out, which is what makes a report final: see the paragraph on masking below.
+
+A branch failure is rethrown synchronously, which overwrites every thunk under evaluation with the exception.
+That is the only consistent outcome, not merely an acceptable one: the failed branch's effects were aborted part-way and cannot be replayed, so the enclosing value can never complete.
+It holds for exceptions the runtime raises inside a branch, such as a stack overflow, as much as for the branch's own errors.
+The rethrow uses 'GHC.raiseIO#' rather than 'SystemIO.throwIO': it keeps the branch's exception exactly as the branch raised it, and GHC treats it as bottoming, so the parent's worker can still return the pair unboxed.
+
+The parent installs no handler for its own asynchronous exceptions.
+Catching one would leave two bad choices: rethrow it synchronously, which poisons a pure value with somebody else's 'System.Timeout.Timeout' (what @async@'s @concurrently@ does), or rethrow it asynchronously and later resume without the branches it had stopped, which would re-run their effects.
+Instead the runtime freezes the parent's continuation, the branches keep running, and resuming the frozen value simply collects their results -- the behaviour of GHC's own @par@ sparks.
+If the frozen value is dropped instead, the branches run to completion, as they did before 'parBO' propagated exceptions at all.
+Stopping them then would need a finalizer on something the frozen continuation keeps alive; one was tried, and its weak pointer kept every finished branch thread and its stack alive until a garbage collection, which multiplied the collector's work on every call.
+
+A failing branch stops its sibling itself, from its own thread, so the parent need not be running for the stop to happen.
+The stop is a 'ParBOCancelled' carrying the sender's thread, and a report counts as "stopped by my sibling" only when it carries the sibling's thread.
+A 'ParBOCancelled' that a branch merely re-raises -- say from a shared value that an earlier stop left poisoned, because code under 'unsafePerformIO' caught and rethrew it -- is therefore a genuine failure of that branch, rather than being mistaken for the stop it resembles.
+The branch sends the stop unmasked, whatever masking state it inherited: two branches that fail together throw to each other, and under an inherited 'SystemIO.uninterruptibleMask' each would otherwise block in 'throwTo' forever.
+
+Stopping is not transitive.
+A stopped branch that is itself waiting in a nested 'parBO' does not stop its own children: that nested parent is by construction not looking at its children, and catching the stop to forward it would force a synchronous rethrow, poisoning any shared value the stopped branch was evaluating.
+Those grandchildren run to completion.
+
+The branches start masked, from under the parent's 'SystemIO.mask_', so that no stop can reach a branch before its handler is in place; the computation, the evaluation of its result and the success report run unmasked inside it.
+An asynchronous exception can therefore arrive after a successful report, before the branch leaves the handler's scope, and the handler then runs although the branch has reported.
+It reports with 'tryPutMVar', which fails on the report that is already there, since the parent never takes a report out, and it stops the sibling only when its own report went in: a stop that arrives too late is absorbed, not mistaken for a failure of a branch that succeeded.
+If the parent took the reports, the handler would find an empty 'MVar' again and report a bogus failure: with a safe point after the report and a third thread throwing to the branch, the parent then rethrew a 'ParBOCancelled' although both branches had succeeded.
+Reporting after the 'unmask' has ended, in the masked state, would close that window without relying on the report staying in place, but the code that waits for the computation's result outside the 'unmask' is one more frame on the branch's stack for the whole computation, which the stack budget below cannot afford.
+
+A finished branch's thread, stack included, stays in memory as long as anything refers to its 'ThreadId'.
+The right branch reaches the left branch's thread through an 'MVar' that the parent empties as soon as it has read the left report, so a chain that pairs each quick computation, on the left, with the rest of the chain, on the right, as 'Control.Monad.Borrow.Pure.Par' does over a list, keeps no finished thread alive.
+Until the parent runs again after that report, the left thread does stay alive, and on few capabilities, where a parent resumes only once the threads ahead of it have run, that can be long.
+The left branch reaches the right branch's thread through the other 'MVar', which its handler holds for the whole of its computation: a branch cannot drop its own reference when it finishes without one more word on its stack for the whole computation.
+So in a chain nested the other way round, every finished right thread stays alive until the left one finishes.
+The parent keeps only the right thread's number, from 'fromThreadId', which is all it needs to tell the right branch's stop from a failure of the left branch's own when both fail.
+Keeping the 'ThreadId' held every finished right thread for as long as its parent waited, and raised the peak memory of the FFT benchmark at @-N1@ from 137 MB to 147 MB.
+A 'parBO' frozen while it waits for the left report keeps the left thread, through the 'MVar' it has not emptied yet, until the frozen value is resumed or dropped; frozen while it waits for the right report, it keeps neither thread.
+Weak references to the threads would keep none of them alive, but the collector has to process every weak pointer, and on a tree of forks they multiplied its copying; the retention is documented on 'parBO' instead.
+
+The branches are created with 'GHC.fork#' rather than 'forkIO'.
+'forkIO' wraps its action in a handler of its own, which can never run here because the branch's handler catches everything, and whose frame and closure cost stack in every branch.
+That stack matters: a thread starts with a 1 KB stack, and the branches of the FFT example in @Control.Concurrent.DivideConquer.Linear@ come within a word of it, so a branch that overflows it allocates a 32 KB chunk, which multiplies the allocation of the whole computation.
+Measured on GHC 9.12.4 on aarch64, the branches fit with no word to spare; another compiler or platform may tip them over, and @+RTS -ki2k@ is then the remedy.
+Without the handler that 'forkIO' installs, an exception that escaped the branch's handler would end the thread silently.
+None can escape before the report: everything up to the success report runs inside the handler's scope, and the handler reports first, with a 'tryPutMVar' that runs masked and cannot block, so it neither throws nor is interrupted.
+After the report, an escaping exception would at worst skip the stop and leave the parent waiting for the sibling to finish, so every action the handler takes after its report absorbs any exception.
+
+Limits that remain: a branch in a loop that never allocates cannot be interrupted, so it delays the rethrow until the loop ends; per-thread allocation limits are not inherited by forked threads, so they do not bound 'parBO' work.
+-}
+
+{- | Stops a 'parBO' branch after its sibling has failed.
+
+It carries the thread that sent it: see Note [parBO and exceptions].
+-}
+newtype ParBOCancelled = ParBOCancelled ThreadId
+
+instance NonLinear.Show ParBOCancelled where
+  show (ParBOCancelled sender) = "ParBOCancelled " <> NonLinear.show sender
+
+instance SystemIO.Exception ParBOCancelled where
+  toException = SystemIO.asyncExceptionToException
+  fromException = SystemIO.asyncExceptionFromException
+
+-- | The fork-join protocol behind 'parBO'. See Note [parBO and exceptions].
+parallelIO :: NonLinear.IO a -> NonLinear.IO b -> NonLinear.IO (a, b)
+{-# INLINE parallelIO #-}
+parallelIO runA runB = do
   aVar <- newEmptyMVar
   bVar <- newEmptyMVar
-  NonLinear.void $
-    forkIO $
-      putMVar aVar NonLinear.=<< evaluate NonLinear.=<< unsafeBOToSystemIO a
-  NonLinear.void $
-    forkIO $
-      putMVar bVar NonLinear.=<< evaluate NonLinear.=<< unsafeBOToSystemIO b
-  !a' <- takeMVar aVar
-  !b' <- takeMVar bVar
-  NonLinear.pure (a', b')
+  -- The right branch's thread, for the left branch to stop.
+  rightThread <- newEmptyMVar
+  -- The left branch's thread, for the right branch to stop, until the left report is in.
+  leftThread <- newEmptyMVar
+  -- Only the right branch's number is kept from here on, which keeps no thread alive.
+  rightNumber <- SystemIO.mask_ do
+    aTid <- forkBranch (parallelBranch runA aVar (NonLinear.Just NonLinear.<$> readMVar rightThread))
+    putMVar leftThread aTid
+    bTid <- forkBranch (parallelBranch runB bVar (tryReadMVar leftThread))
+    putMVar rightThread bTid
+    NonLinear.pure $! fromThreadId bTid
+  -- Read the reports without taking them: see Note [parBO and exceptions].
+  reportA <- readMVar aVar
+  _ <- tryTakeMVar leftThread
+  reportB <- readMVar bVar
+  case (reportA, reportB) of
+    (NonLinear.Right !a, NonLinear.Right !b) -> NonLinear.pure (a, b)
+    (NonLinear.Left failure, NonLinear.Left failureB) ->
+      if isStopByNumber rightNumber failure then rethrow failureB else rethrow failure
+    (NonLinear.Left failure, NonLinear.Right _) -> rethrow failure
+    (NonLinear.Right _, NonLinear.Left failureB) -> rethrow failureB
+
+-- | Rethrow a branch's exception exactly as the branch raised it.
+rethrow :: SystemIO.SomeException -> NonLinear.IO a
+{-# INLINE rethrow #-}
+rethrow failure = GHC.IO (GHC.raiseIO# failure)
+
+-- | Fork a branch without the handler that 'forkIO' installs; see Note [parBO and exceptions].
+forkBranch :: NonLinear.IO () -> NonLinear.IO ThreadId
+{-# INLINE forkBranch #-}
+forkBranch (GHC.IO action) = GHC.IO \s -> case GHC.fork# action s of
+  (# s, tid #) -> (# s, ThreadId tid #)
+
+-- | One branch of 'parallelIO': run, report, and on a genuine failure stop the sibling, if it is still running.
+parallelBranch ::
+  NonLinear.IO r ->
+  MVar (NonLinear.Either SystemIO.SomeException r) ->
+  NonLinear.IO (NonLinear.Maybe ThreadId) ->
+  NonLinear.IO ()
+{-# INLINE parallelBranch #-}
+parallelBranch run report sibling =
+  unsafeUnmask (run NonLinear.>>= evaluate NonLinear.>>= \ !result -> putMVar report (NonLinear.Right result))
+    `SystemIO.catch` \failure -> do
+      -- Fails if the success report is already in, which the parent never takes back out.
+      reported <- tryPutMVar report (NonLinear.Left failure)
+      NonLinear.when reported do
+        -- Absorb anything that arrives meanwhile, such as the sibling's own stop:
+        -- this thread has reported, and nothing may escape a thread forked without a handler.
+        ignoreExceptions $ unsafeUnmask do
+          found <- sibling
+          NonLinear.forM_ found \siblingTid ->
+            NonLinear.unless (isStopBy siblingTid failure) do
+              self <- myThreadId
+              throwTo siblingTid (ParBOCancelled self)
+
+isStopBy :: ThreadId -> SystemIO.SomeException -> NonLinear.Bool
+isStopBy sender failure = case SystemIO.fromException failure of
+  NonLinear.Just (ParBOCancelled from) -> from NonLinear.== sender
+  NonLinear.Nothing -> NonLinear.False
+
+{- | 'isStopBy' for a thread known by its number, which the runtime never reuses, rather than by its 'ThreadId', which would keep it alive.
+
+Two 'ThreadId's are equal exactly when their numbers are.
+-}
+isStopByNumber :: Word64 -> SystemIO.SomeException -> NonLinear.Bool
+isStopByNumber sender failure = case SystemIO.fromException failure of
+  NonLinear.Just (ParBOCancelled from) -> fromThreadId from NonLinear.== sender
+  NonLinear.Nothing -> NonLinear.False
+
+ignoreExceptions :: NonLinear.IO () -> NonLinear.IO ()
+ignoreExceptions action =
+  action `SystemIO.catch` \(_ :: SystemIO.SomeException) -> NonLinear.pure ()
 
 evaluateBO :: a %1 -> BO α a
 {-# INLINE evaluateBO #-}

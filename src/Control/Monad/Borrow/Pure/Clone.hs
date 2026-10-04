@@ -86,7 +86,12 @@ A value behind a shared borrow that is still an unevaluated call, in any field s
 That is harmless for a call that only allocates, reads, or makes a single write.
 It is not for one that reads what it writes, as linear-base's @Data.Array.Mutable.Linear.map@ or a chain of reads and writes does, nor for one that writes one place twice.
 The second run then reads what the first one wrote, and a clone can copy what the second run has written so far: @Array.map (+ 1)@ adds 2 to some elements, a clone can copy an array halfway through the update or hold a value that the call wrote only on the way, and a @map@ that changes the element type crashes the program.
-Evaluate such a call before the value is shared, for example with @Ref.new $! Array.map f arr@.
+The owners of this library evaluate each value they take over linearly, once, to weak head normal form, before anything can share it: 'Data.Ref.Linear.new', the @fromList@ of the vectors, and their writes through a 'Control.Monad.Borrow.Pure.Mut'.
+A field that the value holds lazily is not evaluated, however: a component of a pair, the payload of a 'Just', an element of a list or a field of a record, including one that 'Control.Monad.Borrow.Pure.splitPair' or another @split@ hands out.
+Storing a value evaluates it, so a branch that stores a 'Control.Monad.Borrow.Pure.Share' of such a field in an owner, or writes it through a 'Control.Monad.Borrow.Pure.Mut', evaluates the field too, and runs the call while a sibling that reads or clones the field can run it as well.
+The BO runner keeps evaluation demanded by its action behind its guard, including strict unboxed writes.
+An explicit force outside the action, such as a bang on the argument of a user's wrapper function, is still outside that protection.
+Evaluate such a call before the value is shared, with a strict field, @StrictData@, or the linear @$!@ of "Prelude.Linear" where the field is built, as in @Just PL.$! Array.map f arr@ with "Prelude.Linear" imported as @PL@; the @$!@ of "Prelude" does not take a linear argument.
 @$!@ reaches only the outermost constructor, so evaluate each such call that a record, a list or a vector holds, not only the container.
 -}
 module Control.Monad.Borrow.Pure.Clone (

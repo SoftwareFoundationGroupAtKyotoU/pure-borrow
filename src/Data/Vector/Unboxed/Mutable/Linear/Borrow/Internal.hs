@@ -21,11 +21,13 @@ import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )
+import Control.Monad.Borrow.Pure.Utils (evaluatingBundle)
 import Data.Unrestricted.Linear qualified as Ur
+import Data.Vector.Generic qualified as G
 import Data.Vector.Unboxed qualified as U
 import Data.Vector.Unboxed.Mutable qualified as UM
 import GHC.Exts qualified as GHC
-import GHC.IO (unsafePerformIO)
+import GHC.IO (evaluate, unsafePerformIO)
 import GHC.Stack (HasCallStack)
 import GHC.TypeError
 import Prelude.Linear hiding (head, last, splitAt)
@@ -125,7 +127,10 @@ constant =
   GHC.noinline \count value linear ->
     linear `lseq` Vector (unsafePerformIO (UM.replicate count value))
 
--- | \(O(n)\). Move the elements of a linear list into a new vector.
+{- | \(O(n)\). Move the elements of a linear list into a new vector.
+
+Each element is evaluated to weak head normal form as it is stored, which matters for an element type whose 'U.Unbox' representation is boxed and lazy, such as @DoNotUnboxLazy@: see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+-}
 fromList ::
   (U.Unbox a) =>
   [a] %1 ->
@@ -135,29 +140,16 @@ fromList ::
 fromList =
   GHC.noinline $
     Unsafe.toLinear \values linear ->
-      linear `lseq`
-        case measureList values of
-          (length_, values) ->
-            Vector
-              ( unsafePerformIO do
-                  vector <- UM.unsafeNew length_
-                  fillList 0 vector values
-                  NonLinear.pure vector
-              )
+      linear `lseq` Vector (unsafePerformIO (thawEvaluated values))
 
-measureList :: [a] %1 -> (Int, [a])
-{-# INLINE measureList #-}
-measureList [] = (0, [])
-measureList (value : values) =
-  case measureList values of
-    (length_, values) -> (length_ + 1, value : values)
+{- | Store the elements of a list in a new mutable vector, each evaluated to weak head normal form.
 
-fillList :: (U.Unbox a) => Int -> UM.IOVector a -> [a] -> IO ()
-{-# INLINE fillList #-}
-fillList !_ _ [] = NonLinear.pure ()
-fillList !index vector (value : values) = do
-  UM.unsafeWrite vector index value
-  fillList (index + 1) vector values
+Run inside 'unsafePerformIO', after its 'GHC.noDuplicate#', both the list and its elements are evaluated once: see Note [Stored contents are evaluated after noDuplicate#] in "Data.Ref.Linear.Unlifted.Internal".
+'evaluate' keeps the demand on the list from GHC, and the list is taken as it is produced, one cell at a time, as 'U.fromList' takes it.
+-}
+thawEvaluated :: (U.Unbox a) => [a] -> IO (UM.IOVector a)
+{-# INLINE thawEvaluated #-}
+thawEvaluated values = evaluate (G.unstream (evaluatingBundle values)) NonLinear.>>= U.unsafeThaw
 
 -- | \(O(n)\). Copy an immutable unboxed vector into a new owner.
 fromVector ::
@@ -429,6 +421,8 @@ unsafeSet ::
   BO β (a, Mut α (Vector a))
 {-# INLINE unsafeSet #-}
 unsafeSet =
+  -- The value is evaluated with a bang, which GHC can turn into strictness of a caller, unlike the boxed vectors' writes: hiding the demand would make a caller that computes an unboxed element build a thunk for it, which tripled the allocation of an update loop.
+  -- See Note [Stored contents are evaluated after noDuplicate#] in "Data.Ref.Linear.Unlifted.Internal".
   Unsafe.toLinear3 \index !value array@(UnsafeAlias (Vector vector)) ->
     unsafeSystemIOToBO do
       !oldValue <- UM.unsafeExchange vector index value

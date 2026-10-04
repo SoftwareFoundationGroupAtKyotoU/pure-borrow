@@ -1,5 +1,8 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -73,9 +76,12 @@ module PureBorrow.Bench.ScopeDensity (
   reborrowingsLoop,
 ) where
 
+import Control.DeepSeq (force)
+import Control.Exception (evaluate)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Experimental.Borrows
+import Control.Monad.Borrow.Pure.Experimental.Loop (forReborrowingUr_, forReborrowing_)
 import Control.Monad.Borrow.Pure.Experimental.Reborrowable (locally_)
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Ref.Linear qualified as Ref
@@ -436,6 +442,105 @@ reborrowingsLoop iterations =
               Control.pure (consume leftScoped `lseq` consume rightScoped)
           go (i - 1) bundle leftLend rightLend
 
+{- | The element a loop arm carries when its elements are GC-owned.
+
+A list rather than an 'Int', because the cost under test is a 'move', and
+'move' on an @Int@ is free while 'move' on a boxed structure is a traversal.
+Downstream the elements were e-graph nodes carrying a 'String', so a short list
+is the honest shape: small enough to be realistic, big enough that copying it
+is not free.
+-}
+type Payload = [Int]
+
+payloads :: Int -> [Payload]
+payloads count =
+  [ [i, i + 1, i + 2]
+  | i <- NonLinear.enumFromTo 1 count
+  ]
+
+{- | A loop over GC-owned elements through 'forReborrowing_', which forces a 'move'.
+
+This is the shape a caller is pushed into today when their elements are already
+unrestricted: the combinator binds each element linearly, so the body has to
+'move' it back out before it can be used nonlinearly, and for a structured
+element that is a deep copy per iteration.
+-}
+loopOwnedElements :: [Payload] -> Int
+{-# NOINLINE loopOwnedElements #-}
+loopOwnedElements elements = withCounter \mut lend -> Control.do
+  mut <-
+    forReborrowing_ mut elements \scoped payload ->
+      move payload & \(Ur payload) ->
+        consume Control.<$> RefBorrow.modify (+ payloadIntValue payload) scoped
+  consume mut `lseq` Control.pure (finishCounter lend)
+
+{- | 'forReborrowing_' over an element whose 'move' is free.
+
+Separates the two costs the arm above conflates. An @Int@ element still binds
+linearly and still goes through the combinator's @StateT@/@Ap@ tower, but
+moving it is a no-op, so this arm minus 'loopUnrestrictedElements' is the
+tower and 'loopOwnedElements' minus this arm is the deep copy.
+-}
+loopCheapMoveElements :: [Int] -> Int
+{-# NOINLINE loopCheapMoveElements #-}
+loopCheapMoveElements elements = withCounter \mut lend -> Control.do
+  mut <-
+    forReborrowing_ mut elements \scoped value ->
+      move value & \(Ur value) ->
+        consume Control.<$> RefBorrow.modify (+ value) scoped
+  consume mut `lseq` Control.pure (finishCounter lend)
+
+-- | The scope-free control for 'loopCheapMoveElements'.
+loopScopeFreeInts :: [Int] -> Int
+{-# NOINLINE loopScopeFreeInts #-}
+loopScopeFreeInts elements = withCounter (go elements)
+  where
+    go ::
+      forall α.
+      [Int] ->
+      Mut α (Ref.Ref Int) %1 ->
+      Lend α (Ref.Ref Int) %1 ->
+      BO α (After α (Ur Int))
+    go [] mut lend = consume mut `lseq` Control.pure (finishCounter lend)
+    go (value : rest) mut lend = Control.do
+      mut <- RefBorrow.modify (+ value) mut
+      go rest mut lend
+
+-- | The same loop through 'forReborrowingUr_', which needs no 'move'.
+loopUnrestrictedElements :: [Payload] -> Int
+{-# NOINLINE loopUnrestrictedElements #-}
+loopUnrestrictedElements elements = withCounter \mut lend -> Control.do
+  mut <-
+    forReborrowingUr_ mut elements \scoped payload ->
+      consume Control.<$> RefBorrow.modify (+ payloadIntValue payload) scoped
+  consume mut `lseq` Control.pure (finishCounter lend)
+
+-- | The unrestricted reader for a 'Payload'; forces the whole element so no arm can skip it.
+payloadIntValue :: Payload -> Int
+{-# INLINE payloadIntValue #-}
+payloadIntValue = NonLinear.sum
+
+{- | The scope-free control for the loop arms: the same additions, no scope, no combinator.
+
+Subtracting this from the two arms above gives the per-element cost of the loop
+machinery; subtracting the two arms from each other gives the cost of the
+'move' alone, which is the quantity a downstream report could only bound.
+-}
+loopScopeFree :: [Payload] -> Int
+{-# NOINLINE loopScopeFree #-}
+loopScopeFree elements = withCounter (go elements)
+  where
+    go ::
+      forall α.
+      [Payload] ->
+      Mut α (Ref.Ref Int) %1 ->
+      Lend α (Ref.Ref Int) %1 ->
+      BO α (After α (Ur Int))
+    go [] mut lend = consume mut `lseq` Control.pure (finishCounter lend)
+    go (payload : rest) mut lend = Control.do
+      mut <- RefBorrow.modify (+ payloadIntValue payload) mut
+      go rest mut lend
+
 {- | The iteration counts swept.
 
 Three points, an order of magnitude apart, so that the per-crossing cost comes
@@ -444,6 +549,20 @@ own setup.
 -}
 iterationCounts :: [Int]
 iterationCounts = [1024, 16384, 262144]
+
+{- | The element counts the loop arms sweep, which stop short of the scalar sweep.
+
+Their input is a list of lists, so at 262,144 elements the payload's own
+footprint is tens of megabytes and the arms become cache- and GC-bound. Measured
+there, the per-element time difference grows with @n@ — 0.9, 3.4, then 58 ns —
+instead of staying flat, and the allocation-free arm comes out /slower/ than the
+one that deep-copies every element, which its allocation figures say is
+impossible. That is the fixture measuring its own input rather than the
+combinator, so the timed sweep stops where the signal is still the combinator's.
+Allocation is exact at every size and stays linear well past this point.
+-}
+loopElementCounts :: [Int]
+loopElementCounts = [1024, 16384]
 
 test_scopeDensity :: [Benchmark]
 test_scopeDensity =
@@ -474,5 +593,18 @@ test_scopeDensity =
               ]
           ]
       | iterations <- iterationCounts
+      ]
+  , bgroup
+      "scope-density-loop"
+      [ env (evaluate (force (payloads elementCount, [1 .. elementCount]))) \(~(elements, ints)) ->
+          bgroup
+            (NonLinear.show elementCount)
+            [ bench "direct" $ nf loopScopeFree elements
+            , bench "forReborrowing_/move" $ nf loopOwnedElements elements
+            , bench "forReborrowingUr_" $ nf loopUnrestrictedElements elements
+            , bench "direct/Int" $ nf loopScopeFreeInts ints
+            , bench "forReborrowing_/Int" $ nf loopCheapMoveElements ints
+            ]
+      | elementCount <- loopElementCounts
       ]
   ]

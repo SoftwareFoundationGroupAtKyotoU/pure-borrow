@@ -192,6 +192,8 @@ test-suite pure-borrow-test
     Control.Monad.Borrow.Pure.Experimental.BorrowsSpec
     Control.Monad.Borrow.Pure.Lifetime.TypingCases
     Control.Monad.Borrow.Pure.LifetimeSpec
+    Data.Coerce.Directed.TypingCases
+    Data.Coerce.DirectedSpec
     Data.HashMap.RobinHood.Mutable.Linear.BorrowSpec
     Data.HashMap.RobinHood.Mutable.LinearSpec
     Data.HashMap.RobinHood.Mutable.LinearSpec.Cases

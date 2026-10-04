@@ -9,6 +9,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `LinearOnlyWitness` now has a `representational` role instead of the `phantom` one it had before, which unsoundly allowed virtually any type to derive `LinearOnly`.
 - `nowStatic :: BO α (Now Static)` replaces the top-level `nowStatic :: Now Static`, and has moved to `Control.Monad.Borrow.Pure.BO`.
   The previous, pure `nowStatic` could unsoundly let a `Linearly` token spill into a non-linear context.
+- Fix the bug where the subtyping relation `(<:)` wrongly made `Many` a subtype of `One`, which allowed any nonlinear function to be unsoundly upcast into a linear one.
 
 ### Fixed
 
@@ -17,6 +18,10 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   It now takes a batch one task at a time, and so may return fewer than half the tasks when the owner or another thief takes some meanwhile.
   The deque, `Control.Concurrent.Queue.ChaseLev`, could also put its elements in the wrong slots when it grew, and hand out `undefined`; and on ARM64 a thief could take what a slot held before the owner's write to it.
   Both are fixed as well.
+
+### New
+
+- `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
 
 ### Performance
 

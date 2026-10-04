@@ -8,7 +8,10 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
--- | This module exposes the unsafe internals of subtyping, which is only meant to be used for library implementors.
+{- | The unsafe internals of subtyping, meant to be used only by library implementors.
+
+An instance of '(<:)' written with 'UnsafeSubtype' promises that 'upcast', which is @unsafeCoerce@, turns every value of the first type into a valid value of the second: the two have the same representation, and a borrow reached through the result neither lives longer nor allows more than the one it came from.
+-}
 module Data.Coerce.Directed.Unsafe (
   type (<:) (..),
   SubtypeWitness (..),

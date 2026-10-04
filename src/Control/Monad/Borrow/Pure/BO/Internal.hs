@@ -188,23 +188,18 @@ unsafeLinIOToBO :: L.IO a %1 -> BO α a
 {-# INLINE unsafeLinIOToBO #-}
 unsafeLinIOToBO (L.IO f) = BO (Unsafe.coerce f)
 
-{- | Run a state-threaded computation to completion.
-
-'GHC.noDuplicate#' comes first, so that a thunk running a 'BO' computation performs its effects at most once even when two threads force it together; see Note [Pure Ref primitives run their effects at most once] in "Data.Ref.Linear.Unlifted.Internal".
--}
+-- | Run a state-threaded computation to completion.
 runBO# :: forall {rep} α (o :: TYPE rep). (State# (ForBO α) %1 -> o) %1 -> o
 {-# INLINE runBO# #-}
 runBO# = Unsafe.toLinear \f -> runRW# \s ->
-  f (unsafeCoerce# (GHC.noDuplicate# s))
+  f (unsafeCoerce# (GHC.noDuplicate# s)) -- see Note [Pure Ref primitives run their effects at most once] in "Data.Ref.Linear.Unlifted.Internal"
 
-{- | Run a computation in the lifetime of the given 'Now', and hand the 'Now' back once the computation is over.
-
-The 'Now' comes back through 'reviveNow', after the computation's last effect, so that the evidence of the lifetime's end derived from it depends on those effects; see Note [Owners handed back by reclaim].
--}
+-- | Run a computation in the lifetime of the given 'Now', and hand the 'Now' back once the computation is over.
 execBO :: BO α a %1 -> Now α %1 -> (Now α, a)
 {-# INLINE execBO #-}
 execBO bo !now = runBOResult Control.do
   !a <- bo
+  -- The 'Now' comes back through 'reviveNow', after the computation's last effect, so that the evidence of the lifetime's end derived from it depends on those effects; see Note [Owners handed back by reclaim].
   now <- reviveNow now
   Control.pure (now, a)
 

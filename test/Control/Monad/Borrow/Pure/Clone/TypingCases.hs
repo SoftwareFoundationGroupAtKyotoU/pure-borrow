@@ -10,6 +10,9 @@
 See Note [Cloning the contents of a shared borrow] in "Data.Ref.Linear.Internal".
 
 Each case runs the clone, because the missing instance is only needed, and its deferred error only raised, when the container's 'clone' clones a piece of the contents.
+
+Nor may linear-base's mutable arrays and vectors be copied out of a borrow with 'copy': 'copy' works outside 'BO', so its copy would not be ordered with the writes of the state thread.
+Their 'Copyable' instances are unsatisfiable, and each case forces 'copy', whose method raises the deferred message.
 -}
 module Control.Monad.Borrow.Pure.Clone.TypingCases (
   module Control.Monad.Borrow.Pure.Clone.TypingCases,
@@ -17,9 +20,19 @@ module Control.Monad.Borrow.Pure.Clone.TypingCases (
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
+import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (UnsafeAlias))
+import Data.Array.Mutable.Linear qualified as LA
+import Data.HashMap.Mutable.Linear qualified as LH
 import Data.Ref.Linear qualified as Ref
+import Data.Set.Mutable.Linear qualified as LS
+import Data.Vector.Mutable.Growable.Linear.Borrow qualified as VG
+import Data.Vector.Mutable.Linear qualified as LV
 import Data.Vector.Mutable.Linear.Borrow qualified as VL
+import Data.Vector.Unboxed qualified as U
+import Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow qualified as UG
+import Data.Vector.Unboxed.Mutable.Linear.Borrow qualified as UV
 import Prelude.Linear
+import Prelude qualified as NonLinear
 
 -- | Contents that can be duplicated, but have no 'Clone' instance.
 newtype DupableOnly = DupableOnly Int
@@ -48,3 +61,42 @@ refOfDupableOnly = cloneDupableOnly clone (Ref.new (DupableOnly 1))
 
 vectorOfDupableOnly :: ()
 vectorOfDupableOnly = cloneDupableOnly clone (VL.fromList [DupableOnly 1])
+
+-- | 'copy' of a shared linear-base array; the message must point to 'clone'.
+copyOfSharedArray :: LA.Array Int
+copyOfSharedArray = copy (UnsafeAlias NonLinear.undefined :: Share Static (LA.Array Int))
+
+-- | 'copy' of a shared linear-base vector must point to 'clone'.
+copyOfSharedVector :: LV.Vector Int
+copyOfSharedVector = copy (UnsafeAlias NonLinear.undefined :: Share Static (LV.Vector Int))
+
+copyOfSharedHashMap :: LH.HashMap Int Int
+copyOfSharedHashMap = copy (UnsafeAlias NonLinear.undefined :: Share Static (LH.HashMap Int Int))
+
+copyOfSharedSet :: LS.Set Int
+copyOfSharedSet = copy (UnsafeAlias NonLinear.undefined :: Share Static (LS.Set Int))
+
+growableOfDupableOnly :: ()
+growableOfDupableOnly = cloneDupableOnly clone (VG.fromList [DupableOnly 1])
+
+instance Consumable (U.DoNotUnboxLazy (Ref.Ref Int)) where
+  consume (U.DoNotUnboxLazy ref) = consume ref
+  {-# NOINLINE consume #-}
+
+unboxedRefsWithoutClone :: ()
+unboxedRefsWithoutClone = linearly \lin -> runBO lin Control.do
+  ref <- asksLinearly (Ref.new (1 :: Int))
+  owner <- asksLinearly (UV.fromList [U.DoNotUnboxLazy ref])
+  (mut, lend) <- borrowM owner
+  Ur shared <- Control.pure (share mut)
+  copied <- clone shared
+  pureAfter (consume copied `lseq` consume (reclaim lend))
+
+unboxedGrowableRefsWithoutClone :: ()
+unboxedGrowableRefsWithoutClone = linearly \lin -> runBO lin Control.do
+  ref <- asksLinearly (Ref.new (1 :: Int))
+  owner <- asksLinearly (UG.fromList [U.DoNotUnboxLazy ref])
+  (mut, lend) <- borrowM owner
+  Ur shared <- Control.pure (share mut)
+  copied <- clone shared
+  pureAfter (consume copied `lseq` consume (reclaim lend))

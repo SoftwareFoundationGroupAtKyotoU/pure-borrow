@@ -19,6 +19,7 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Internal (unsafeSrunBO_)
 import Control.Monad.Borrow.Pure.BO.Unsafe
+import Control.Monad.Borrow.Pure.Clone
 import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
   LinearOnly (..),
@@ -57,10 +58,33 @@ instance LinearOnly (GrowableVector a) where
   {-# INLINE linearOnly #-}
 
 instance
-  (Unsatisfiable (ShowType (GrowableVector a) :<>: Text " cannot be copied!")) =>
+  (Unsatisfiable (ShowType (GrowableVector a) :<>: Text " cannot be copied!" :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead.")) =>
   Copyable (GrowableVector a)
   where
   copy = unsatisfiable
+
+{- | Clone every initialized element into independent storage, preserving length and capacity.
+The unused capacity contains no owned elements and is not read.
+See Note [Cloning the contents of a shared borrow] in Data.Ref.Linear.Internal and the lazy-field caveat in "Control.Monad.Borrow.Pure.Clone#lazy".
+-}
+instance (U.Unbox a, Clone a) => Clone (GrowableVector a) where
+  clone :: forall α. Share α (GrowableVector a) %1 -> BO α (GrowableVector a)
+  clone = Unsafe.toLinear \(UnsafeAlias growable) -> Control.do
+    Ur (logicalSize, buffer) <- readHeader growable
+    cloned <- unsafeSystemIOToBO do
+      target <- UM.unsafeNew (UM.length buffer)
+      let go !index
+            | index >= logicalSize = NonLinear.pure ()
+            | otherwise = do
+                value <- UM.unsafeRead buffer index
+                !copied <- unsafeBOToSystemIO (clone @a @α (UnsafeAlias value))
+                UM.unsafeWrite target index copied
+                go (index + 1)
+      go 0
+      NonLinear.pure target
+    linear <- askLinearly
+    Control.pure (GrowableVector (Ref.new (Header logicalSize cloned) linear))
+  {-# INLINE clone #-}
 
 instance (U.Unbox a, Consumable a) => Consumable (GrowableVector a) where
   consume =

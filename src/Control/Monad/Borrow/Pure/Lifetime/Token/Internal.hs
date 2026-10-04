@@ -44,10 +44,6 @@ newLifetime' lin k =
   case newLifetime lin of
     MkSomeNow now -> k now
 
--- | Static Lifetime is always available.
-nowStatic :: Now Static
-nowStatic = UnsafeNow
-
 instance Affine (Now α) where
   aff UnsafeNow = UnsafeAff UnsafeNow
   {-# INLINE aff #-}
@@ -134,17 +130,25 @@ linearly = GHC.noinline \f ->
 
 data LinearOnlyWitness a = UnsafeLinearOnly
 
--- | A (non-bottom) value of the type @a@ can only live in a linear context.
+-- Not phantom, so that deriving via cannot reuse an instance for an unrelated type.
+type role LinearOnlyWitness representational
+
+-- | A type that can only be introduced and consumed within a linear context, and hence can be regarded as bearing the 'Linearly' token inside.
 type LinearOnly :: forall rep. TYPE rep -> Constraint
 class LinearOnly a where
   linearOnly :: LinearOnlyWitness a
 
-withLinearly :: (LinearOnly a) => a %1 -> (Linearly, a)
+-- | Obtain a 'Linearly' witness token from a 'LinearOnly' value, which lives only inside a linear context.
+withLinearly :: forall a. (LinearOnly a) => a %1 -> (Linearly, a)
 {-# NOINLINE withLinearly #-}
-withLinearly = noinline \ !a -> (UnsafeLinearly, a)
+-- Forced outside the lambda: one evaluation per dictionary, not per application.
+withLinearly = case linearOnly @_ @a of
+  UnsafeLinearOnly -> noinline \ !a -> (UnsafeLinearly, a)
 
+-- | 'withLinearly' for an unlifted type.
 withLinearly# :: forall (a :: UnliftedType). (LinearOnly a) => a %1 -> (# Linearly, a #)
-withLinearly# = noinline \ !a -> (# UnsafeLinearly, a #)
+withLinearly# = case linearOnly @_ @a of
+  UnsafeLinearOnly -> noinline \ !a -> (# UnsafeLinearly, a #)
 
 instance LinearOnly Linearly where
   linearOnly = UnsafeLinearOnly

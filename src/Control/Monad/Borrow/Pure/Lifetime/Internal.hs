@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE TypeOperators #-}
@@ -39,6 +40,9 @@ data Witness a b where
   Top :: Witness a Static
   Inherit' :: Witness' a b -> Witness a b
 
+-- Already nominal as a GADT; pinned against deriving via.
+type role Witness nominal nominal
+
 instance NFData (Witness a b) where
   rnf (Inf a b) = rnf a `seq` rnf b
   rnf Top = ()
@@ -70,6 +74,10 @@ instance NFData (Witness'' a b) where
 
 deriving instance Show (Witness'' a b)
 
+{- | @α \<= β@: the lifetime @β@ outlives @α@, so anything valid for @β@ is valid for @α@.
+
+See also: t'(>=)' for flipped version.
+-}
 type (<=) :: Lifetime -> Lifetime -> Constraint
 class α <= β where
   -- | The witness of the relation.

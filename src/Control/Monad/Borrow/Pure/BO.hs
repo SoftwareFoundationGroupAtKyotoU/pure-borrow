@@ -32,6 +32,7 @@ module Control.Monad.Borrow.Pure.BO (
   askLinearly,
   asksLinearly,
   asksLinearlyM,
+  nowStatic,
   evaluateBO,
 
   -- ** In-place modification with mutable borrows

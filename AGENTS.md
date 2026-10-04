@@ -225,6 +225,7 @@ Borrow types are all one zero-cost representation, `Alias ak α a`:
 
 - `Lifetime/Internal.hs` — the type-level algebra: `Lifetime = Al Nat | (:/\) | Static`, a free bounded lower-semilattice; `/\` is meet.
   The outlives relation `(<=)`/`(>=)` is a layered class hierarchy with explicit GADT witnesses and `INCOHERENT` instances that hand-implement transitivity/associativity of subtyping (no typechecker plugin).
+  The `INCOHERENT` instance `Coercible a b => a <: b`, and `deriving via` for `(<:)`, whose witness is representational in its target, rely on every lifetime parameter of the library having a nominal role: give one to any new type indexed by a lifetime, with a `type role` annotation where GHC would infer a weaker role.
 - `Lifetime/Token/Internal.hs` — zero-cost value-level tokens (`Now`, `EndToken`/`End`, `newLifetime`), the `After α a` finalizer monad, and the linearity witnesses (`Linearly`, `linearly`, `LinearOnly`).
   Several `NOINLINE`/`noinline` annotations here deliberately defeat CSE / full-laziness that would otherwise duplicate linear tokens — **do not "clean these up".**
 

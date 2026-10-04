@@ -49,6 +49,7 @@ import Data.Coerce.Directed.Unsafe
 import Data.Functor.Identity (Identity)
 import Data.Functor.Linear qualified as Data
 import Data.Kind (Type)
+import Data.List.NonEmpty (NonEmpty)
 import Data.Monoid qualified as Mon
 import Data.Ord qualified as Ord
 import Data.Semigroup qualified as Sem
@@ -58,11 +59,10 @@ import GHC.Base (TYPE)
 import GHC.Base qualified as GHC
 import GHC.Exts (Multiplicity (..), State#, runRW#)
 import GHC.ST qualified as ST
-import GHC.TypeError (ErrorMessage (..))
+import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
 import Generics.Linear
 import Prelude.Linear
 import Prelude.Linear qualified as PL
-import Prelude.Linear.Unsatisfiable (Unsatisfiable, unsatisfiable)
 import System.IO.Linear qualified as L
 import Unsafe.Coerce (unsafeCoerce#)
 import Unsafe.Linear qualified as Unsafe
@@ -592,6 +592,8 @@ split = split_
 deriving anyclass instance DistributesAlias Identity
 
 deriving anyclass instance DistributesAlias []
+
+deriving anyclass instance DistributesAlias NonEmpty
 
 deriving anyclass instance DistributesAlias Maybe
 

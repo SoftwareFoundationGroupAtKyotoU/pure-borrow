@@ -15,6 +15,11 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   `foldBorrow`, which was `foldBorrowOf foldMap`, is now `foldBorrowVia split`, so it requires `DistributesAlias t`.
   It rejects a borrow of an `Either e a` or `(e, a)` with "Use splitEither directly!" or "Use splitPair instead!".
 - `Clone` for `Ref` requires `Clone` of the contents instead of `Dupable`, and clones each piece of the contents through a shared borrow of it, without consuming the original or writing to it.
+- `modifyBoxedVector` requires `Movable a` and passes every element through `move` on the way out, one extra \(O(n)\) pass: its callback could store a linearly owned value, such as a `Ref`, into the GC-owned result.
+- `modifyBoxedMVector` is renamed `unsafeModifyBoxedMVector`, with the same `Movable` requirement.
+  The caller keeps the storage, so after catching an exception from it the storage must not be read or reused.
+  The old name remains only as a compile-time error that names the replacement and that obligation.
+- `Clone` for `Ref`, the boxed `Vector` and the multiplicity vector requires `Clone` of the contents instead of `Dupable`, and clones each piece of the contents through a shared borrow of it, without consuming the original or writing to it.
   `dup2` consumes its argument, and linear-base's laws do not say which of its two copies, if either, is the original.
   With a `Dupable` that returns two fresh copies, 0.1.0.0 consumed the original twice, and with one that returns the original second, a clone that kept the first copy would hand the original to the clone while a live `Share` could still read it.
   Give the contents a `Clone` instance.
@@ -61,12 +66,17 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### New
 
+- `Consumable` for the boxed `Vector` of `Data.Vector.Mutable.Linear.Borrow`, which gives a vector of non-`Movable` elements, such as `Ref`s, a way out.
 - `Clone` for `Ur`, `Sum`, `Product`, `Min`, `Max`, `Arg` and `Complex`.
 - `Clone` for the owned hash map of `Data.HashMap.RobinHood.Mutable.Linear`, which copies its slot array; the borrow-aware hash map clones through it.
 - `DistributesAlias` for `NonEmpty`.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
 - `Control.Monad.Borrow.Pure.BO.Unsafe` exports `restoreWithEnd`, `reviveAliasWithEnd#`, `endHere` and `withEndL`, for a delimiter of your own that discharges an `After`: its end token must come from the state thread rather than from the `UnsafeEnd` constructor.
+
+### Clarified
+
+- The callback of `unsafeInplace` must only rearrange elements, never duplicate, drop or replace one; `unsafeFromMutable` requires every element to be initialised.
 
 ### Performance
 
@@ -77,6 +87,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - Every `reclaim`, every run of the `runBO` family, and every crossing of a scope that discharges an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) makes one or two more out-of-line calls; `sharing`, `reborrowing` and the `_` variants are unchanged.
 - Every run of the `runBO` family, `modifyBO` and `modifyBO_` included, allocates its lifetime tokens, the `Now` and the end token with its `Ur`, 48 bytes, where 0.1.0.0 used static tokens shared by all runs: a loop of `modifyBO_` allocates 80 bytes per iteration against 32, and the benchmarks that run `BO` once per iteration 48 bytes more.
 - The `noDuplicate#` guard costs about 9 ns per owner-level `Ref` operation with several capabilities, and nothing with one.
+- `clone` of a boxed vector of references allocates about 25% more than 0.1.0.0, 4.16 MB against 3.31 MB per clone of 100,000 `Ref Int`s, because each element's clone is a new `Ref`, allocated when the clone is taken rather than left as a thunk.
+  `clone` of a vector of values such as `Int` allocates exactly what it did in 0.1.0.0.
 - The work-stealing deque's `stealHalf` takes a batch one task at a time, with a compare-and-swap and two barriers for each, where 0.1.0.0 claimed the batch with one compare-and-swap (see "Fixed").
   In the quicksort and FFT benchmarks most steal attempts find nothing and a batch holds one or two tasks, so their work-stealing variants show no measurable change in interleaved runs against the old deque: a pooled ratio of 1.00, with a 95% interval of about ±7%, at `-N4` and `-N10`.
   On x86-64 the barrier between a thief's reads of `top` and `bottom` is now a full fence on every steal attempt, whose cost was not measured.

@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ImpredicativeTypes #-}
+{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RankNTypes #-}
@@ -25,6 +26,14 @@ module Control.Monad.Borrow.Pure.BO.Unsafe (
   unsafeMapAlias,
   unsafeCastAlias,
   reviveAlias,
+
+  -- * Ending a sublifetime in a delimiter of your own
+
+  -- | See Note [Owners handed back by reclaim] in @Control.Monad.Borrow.Pure.BO.Internal@: a delimiter that discharges an 'Control.Monad.Borrow.Pure.Lifetime.Token.After' must take its t'Control.Monad.Borrow.Pure.Lifetime.Token.EndToken' from the state thread, as these do, rather than apply the constructor directly.
+  restoreWithEnd,
+  reviveAliasWithEnd#,
+  endHere,
+  withEndL,
 
   -- * Conversions from/to 'BO' monad.
   unsafeBOToLinIO,

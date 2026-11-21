@@ -67,7 +67,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `parBO` is slower and allocates more, for its exception handling: a fork-join whose branches do little is noticeably slower, and the divide-and-conquer FFT and quicksort built on `parBO` slightly so.
   Its finished threads also stay in memory longer.
 - `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.
-- The `noDuplicate#` guard costs about 9 ns per owner-level `Ref` operation with several capabilities, and nothing with one.
+- Owner-level operations on a `Ref` are slower when the program runs on several capabilities, and unchanged on one.
 - Stealing work from the deque of `Control.Concurrent.Queue.ChaseLev` is slower, more so on x86-64, though the work-stealing quicksort and FFT show no measurable slowdown.
 - Allocations that take a `Linearly` token, such as `Ref.new` and the constructors of the vectors, are slightly slower.
 - `foldBorrow` over a list or `NonEmpty` allocates more.

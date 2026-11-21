@@ -115,6 +115,7 @@ unsafeUnBO :: BO α a %1 -> State# (ForBO α) %1 -> (# State# (ForBO α), a #)
 {-# INLINE unsafeUnBO #-}
 unsafeUnBO (BO f) = f
 
+-- Functions rather than an equality: see Note [No equality between lifetimes].
 assocRBO :: BO ((α /\ β) /\ γ) a %1 -> BO (α /\ (β /\ γ)) a
 {-# INLINE assocRBO #-}
 assocRBO = unsafeCastBO
@@ -132,7 +133,7 @@ The two associations of a meet are converted by functions, 'assocRBO' and 'assoc
 With that, the 'EndToken' of a lifetime that had ended discharged a 'reclaim'' in one that was still running, and an owner came back while its 'Mut' was live.
 
 So the safe modules export no @(':~:')@ or @(':~~:')@ between types that differ in a lifetime: a nominal equality is taken apart by injectivity, whatever justified it.
-@test/typing-fail/AssocEqualityAnyLifetime.hs@ is the program that did it.
+@test/typing-fail/AssocEqualityAnyLifetime.hs@ is the program that did it, and its two siblings pin the other two names.
 -}
 
 instance Data.Functor (BO α) where

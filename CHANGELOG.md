@@ -93,15 +93,9 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.
 - Owner-level operations on a `Ref` are slower when the program runs on several capabilities, and unchanged on one.
 - `clone` of a boxed vector of references allocates more, since it copies each reference when the clone is taken; `clone` of a vector of values such as `Int` allocates as before.
-- `clone` of a linear-base `Array`, and so of a `Ref` or boxed `Vector` of arrays, copies each array in one pass with the array's own `dup2`, as 0.1.0.0 did through `Dupable`.
-  It costs a bare `cloneMutableArray#` plus about 2.5 ns and 16 bytes per clone on GHC 9.12 and later; on 9.10, whose `evaluate` allocates a thunk around the copy, it costs 48 bytes and about 5 ns more, or 30 ns more at 1,000 elements.
+- `clone` of a linear-base `Array`, and so of a `Ref` or boxed `Vector` of arrays, copies each array in one pass, as 0.1.0.0 did through `Dupable`, at a small cost per clone, larger on GHC 9.10.
   Code that clones one borrow repeatedly, as a loop does, now pays for a copy per clone, where 0.1.0.0 made one copy and gave it to every clone (see "Fixed").
-- Deep cloning the element-owning unboxed vectors visits each initialized element through its `Clone` instance.
-  On GHC 9.12.4/AArch64 macOS at `-O2`, cloning 100,000 `Int`s took 37.8 µs with specialization versus 13.4 µs for a safe ST buffer copy, with about 0.80 MB allocated by both.
-  Through a polymorphic dictionary boundary, the clone took 908 µs and allocated 4.00 MB; a vector of `(Int, Double)` took 2.71 ms and 8.80 MB versus 25.0 µs and 1.60 MB for the storage copy.
-  These are eleven rotated samples at `-N1`, excluding source setup and final materialization; they compare deep cloning with copying plain data, not with a previous equivalent instance.
-  Growable unboxed clones showed comparable costs; linear-base wrapper clones copy the whole backing capacity, including spare slots.
-  A bulk-copy fast path would need an additional guarantee that copying the element representation implements its `Clone`; `Unbox` alone does not provide that guarantee.
+- Cloning an element-owning unboxed vector visits each element through its `Clone` instance, which is slower than copying its storage, and much slower through a polymorphic `Clone` dictionary; cloning a linear-base wrapper copies its whole capacity, spare slots included.
 - Stealing work from the deque of `Control.Concurrent.Queue.ChaseLev` is slower, more so on x86-64, though the work-stealing quicksort and FFT show no measurable slowdown.
 - Allocations that take a `Linearly` token, such as `Ref.new` and the constructors of the vectors, are slightly slower.
 - `foldBorrow` over a list or `NonEmpty` allocates more.

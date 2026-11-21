@@ -6,6 +6,7 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RoleAnnotations #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnliftedNewtypes #-}
@@ -53,7 +54,7 @@ import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Linear qualified as Unsafe
 
 -- What every token is underneath: see Note [Tokens are opaque values].
-type TokenRep = (GHC.Any :: Type)
+type family TokenRep :: Type where
 
 -- The one 'TokenRep' the library builds; nothing coerces it back or looks into it.
 tokenRep :: TokenRep
@@ -217,7 +218,7 @@ pattern UnsafeLinearly <- UnsafeLinearlyToken !_
 {-
 Note [Tokens are opaque values]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-'Linearly', 'Now' and 'EndToken' are newtypes over 'TokenRep', which is 'GHC.Any'.
+'Linearly', 'Now' and 'EndToken' are newtypes over 'TokenRep', an empty closed type family of this module.
 None of them may become a type with a single nullary constructor, or a newtype over one such as @()@.
 
 A token does its job only while the optimizer does not know which value it is.
@@ -230,9 +231,9 @@ This happened: after @case dup2 lin of (!l1, !l2)@, @Ref.new seed l1@ and @Ref.n
 A forced 'Now' made the 'EndToken' that 'endLifetime' derives from it a top-level constant shared by every lifetime, and a forced 'EndToken' let a reclaimed owner be read before the scope's writes (Note [Owners handed back by reclaim] in "Control.Monad.Borrow.Pure.BO.Internal").
 No pragma on the library's functions prevents this: with such tokens and every @NOINLINE@ of the library turned into @OPAQUE@, the same kernels failed, since the allocation is a call on constants whatever GHC knows about its callee.
 
-'GHC.Any' has no constructors, so a @case@ on a 'TokenRep' has only a default alternative and forcing a token tells GHC nothing: two forced tokens stay two different variables.
+'TokenRep' has no equations, so GHC knows no constructor of it: a @case@ on one has only a default alternative, and forcing a token tells GHC nothing, so two forced tokens stay two different variables.
 At run time a token is @()@, and nothing is allocated for it.
-This relies on GHC not treating 'GHC.Any' as a type without values, which would make the code after a forced token unreachable; the kernels above would fail if it did, and they pass on GHC 9.10, 9.12 and 9.14.
+This relies on GHC not treating 'TokenRep' as a type without values, which would make the code after a forced token unreachable; the kernels above would fail if it did, and they pass on GHC 9.10, 9.12 and 9.14.
 
 A function that receives a token forces it or hands it on, unless it is applied through 'noinline'.
 Worker/wrapper drops an argument that its function does not use at all and puts a constant in its place, so a function that ignored its token would receive a constant from every caller.
@@ -251,7 +252,7 @@ The patterns 'UnsafeLinearly', 'UnsafeNow' and 'UnsafeEnd' build a token and mat
 GHC does not let a pattern synonym match a linearly bound value, so a linear 'Linearly' is dropped with 'consume', a 'Now' with @'consume' ('aff' now)@, and a linear 'EndToken' is used up by @withEndL@ in "Control.Monad.Borrow.Pure.BO.Unsafe".
 
 Forcing a token costs a call.
-GHC cannot rule out that a value of type 'GHC.Any' is a function, so it evaluates one through the runtime's generic entry, @stg_ap_0_fast@, rather than by testing the tag of the pointer.
+GHC cannot rule out that a value of type 'TokenRep' is a function, so it evaluates one through the runtime's generic entry, @stg_ap_0_fast@, rather than by testing the tag of the pointer.
 On aarch64-darwin with GHC 9.12.4 that is about 0.5 ns for each token forced: a run forces a handful, an allocation one, and a crossing of a scope one only if its 'After' reclaims.
 The first fix, a constructor with a lazy field that nothing reads, was forced inline but allocated the 'Now' and the 'EndToken' of every run, 32 bytes, and left a box that worker/wrapper took apart and rebuilt from a constant unless every function passed the field on.
 -}

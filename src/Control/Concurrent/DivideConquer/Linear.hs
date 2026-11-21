@@ -173,7 +173,6 @@ enqueues q work = case q of
 {- | Run a divide-and-conquer computation on a pool of workers, stealing and sharing work.
 
 @divide@ and @conquer@ must raise no exception: this function does not propagate one raised during the parallel computation, and blocks instead.
-'naiveDivideAndConquer', built on 'parBO', propagates exceptions.
 -}
 divideAndConquer ::
   forall c α β t a g.

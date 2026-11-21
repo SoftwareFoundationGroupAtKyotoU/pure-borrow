@@ -795,16 +795,11 @@ getContents ::
 {-# INLINE getContents #-}
 getContents =
   Unsafe.toLinear \(UnsafeAlias growable) -> Control.do
-    -- SAFETY: readHeader exposes the current header without consuming the
-    -- borrowed Ref handle, which stays with the authoritative header retained
-    -- by an enclosing lender. The input growable occurrence is consumed by
-    -- this projection and cannot be used for reserve or growth. The result
-    -- preserves its borrow kind and lifetime and exposes exactly the
-    -- initialized prefix, so mutable access cannot coexist with growth and
-    -- shared access remains read-only. The fixed safe API can split this
-    -- slice but cannot resize it, reveal spare capacity, or consume/freeze the
-    -- growable backing owner. Nominal backend and element roles prevent
-    -- selecting operations for a different representation.
+    -- SAFETY: readHeader exposes the current header without consuming the borrowed Ref handle, which stays with the authoritative header retained by an enclosing lender.
+    -- The input growable occurrence is consumed by this projection and cannot be used for reserve or growth.
+    -- The result preserves its borrow kind and lifetime and exposes exactly the initialized prefix, so mutable access cannot coexist with growth and shared access remains read-only.
+    -- The fixed safe API can split this slice but cannot resize it, reveal spare capacity, or consume/freeze the growable backing owner.
+    -- Nominal backend and element roles prevent selecting operations for a different representation.
     Ur (logicalSize, buffer) <- readHeader growable
     Control.pure $! UnsafeAlias (Fixed.Internal.unsafeFromMutableSlice 0 logicalSize buffer)
 

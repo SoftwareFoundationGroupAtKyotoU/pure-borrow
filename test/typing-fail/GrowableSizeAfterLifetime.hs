@@ -13,13 +13,10 @@ import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Vector.Mutable.Growable.Linear.Borrow qualified as Growable
 import Prelude.Linear
 
--- This fixture must not typecheck: a shared borrow of a growable vector is
--- kept past the end of its lifetime, and its size is read in a later run.
--- 'Growable.size' runs in @BO β@ only where @α >= β@, which no lifetime of
--- the later run satisfies.
+-- This fixture must not typecheck: a shared borrow of a growable vector is kept past the end of its lifetime, and its size is read in a later run.
+-- 'Growable.size' runs in @BO β@ only where @α >= β@, which no lifetime of the later run satisfies.
 --
--- It cannot live in @TypingCases@: 'Growable.size' never forces its outlives
--- evidence, so the deferred error would never be raised.
+-- It cannot live in @TypingCases@: 'Growable.size' never forces its outlives evidence, so the deferred error would never be raised.
 -- EXPECT: Could not deduce
 -- EXPECT: <=!!
 sizeAfterLifetime :: Int

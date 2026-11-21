@@ -16,7 +16,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   It rejects a borrow of an `Either e a` or `(e, a)` with "Use splitEither directly!" or "Use splitPair instead!".
 - `assocBOEq`, `assocBorrowEq` and `assocLendEq` are removed, since they let a program prove any two lifetimes equal and reclaim a resource while it was still borrowed.
   Use `assocLBO`, `assocRBO`, `assocBorrowL`, `assocBorrowR`, `assocLendL` or `assocLendR` instead.
-- `modifyBoxedVector` requires `Movable a` and passes every element through `move` on the way out, one extra \(O(n)\) pass: its callback could store a linearly owned value, such as a `Ref`, into the GC-owned result.
+- `modifyBoxedVector` requires `Movable a`, since its callback could store a linearly owned value, such as a `Ref`, into the GC-owned result.
 - `modifyBoxedMVector` is renamed `unsafeModifyBoxedMVector`, with the same `Movable` requirement.
   The caller keeps the storage, so after catching an exception from it the storage must not be read or reused.
   The old name remains only as a compile-time error that names the replacement and that obligation.
@@ -65,6 +65,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Performance
 
+- `modifyBoxedVector` is slower by one pass over the vector.
 - `parBO` is slower and allocates more, for its exception handling: a fork-join whose branches do little is noticeably slower, and the divide-and-conquer FFT and quicksort built on `parBO` slightly so.
   Its finished threads also stay in memory longer.
 - `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.

@@ -821,9 +821,6 @@ This consumes one occurrence of the growable borrow, preserves its borrow kind a
 The result exposes neither spare capacity nor growth.
 A mutable result may be split using the fixed-vector API; the mutable growable owner becomes recoverable only after every resulting fixed borrow has ended.
 A shared result is bound linearly, like the result of any 'BO' action, while readers such as 'Data.Vector.Mutable.Linear.Borrow.copyAt' take a 'Share' unrestricted, so 'move' it before its first read: @Ur content \<- move Control.\<$\> getContents shared@.
-
-Where a transaction branches, prefer projecting once at its entry -- @content <- 'getContents' borrow@ -- over projecting separately inside each branch.
-Both are correct and consume the growable occurrence exactly once; the entry form simply performs one header read rather than one per branch.
 -}
 getContents ::
   (α >= β) =>

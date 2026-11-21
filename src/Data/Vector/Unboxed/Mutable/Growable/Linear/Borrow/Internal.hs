@@ -750,9 +750,6 @@ checkedAdd operation left right
 The projection preserves borrow kind and lifetime and exposes no spare capacity or growth operation.
 It reads the header inside 'BO', so the prefix it sees is the one current at this point of the computation.
 A shared result is bound linearly, like the result of any 'BO' action, while readers such as 'Data.Vector.Unboxed.Mutable.Linear.Borrow.copyAt' take a 'Share' unrestricted, so 'move' it before its first read: @Ur content \<- move Control.\<$\> getContents shared@.
-
-Where a transaction branches, prefer projecting once at its entry -- @content <- 'getContents' borrow@ -- over projecting separately inside each branch.
-Both are correct and consume the growable occurrence exactly once; the entry form simply performs one header read rather than one per branch.
 -}
 getContents ::
   (U.Unbox a, α >= β) =>

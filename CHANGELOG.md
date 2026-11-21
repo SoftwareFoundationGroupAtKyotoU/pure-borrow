@@ -68,9 +68,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Known issues
 
-- A pure value whose evaluation writes memory it did not allocate can perform those writes twice if two threads force it at the same moment, for example both branches of a `parBO` reading it through a `Share`.
-  `Ref`'s pure operations and `runBO`/`modifyBO` computations are protected, but the owned hash map's `insert`, `delete` and `alter` in `Data.HashMap.RobinHood.Mutable.Linear` are not: force such a result before storing it where several branches can reach it, e.g. `Ref.new $! HashMap.insert k v m`.
-  The protection holds under GHC's default lazy blackholing; `-feager-blackholing` on the module that builds the value can defeat it, and single-capability programs are unaffected.
+- `insert`, `delete` and `alter` of the owned hash map in `Data.HashMap.RobinHood.Mutable.Linear` can write twice when two threads force the same unevaluated call, as both branches of a `parBO` can through a `Share`; force such a result before storing it where several branches reach it, as in `Ref.new $! HashMap.insert k v m`.
+  So can the pure operations of `Ref` and the runs of `runBO` and `modifyBO` in a module compiled with `-feager-blackholing`; a program on one capability is not affected.
 
 ## 0.1.0.0 - 2026-09-19
 

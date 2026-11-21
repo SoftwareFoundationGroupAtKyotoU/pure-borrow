@@ -45,10 +45,10 @@ A typical mutable container:
 - The same obligation applies to each method of a `Reborrowable` instance independently.
 - A `Lend` must be neither duplicated nor dropped, and `reclaim` must not run before its lifetime ends.
   A delimiter discharging `After` obtains its end token from the state thread with the supplied trusted helpers; it must not build a constant `UnsafeEnd` beside the result.
-- `Linearly`, `Now`, and `EndToken` carry an intentionally lazy field that keeps their identity unknown to GHC.
-  Match a linear token using `UnsafeLinearlyToken`, `UnsafeNowToken`, or `UnsafeEndToken`, passing the field on when converting one token into another.
-  The old names are pattern synonyms and cannot match linear values.
-  Never replace these types with nullary constructors or newtypes; a function returning two tokens must be `NOINLINE` and applied through `noinline`, since two equal-looking tokens can let GHC merge allocations.
+- `Linearly`, `Now`, and `EndToken` are opaque values, which keeps their identity unknown to GHC even after user code forces one.
+  `UnsafeLinearly`, `UnsafeNow`, and `UnsafeEnd` are pattern synonyms: they build a token and match an unrestricted one, but cannot match a linear value.
+  Drop a linear token with `consume`, after `aff` for a `Now`, and convert one token into another with `newLifetime` or `endLifetime`, never by dropping it and building the other.
+  A token built with a pattern is a constant: build one only inside a function that is `NOINLINE` and applied through `noinline`, which a function returning two tokens must be as well, since two equal-looking tokens can let GHC merge allocations.
 - The instances of `(<=)`, `End`, and `(<:)` decide lifetime soundness: never write one of `(<=)` or `End`, and give a type of your own `(<:)` only through `deriveSubtype`, under its caveat about mutable data structures, or by deriving it via `AsCoercible`, which the role of its witness checks.
 
 ## Effects and inlining

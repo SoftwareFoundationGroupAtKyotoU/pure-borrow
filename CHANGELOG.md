@@ -107,8 +107,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 ### Performance
 
 - `modifyBoxedVector` is slower by one pass over the vector.
-- An instance from `deriveSubtype` has one constraint per field type in its context, and code built without optimisation, such as GHCi or a module at `-O0`, allocates those dictionaries on each `upcast` in a polymorphic function: 264 bytes for a record of five fields, against 40 for an instance whose context is a single `a <: a'`.
-  A type's reference to itself in its own context costs nothing, and with `-O1` or `-O2` nothing is allocated.
+- Without optimisation, as in GHCi or at `-O0`, an `upcast` in a polymorphic function, at a type whose instance comes from `deriveSubtype`, allocates a dictionary per field type; with `-O1` or `-O2` it allocates nothing.
 - A `push` that grows an unboxed growable vector allocates less; the other operations of the growable vectors are unchanged.
 - `parBO` is slower and allocates more, for its exception handling: a fork-join whose branches do little is noticeably slower, and the divide-and-conquer FFT and quicksort built on `parBO` slightly so.
   Its finished threads also stay in memory longer.

@@ -119,6 +119,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Against the committed branch before strict storage, 1,000 `Ref.new`/`free` iterations rose from 6.55 to 7.27 µs without extra allocation (32,072 bytes).
   Against the earlier strict-storage runner, 1,000 owner-returning `modifyBO_` calls rose from 11.92 to 16.34 µs and from 80,104 to 144,896 bytes, about 65 extra bytes per call; the guard prevents the caller from forcing owners early and can leave a chain of delayed updates.
   The continuation-based runner eliminates its intermediate lifetime/result pair: 1,000 empty runs retain 80,088 bytes.
+  Those two comparisons were made while every run still allocated its `Now` and its end token: both sides are 32 bytes per run lower now, 112,880 bytes for the 1,000 `modifyBO_` calls and 48,056 for the 1,000 empty runs.
   Fused `fromList` construction avoids an intermediate list: 100,000 prebuilt boxed `Int`s retain 3.70 MB, compared with 8.50 MB in the intermediate strict-list implementation, with 0.729 → 0.830 ms against the pre-strict-storage branch in two rotated rounds.
   Multiplicity `One` construction retains about 8 extra bytes per element; `Many` has no measured per-element allocation increase.
   Selected fixed and growable unboxed kernels at 0, 1, 1,024 and 1,048,576 elements retain the earlier strict-storage implementation's allocation, including the strict writes now protected by the runner.

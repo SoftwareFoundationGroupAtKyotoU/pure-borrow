@@ -115,14 +115,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - Stealing work from the deque of `Control.Concurrent.Queue.ChaseLev` is slower, more so on x86-64, though the work-stealing quicksort and FFT show no measurable slowdown.
 - Allocations that take a `Linearly` token, such as `Ref.new` and the constructors of the vectors, are slightly slower.
 - `foldBorrow` over a list or `NonEmpty` allocates more.
-- Strict construction and guarded runs were measured on GHC 9.12.4/AArch64 macOS at `-O2`, using serial `-N1` paired runs.
-  Against the committed branch before strict storage, 1,000 `Ref.new`/`free` iterations rose from 6.55 to 7.27 µs without extra allocation (32,072 bytes).
-  Against the earlier strict-storage runner, 1,000 owner-returning `modifyBO_` calls rose from 11.92 to 16.34 µs and from 80,104 to 144,896 bytes, about 65 extra bytes per call; the guard prevents the caller from forcing owners early and can leave a chain of delayed updates.
-  The continuation-based runner eliminates its intermediate lifetime/result pair: 1,000 empty runs retain 80,088 bytes.
-  Those two comparisons were made while every run still allocated its `Now` and its end token: both sides are 32 bytes per run lower now, 112,880 bytes for the 1,000 `modifyBO_` calls and 48,056 for the 1,000 empty runs.
-  Fused `fromList` construction avoids an intermediate list: 100,000 prebuilt boxed `Int`s retain 3.70 MB, compared with 8.50 MB in the intermediate strict-list implementation, with 0.729 → 0.830 ms against the pre-strict-storage branch in two rotated rounds.
-  Multiplicity `One` construction retains about 8 extra bytes per element; `Many` has no measured per-element allocation increase.
-  Selected fixed and growable unboxed kernels at 0, 1, 1,024 and 1,048,576 elements retain the earlier strict-storage implementation's allocation, including the strict writes now protected by the runner.
+- Storing a value in a `Ref` or a vector is slightly slower, since it evaluates the value, and `fromList` of the vectors is slower; at `One`, the multiplicity vector's `fromList` allocates more per element.
+- A loop of `modifyBO_` calls that hand the owner back is slower and allocates more, and, unless the owner is forced, it builds up a chain of delayed updates.
 
 ### Known issues
 

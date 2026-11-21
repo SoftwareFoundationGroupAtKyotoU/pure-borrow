@@ -49,10 +49,10 @@ infixr 1 >>>
 
 {- | Force a stored value to WHNF inside an already guarded BO computation.
 This is ordinary strict evaluation, not a precise exception-ordering primitive.
-See Note [Demand stays inside a BO run] in "Control.Monad.Borrow.Pure.BO.Internal".
 -}
 evaluateStored :: a -> IO a
 {-# INLINE evaluateStored #-}
+-- See Note [Demand stays inside a BO run] in "Control.Monad.Borrow.Pure.BO.Internal".
 evaluateStored a = IO \s -> case lazy a of !evaluated -> (# s, evaluated #)
 
 {- | A single-use construction stream that evaluates each element before yielding it.

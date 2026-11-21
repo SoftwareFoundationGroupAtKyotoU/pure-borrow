@@ -110,10 +110,10 @@ unsafeReadRefBO (Ref v) = unsafeSystemIOToBO (unsafeReadRefIO# v)
 This is unsafe in the same way as 'unsafeWriteRef': the ownership of the previous contents is dropped, so the caller must already have taken it over, as a read-modify-write does.
 The new contents are forced to WHNF before storing them.
 The BO run hides demand from its caller; evaluation may move within that run, so this does not specify precise exception ordering.
-See Note [Demand stays inside a BO run] in "Control.Monad.Borrow.Pure.BO.Internal".
 -}
 unsafeWriteRefBO :: Ref a -> a %1 -> BO α ()
 {-# INLINE unsafeWriteRefBO #-}
+-- See Note [Demand stays inside a BO run] in "Control.Monad.Borrow.Pure.BO.Internal".
 unsafeWriteRefBO (Ref v) = Unsafe.toLinear \a -> unsafeSystemIOToBO (evaluateStored a NonLinear.>>= unsafeWriteRefIO# v)
 
 instance

@@ -21,18 +21,12 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Fixed
 
-- An owner handed back after a scope, by `runBO`, `runBOLend`, `modifyBO`, `modifyBO_`, the scopes that discharge an `After` or `reclaim` itself, could be read by a pure operation before the scope's writes, once GHC merged that read with an earlier one: after `(r1, r2) <- dup2 r0`, a scope that bumped `r1` and then `Ref.free (reclaim lend)` returned the contents from before the bump at `-O2`, and for a `Ref (Ref a)` it handed out a second owner of a reference it had given away.
-  The owner now comes back through a barrier that depends on the end of the lifetime, also in a module compiled with `-fno-state-hack` or one that forces the `EndToken` it discharges an `After` with.
-- `withEnd` given a bottom `EndToken`, which anyone can write, let `reclaim` hand an owner back while its borrows were still live, so that two `Mut`s reached one resource; it now fails instead.
-- Forcing a `Linearly` token, with a bang, `$!`, a strict field or a module compiled with `Strict`, let GHC merge the allocations made with it: after `case dup2 lin of (!l1, !l2)`, `Ref.new seed l1` and `Ref.new seed l2` were one reference, and a function that allocated a reference or a vector from a forced token returned the same one on every call.
-  Forcing a `Now` made the end token of every lifetime one shared constant.
-  Without anything forced, a `runBO` whose action has no free variables, such as `runBO_ lin (asksLinearly (Ref.new 0))`, was computed once for the whole program, and every call returned the same reference.
-- Computations run by `runBO` and `modifyBO` performed their effects once per thread when several threads forced the same unevaluated run, for example one read through a `Share` by both branches of a `parBO`.
-- The work-stealing scheduler behind `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` could run a task twice, running the mutable borrows it carries twice, and lose another, so that the call never returned: `qsortDC` occasionally hung, and under load could return a vector it had not sorted.
-  Its deque's `stealHalf` claimed a batch of tasks with one compare-and-swap, sized from a count that could be out of date, while the owner, popping from the other end without one, could reach into the batch.
-  It now takes a batch one task at a time, and so may return fewer than half the tasks when the owner or another thief takes some meanwhile.
-  The deque, `Control.Concurrent.Queue.ChaseLev`, could also put its elements in the wrong slots when it grew, and hand out `undefined`; and on ARM64 a thief could take what a slot held before the owner's write to it.
-  Both are fixed as well.
+- A pure read of an owner handed back by `runBO`, `runBOLend`, `modifyBO`, `modifyBO_`, `reclaim` or a scope that discharges an `After` sees the writes made during the scope; at `-O2` it could return what the owner held before the scope.
+- `reclaim` fails on a bottom `EndToken` given to `withEnd`, instead of handing back an owner whose borrows are still live.
+- Every allocation made with a `Linearly` token returns a fresh resource, even when the token is forced or the `runBO` that makes it has no free variables; at `-O2` two such allocations could return one reference.
+- A run of `runBO` or `modifyBO` performs its effects once, even when several threads force it, as both branches of a `parBO` can through a `Share`.
+- The work-stealing scheduler behind `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` runs every task exactly once; it could run a task twice and lose another, so that `qsortDC` occasionally hung or returned a vector it had not sorted.
+- `stealHalf` of `Control.Concurrent.Queue.ChaseLev` may return fewer than half the tasks, and the deque no longer misplaces its elements when it grows or, on ARM64, hands a thief what a slot held before the owner's write.
 - Deriving `Control.Monad.Borrow.Pure.Experimental.Loop.Foldable` via `Generically1` failed for every type with a field mentioning its parameter, for lack of instances for `Par1` and `:.:`.
   It still fails on a field that does not mention the parameter, such as `Int`.
 

@@ -19,7 +19,6 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `modifyBoxedVector` requires `Movable a`, since its callback could store a linearly owned value, such as a `Ref`, into the GC-owned result.
 - `modifyBoxedMVector` is renamed `unsafeModifyBoxedMVector`, with the same `Movable` requirement.
   The caller keeps the storage, so after catching an exception from it the storage must not be read or reused.
-  The old name remains only as a compile-time error that names the replacement and that obligation.
 - `Clone` for `Ref`, the boxed `Vector` and the multiplicity vector requires `Clone` of the contents instead of `Dupable`, since cloning through `Dupable` could consume the original or hand it to the clone while a `Share` could still read it.
   A `Copyable` type gets the instance with `deriving via AsCopyable T instance Clone T`, a record or sum of clonable fields with `deriving anyclass instance Clone T` and a linear-generics `Generic` instance, and an immutable type such as `Text` can be stored as `Ur Text`.
   Contents that are `Clone` but not `Dupable`, as in `Ref (Vector (Ref Int))`, can now be cloned.

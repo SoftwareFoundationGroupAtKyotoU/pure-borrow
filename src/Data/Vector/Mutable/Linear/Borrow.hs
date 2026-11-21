@@ -50,9 +50,6 @@ module Data.Vector.Mutable.Linear.Borrow (
 
   -- ** Internal functions
   divide,
-
-  -- * Removed
-  modifyBoxedMVector,
 ) where
 
 import Control.Functor.Linear qualified as Control
@@ -73,7 +70,6 @@ import Data.Vector.Mutable.Linear.Borrow.Internal (Vector (..))
 import GHC.Exts qualified as GHC
 import GHC.IO (unsafePerformIO)
 import GHC.Stack (HasCallStack)
-import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
 import Prelude.Linear hiding (head, last, splitAt)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
@@ -400,20 +396,6 @@ modifyBoxedVector ::
   V.Vector a
 {-# INLINE modifyBoxedVector #-}
 modifyBoxedVector f = V.modify (\x -> unsafeModifyBoxedMVector f x)
-
-{- | Renamed to 'unsafeModifyBoxedMVector' in 0.2.0.0; any use is a compile error that names the replacement and its obligation.
-
-The name without @unsafe@ is what hid that obligation, so it is not kept even as a deprecated alias.
--}
-modifyBoxedMVector ::
-  ( Unsatisfiable
-      ( 'Text "modifyBoxedMVector was renamed to unsafeModifyBoxedMVector in pure-borrow 0.2.0.0, and now requires Movable a."
-          ':$$: 'Text "The caller keeps the storage: if the callback throws, do not read or reuse the MVector afterwards."
-          ':$$: 'Text "To modify a GC-owned vector without that obligation, use modifyBoxedVector."
-      )
-  ) =>
-  a
-modifyBoxedMVector = unsatisfiable
 
 {- | A simple parallel implementation of quicksort.
 It uses a sequential divide-and-conquer when size <8,

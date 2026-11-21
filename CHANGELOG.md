@@ -55,7 +55,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `Data.Ref.Linear.new`, `atomicModify`, `atomicModify_` and `unsafeWriteRef`, and runs of `runBO` and `modifyBO`, perform their effects once, even when several threads force the same call, as both branches of a `parBO` can through a `Share`; an increment could be applied twice, and two branches could see different references.
 - `Data.Ref.Linear.atomicModify_` crashed on a `Ref Int`, and on a `Ref` of a list stored the new head instead of the new list.
   `atomicModify` stored the first component of its function's result, meant to be returned, instead of the second, the new contents.
-- Cloning one shared `Ref` of a linear-base `Array` more than once, as a loop does, gave every clone the same array at `-O2`: GHC made the pure `dup2` of the contents once for all the clones, so a write to one clone reached them all.
+- Cloning one shared `Ref` of a linear-base `Array` more than once, as a loop does, gave every clone the same array at `-O2`, so a write to one clone reached them all.
   Each clone now copies the array.
 - The work-stealing scheduler behind `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` runs every task exactly once; it could run a task twice and lose another, so that `qsortDC` occasionally hung or returned a vector it had not sorted.
 - `stealHalf` of `Control.Concurrent.Queue.ChaseLev` may return fewer than half the tasks, and the deque no longer misplaces its elements when it grows or, on ARM64, hands a thief what a slot held before the owner's write.
@@ -72,8 +72,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 - `Consumable` for the boxed `Vector` of `Data.Vector.Mutable.Linear.Borrow`, which gives a vector of non-`Movable` elements, such as `Ref`s, a way out.
 - `Clone` for `Ur`, `Sum`, `Product`, `Min`, `Max`, `Arg` and `Complex`.
-- `Clone` for linear-base's `Array`, `Vector`, `HashMap` and `Set`, copying their backing arrays and sharing their GC-owned contents without constraints on the elements.
-  Vector and hash-map capacities are preserved.
+- `Clone` for linear-base's `Array`, `Vector`, `HashMap` and `Set`, which copies the container and shares its GC-owned elements, requiring nothing of them; a `Vector` or `HashMap` keeps its capacity.
 - Deep `Clone` for the boxed growable vector and the fixed and growable unboxed vectors, requiring `Clone a` (and `Unbox a` for the unboxed families).
   Growable copies retain length and capacity and clone only initialized elements.
 - `Clone` and `Copyable` for `Identity`, `Down`, `Const`, `Dual`, semigroup `First` and `Last`, `WrappedMonoid`, `Any`, `All`, `Alt`, and tuples through arity six.
@@ -93,9 +92,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.
 - Owner-level operations on a `Ref` are slower when the program runs on several capabilities, and unchanged on one.
 - `clone` of a boxed vector of references allocates more, since it copies each reference when the clone is taken; `clone` of a vector of values such as `Int` allocates as before.
-- `clone` of a linear-base `Array`, and so of a `Ref` or boxed `Vector` of arrays, copies each array in one pass, as 0.1.0.0 did through `Dupable`, at a small cost per clone, larger on GHC 9.10.
-  Code that clones one borrow repeatedly, as a loop does, now pays for a copy per clone, where 0.1.0.0 made one copy and gave it to every clone (see "Fixed").
-- Cloning an element-owning unboxed vector visits each element through its `Clone` instance, which is slower than copying its storage, and much slower through a polymorphic `Clone` dictionary; cloning a linear-base wrapper copies its whole capacity, spare slots included.
+- `clone` of a linear-base `Array`, and so of a `Ref` or boxed `Vector` of arrays, is slightly slower, more so on GHC 9.10.
+  Code that clones one borrow repeatedly, as a loop does, is slower, since every clone now gets an array of its own (see "Fixed").
 - Stealing work from the deque of `Control.Concurrent.Queue.ChaseLev` is slower, more so on x86-64, though the work-stealing quicksort and FFT show no measurable slowdown.
 - Allocations that take a `Linearly` token, such as `Ref.new` and the constructors of the vectors, are slightly slower.
 - `foldBorrow` over a list or `NonEmpty` allocates more.

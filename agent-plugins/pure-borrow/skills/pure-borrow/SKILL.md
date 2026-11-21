@@ -6,7 +6,7 @@ description: >-
   Always load the linear-haskell skill too.
 license: BSD-3-Clause
 compatibility: >-
-  pure-borrow 0.2 API (currently on the soundness-fixes branch) on GHC 9.10.3 or 9.12.4+ (recommended) with linear-base >= 0.7.
+  pure-borrow 0.2 API (unreleased: use the main branch until 0.2.0.0 is on Hackage) on GHC 9.10.3 or 9.12.4+ (recommended) with linear-base >= 0.7.
   Requires the linear-haskell skill.
 metadata:
   author: Hiromi Ishii

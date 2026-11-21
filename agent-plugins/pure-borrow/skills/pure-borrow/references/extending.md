@@ -40,8 +40,7 @@ A typical mutable container:
 ## Scope combinators and delimiters
 
 - A delimiter that runs a continuation over a sublifetime and then gives the caller back the borrow it was given must return it through `reviveAlias` (or `reviveAliases` for bundles), never as the caller's own occurrence.
-  Header reads now go through the state token, but keep this identity barrier: restored borrow occurrences must remain distinct across scopes, including callers using the lower-level API.
-  See `Note [Restoring a borrow must break its Core identity]` in `Control.Monad.Borrow.Pure.BO.Internal`.
+  Restored occurrences must stay distinct across scopes, for callers of the lower-level API too: a pure read after the scope must not be the same expression as one before it, or GHC may serve the later read from the earlier one.
 - The same obligation applies to each method of a `Reborrowable` instance independently.
 - A `Lend` must be neither duplicated nor dropped, and `reclaim` must not run before its lifetime ends.
   A delimiter discharging `After` obtains its end token from the state thread with the supplied trusted helpers; it must not build a constant `UnsafeEnd` beside the result.

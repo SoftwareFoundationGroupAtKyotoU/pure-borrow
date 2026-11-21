@@ -64,8 +64,7 @@ instance
   where
   copy = unsatisfiable
 
-{- | Clone every initialized element into independent storage, preserving length and capacity.
-The unused capacity contains no owned elements and is not read.
+{- | Each element is cloned through a shared borrow of it, with its own 'Clone', into a fresh vector of the same size and capacity.
 See the lazy-field caveat in "Control.Monad.Borrow.Pure.Clone#lazy".
 -}
 instance (Clone a) => Clone (GrowableVector a) where

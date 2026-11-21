@@ -59,8 +59,7 @@ instance
   where
   copy = unsatisfiable
 
-{- | Clone every element through its own 'Clone' into independent storage.
-An unboxed representation may contain linear resources, so copying only the buffer is insufficient.
+{- | Each element is cloned through a shared borrow of it, with its own 'Clone', into a fresh vector.
 See the lazy-field caveat in "Control.Monad.Borrow.Pure.Clone#lazy".
 -}
 instance (U.Unbox a, Clone a) => Clone (Vector a) where

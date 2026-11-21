@@ -65,9 +65,10 @@ instance
 
 {- | Clone every initialized element into independent storage, preserving length and capacity.
 The unused capacity contains no owned elements and is not read.
-See Note [Cloning the contents of a shared borrow] in Data.Ref.Linear.Internal and the lazy-field caveat in "Control.Monad.Borrow.Pure.Clone#lazy".
+See the lazy-field caveat in "Control.Monad.Borrow.Pure.Clone#lazy".
 -}
 instance (U.Unbox a, Clone a) => Clone (GrowableVector a) where
+  -- See Note [Cloning the contents of a shared borrow] in "Data.Ref.Linear.Internal".
   clone :: forall α. Share α (GrowableVector a) %1 -> BO α (GrowableVector a)
   clone = Unsafe.toLinear \(UnsafeAlias growable) -> Control.do
     Ur (logicalSize, buffer) <- readHeader growable

@@ -36,7 +36,7 @@ The library's instance for linear-base's arrays is written this way, as follows.
 Only @clone@, and the signature, the pragma, the 'GHC.Exts.noinline' and the 'Prelude.Linear.lseq' on the token of @copyArray@, are the pattern.
 The rest of @copyArray@, and @sameStorage@, are how an array is copied; for a type of your own, call its own allocating copy there instead.
 The array's own 'dup2' makes the copy in one pass and only reads the array it is given, but it does not say which of its results is the copy, so the instance compares their storage with the original's.
-A container that owns its contents must not clone them with 'dup2' at all: see Note [Cloning the contents of a shared borrow] in @Data.Ref.Linear.Internal@.
+A container that owns its contents must not clone them with 'dup2' at all.
 
 > {-# LANGUAGE BlockArguments #-}
 > {-# LANGUAGE ImportQualifiedPost #-}

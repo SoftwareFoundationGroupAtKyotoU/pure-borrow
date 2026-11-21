@@ -278,7 +278,7 @@ copyRefAfterAt = Unsafe.toLinear \ref -> Control.do
 That inversion is what keeps them honest: an obligation that also holds of the allocating implementation is no evidence about this one, and turns the group red under @+slow@ until it is either sharpened or dropped.
 
 Two plausible-looking obligations were dropped for exactly that reason.
-@'hasNoType' \'srunBOAt ''SomeNow@ holds under both, because 'MkSomeNow' wraps a nullary 'Now' and case-of-known-constructor removes the box either way.
+@'hasNoType' \'srunBOAt ''SomeNow@ holds under both, because case-of-known-constructor removes the 'MkSomeNow' box either way.
 @'hasNoType' \'reborrowingRefAt ''Now@ likewise: through 'reborrowing'' the token itself is always erased, and what the allocating version actually leaves behind is the 'Linearly' that produced it.
 
 The borrow-scope equalities pin the barriers as well, because their specifications name them: a delimiter that stopped calling one would no longer equal its specification.

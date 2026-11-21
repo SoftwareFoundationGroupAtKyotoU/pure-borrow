@@ -14,12 +14,10 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Replace `foldBorrowOf fld` with `foldBorrowVia sp` for a splitter `sp` such as `split`.
   `foldBorrow`, which was `foldBorrowOf foldMap`, is now `foldBorrowVia split`, so it requires `DistributesAlias t`.
   It rejects a borrow of an `Either e a` or `(e, a)` with "Use splitEither directly!" or "Use splitPair instead!".
-- `Linearly`, `Now` and `EndToken` carry a field, so that GHC cannot learn which value a token is, and `Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe` exports their constructors as `UnsafeLinearlyToken`, `UnsafeNowToken` and `UnsafeEndToken`.
-  The old names `UnsafeLinearly`, `UnsafeNow` and `UnsafeEnd` remain as patterns, which build a token and match an unrestricted one as the constructors did.
+- `Linearly`, `Now` and `EndToken` are no longer data types with one nullary constructor, so that GHC cannot learn which value a token is, and `Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe` exports `UnsafeLinearly`, `UnsafeNow` and `UnsafeEnd` as patterns, which build a token and match an unrestricted one as the constructors did.
   GHC does not let a pattern synonym match a linearly bound value, and rejects such a match with "Couldn't match type ‘Many’ with ‘One’" arising from "a non-linear pattern" "(pattern synonyms aren't linear)", or, in a `case`, arising from the "multiplicity of" the variable matched.
-  Where you matched a linear token, write the constructor instead, as in `\(UnsafeLinearlyToken _) -> ()`.
-  A token built with a pattern or a constructor is a constant, which GHC may share between allocations: build one only inside a function that is `NOINLINE` and applied through `noinline`.
-  Where you take a token apart and return another, pass the field on; a function that returns two tokens must itself be `NOINLINE` and applied through `noinline`, as `dup2` is, since two tokens with the same field are one expression.
+  Where you matched a linear token to drop it, call `consume` on it, after `aff` for a `Now`.
+  Where you matched one token to build another, call `newLifetime` or `endLifetime` instead: a token built with a pattern is a constant, which GHC may share between allocations.
 
 ### Changed
 
@@ -47,12 +45,13 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `DistributesAlias` for `NonEmpty`.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
-- `Control.Monad.Borrow.Pure.BO.Unsafe` exports `restoreWithEnd`, `reviveAliasWithEnd#`, `endHere` and `withEndL`, for a delimiter of your own that discharges an `After`: its end token must come from the state thread rather than from the `UnsafeEnd` constructor.
+- `Control.Monad.Borrow.Pure.BO.Unsafe` exports `restoreWithEnd`, `reviveAliasWithEnd#`, `endHere` and `withEndL`, for a delimiter of your own that discharges an `After`: its end token must come from the state thread rather than from `UnsafeEnd`.
 
 ### Performance
 
 - Every `reclaim`, every run of the `runBO` family, and every crossing of a scope that discharges an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) makes one or two more out-of-line calls; `sharing`, `reborrowing` and the `_` variants are unchanged.
-- Every run of the `runBO` family, `modifyBO` and `modifyBO_` included, allocates its lifetime tokens, the `Now` and the end token with its `Ur`, 48 bytes, where 0.1.0.0 used static tokens shared by all runs: a loop of `modifyBO_` allocates 80 bytes per iteration against 32, and the benchmarks that run `BO` once per iteration 48 bytes more.
+- Every run of the `runBO` family, `modifyBO` and `modifyBO_` included, allocates the `Ur` that carries its end token, 16 bytes, where 0.1.0.0 allocated nothing for its tokens: a loop of `modifyBO_` allocates 48 bytes per iteration against 32, and the benchmarks that run `BO` once per iteration 16 bytes more.
+- Forcing a token is a call into the runtime, about 0.5 ns, where 0.1.0.0 tested the tag of a pointer inline: 2 to 3 ns for a run that allocates, borrows and reclaims, and 0.25 ns for each crossing of a scope that discharges an `After`, on aarch64-darwin with GHC 9.12.4.
 - The work-stealing deque's `stealHalf` takes a batch one task at a time, with a compare-and-swap and two barriers for each, where 0.1.0.0 claimed the batch with one compare-and-swap (see "Fixed").
   In the quicksort and FFT benchmarks most steal attempts find nothing and a batch holds one or two tasks, so their work-stealing variants show no measurable change in interleaved runs against the old deque: a pooled ratio of 1.00, with a 95% interval of about ±7%, at `-N4` and `-N10`.
   On x86-64 the barrier between a thief's reads of `top` and `bottom` is now a full fence on every steal attempt, whose cost was not measured.

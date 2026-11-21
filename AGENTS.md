@@ -228,9 +228,9 @@ Borrow types are all one zero-cost representation, `Alias ak α a`:
   The `INCOHERENT` instance `Coercible a b => a <: b`, and `deriving via` for `(<:)`, whose witness is representational in its target, rely on every lifetime parameter of the library having a nominal role: give one to any new type indexed by a lifetime, with a `type role` annotation where GHC would infer a weaker role.
 - `Lifetime/Token/Internal.hs` — zero-cost value-level tokens (`Now`, `EndToken`/`End`, `newLifetime`), the `After α a` finalizer monad, and the linearity witnesses (`Linearly`, `linearly`, `LinearOnly`).
   Several `NOINLINE`/`noinline` annotations here deliberately defeat CSE / full-laziness that would otherwise duplicate linear tokens — **do not "clean these up".**
-  Likewise `Linearly`, `Now` and `EndToken` each keep a lazy field that nothing reads, so that a token forced by user code stays unknown to the optimizer; never make one a nullary constructor or a newtype (Note [Tokens carry a field]).
-  A function that takes a token apart and returns another passes the field on, as `newLifetime` and `endLifetime` do, even when it is `OPAQUE`: `OPAQUE` hides the body but not the demand signature, and a signature that shows the field unused lets GHC rebuild the token as a constant in a caller's worker.
-  One that returns two tokens must be `NOINLINE` and applied through `noinline`, as `dup2` is, since two tokens with the same field are one expression.
+  Likewise `Linearly`, `Now` and `EndToken` are newtypes over `GHC.Exts.Any`, whose constructors never leave this module, so that a token forced by user code stays unknown to the optimizer; never make one a type with a single nullary constructor, or a newtype over one (Note [Tokens are opaque values]).
+  A function that makes a token from another hands the same value on, as `newLifetime` and `endLifetime` do, and one that only receives a token forces it, unless it is applied through `noinline`: a caller's worker drops an argument that the function ignores and puts a constant in its place.
+  One that returns two tokens must be `NOINLINE` and applied through `noinline`, as `dup2` is, since two tokens that are one value are one expression.
   Only such a function, or an `OPAQUE` one that takes no token (`endHere`, `reviveAliasWithEnd#`), may build a token from constants.
   And `withEnd` does not force its token, which keeps it opaque until `reviveOwner` (Note [Owners handed back by reclaim]).
 

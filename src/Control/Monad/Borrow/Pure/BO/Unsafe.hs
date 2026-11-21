@@ -29,7 +29,7 @@ module Control.Monad.Borrow.Pure.BO.Unsafe (
 
   -- * Ending a sublifetime in a delimiter of your own
 
-  -- | See Note [Owners handed back by reclaim] in @Control.Monad.Borrow.Pure.BO.Internal@: a delimiter that discharges an 'Control.Monad.Borrow.Pure.Lifetime.Token.After' must take its t'Control.Monad.Borrow.Pure.Lifetime.Token.EndToken' from the state thread, as these do, rather than apply the constructor directly.
+  -- | A delimiter that discharges an 'Control.Monad.Borrow.Pure.Lifetime.Token.After' must take its t'Control.Monad.Borrow.Pure.Lifetime.Token.EndToken' from the state thread, as these do, rather than build one: an owner it hands back could otherwise be read before the writes of its scope.
   restoreWithEnd,
   reviveAliasWithEnd#,
   endHere,

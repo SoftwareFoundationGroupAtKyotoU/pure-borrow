@@ -23,7 +23,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Stopping reaches only the other branch: whatever it had started with a nested `parBO` runs to completion, so `mapConcurrentlyOf` over a list stops none of the other elements when the first one throws, and all of them when the last one does.
   A branch in a loop that does not allocate cannot be stopped until the loop ends; compile the module that contains such a loop with `-fno-omit-yields` if the rethrow must be prompt.
   An asynchronous exception to the caller, such as a `timeout`, does not stop the branches: forcing the interrupted value again collects their results, and a value that is dropped instead leaves them running to completion.
-  A computation's thread, stack included, about 1 KB, stays in memory after it finishes: the second computation's until the first one finishes, and the first computation's until the thread running `parBO` runs again; `Par` and `mapConcurrentlyOf` over a list put the short computation first.
+  A computation's thread stays in memory after it finishes: the second computation's until the first one finishes, and the first computation's until the thread running `parBO` runs again; `Par` and `mapConcurrentlyOf` over a list put the short computation first.
 - `reclaim` forces the `EndToken` it is discharged with; `withEnd` leaves it alone.
 
 ### Fixed
@@ -46,10 +46,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Performance
 
-- `parBO` allocates about 13.5% more per call, 2627 bytes against 2314, for the exception handling.
-  In time, it costs about 20 ns more per call at `-N1`: measured with interleaved runs against 0.1.0.0 on GHC 9.12.4, the fork-join benchmark, whose branches do almost nothing, runs 25–35% slower at `-N1` and 9–28% slower at `-N4`, and the divide-and-conquer FFT on 2^20 points runs 9% slower.
-  On the quicksort of 32,768 elements at `-N10`, where the unchanged introsort varies by ±2% between rounds, the divide-and-conquer version built on `parBO` runs 2% slower, in every round; the budgeted parallel and the sequential versions are unchanged within that noise, and the work-stealing version, which does not use `parBO`, was 2–8% faster before the deque fix below, which changes it by no measurable amount.
-  Its finished threads also stay in memory longer: the parallel divide-and-conquer FFT benchmark on 2^20 points peaks at 137 MB at `-N1`, against about 105 MB for 0.1.0.0, and at 123 MB against 118 MB at `-N4`.
+- `parBO` is slower and allocates more, for its exception handling: a fork-join whose branches do little is noticeably slower, and the divide-and-conquer FFT and quicksort built on `parBO` slightly so.
+  Its finished threads also stay in memory longer.
 - `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.
 - Stealing work from the deque of `Control.Concurrent.Queue.ChaseLev` is slower, more so on x86-64, though the work-stealing quicksort and FFT show no measurable slowdown.
 - Allocations that take a `Linearly` token, such as `Ref.new` and the constructors of the vectors, are slightly slower.

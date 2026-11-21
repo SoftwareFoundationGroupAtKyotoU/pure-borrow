@@ -8,7 +8,7 @@
 Were 'Linearly' a nullary constructor, forcing a token would tell GHC which value it is.
 Two allocations with equal arguments would then be merged into one, and an allocation whose arguments are all constants would be floated out and shared by every call.
 With a nullary token, every kernel here but 'twoRefsUnforced' failed at @-O2@, and 'twoVectors' failed only under @-fno-state-hack@.
-See Note [Tokens carry a field] in "Control.Monad.Borrow.Pure.Lifetime.Token.Internal".
+See Note [Tokens are opaque values] in "Control.Monad.Borrow.Pure.Lifetime.Token.Internal".
 
 "PureBorrow.NoStateHack.ForcedLinearly" in the @pure-borrow-no-state-hack@ suite is a copy of this module.
 -}

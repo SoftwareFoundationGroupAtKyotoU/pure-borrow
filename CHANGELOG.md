@@ -46,6 +46,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   A computation's thread stays in memory after it finishes: the second computation's until the first one finishes, and the first computation's until the thread running `parBO` runs again; `Par` and `mapConcurrentlyOf` over a list put the short computation first.
 - `Data.Ref.Linear.Borrow.update`, `modify`, `swap` and `readShare`, and the hash map's queries and `take`, `take_` and `swap`, read and write inside `BO`, at their place in the sequence; a write could previously land only when its result was forced, after the lifetime had ended.
 - `reclaim` forces the `EndToken` it is discharged with; `withEnd` leaves it alone.
+- `copy` of a mutable container is rejected with a message that points to `clone` inside `BO`, for linear-base's `Array`, `Vector`, `HashMap` and `Set` as well as pure-borrow's references and vectors.
 
 ### Fixed
 
@@ -66,7 +67,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 - `divideAndConquer` and `divideAndConquer'` require `divide` and `conquer` to raise no exception: they do not propagate one raised during the parallel computation, and block instead.
 - The callback of `unsafeInplace` must only rearrange elements, never duplicate, drop or replace one; `unsafeFromMutable` requires every element to be initialised.
-- `copy` of mutable containers is rejected with a message pointing to `clone` inside `BO`, including linear-base's `Array`, `Vector`, `HashMap` and `Set` and pure-borrow's references and vectors.
+- A call of the owned hash map's `insert`, `delete` or `alter`, or of one of linear-base's in-place operations, must be evaluated before it is stored where several branches of a `parBO` reach it, as in `Ref.new $! HashMap.insert k v m`, and so must each such call that a record, a list or a vector holds (see "Known issues").
 
 ### New
 
@@ -102,7 +103,6 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 - `insert`, `delete` and `alter` of the owned hash map in `Data.HashMap.RobinHood.Mutable.Linear`, and linear-base's in-place operations such as `set`, `write` and `map` of `Data.Array.Mutable.Linear`, can run twice when two threads force the same unevaluated call, as both branches of a `parBO` can through a `Share`: `Array.map (+ 1)` can add 2, and a clone can copy an array halfway through an update.
   So can the pure operations of `Ref` and the runs of `runBO` and `modifyBO` in a module compiled with `-feager-blackholing`; a program on one capability is not affected.
-  Force such a call before storing it where several branches reach it, as in `Ref.new $! HashMap.insert k v m`, and each call that a record, a list or a vector holds.
 
 ## 0.1.0.0 - 2026-09-19
 

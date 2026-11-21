@@ -39,13 +39,10 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Performance
 
-- Every `reclaim`, every run of the `runBO` family, and every crossing of a scope that discharges an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) makes one or two more out-of-line calls; `sharing`, `reborrowing` and the `_` variants are unchanged.
-- Every run of the `runBO` family, `modifyBO` and `modifyBO_` included, allocates the `Ur` that carries its end token, 16 bytes, where 0.1.0.0 allocated nothing for its tokens: a loop of `modifyBO_` allocates 48 bytes per iteration against 32, and the benchmarks that run `BO` once per iteration 16 bytes more.
-- Forcing a token is a call into the runtime, about 0.5 ns, where 0.1.0.0 tested the tag of a pointer inline: 2 to 3 ns for a run that allocates, borrows and reclaims, and 0.25 ns for each crossing of a scope that discharges an `After`, on aarch64-darwin with GHC 9.12.4.
-- The work-stealing deque's `stealHalf` takes a batch one task at a time, with a compare-and-swap and two barriers for each, where 0.1.0.0 claimed the batch with one compare-and-swap (see "Fixed").
-  In the quicksort and FFT benchmarks most steal attempts find nothing and a batch holds one or two tasks, so their work-stealing variants show no measurable change in interleaved runs against the old deque: a pooled ratio of 1.00, with a 95% interval of about ±7%, at `-N4` and `-N10`.
-  On x86-64 the barrier between a thief's reads of `top` and `bottom` is now a full fence on every steal attempt, whose cost was not measured.
-- `foldBorrow` over a list or `NonEmpty` builds the list of borrows that `split` makes: summing 10⁶ elements allocates 57.2 MB, against 16.6 MB for 0.1.0.0's `foldBorrow`.
+- `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.
+- Stealing work from the deque of `Control.Concurrent.Queue.ChaseLev` is slower, more so on x86-64, though the work-stealing quicksort and FFT show no measurable slowdown.
+- Allocations that take a `Linearly` token, such as `Ref.new` and the constructors of the vectors, are slightly slower.
+- `foldBorrow` over a list or `NonEmpty` allocates more.
 
 ## 0.1.0.0 - 2026-09-19
 

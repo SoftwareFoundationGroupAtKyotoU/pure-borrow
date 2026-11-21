@@ -79,7 +79,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 ### Performance
 
 - `modifyBoxedVector` is slower by one pass over the vector.
-- The growable vectors read and write their header inline, in the state thread, where 0.1.0.0 made an out-of-line call: a `push` that grows an unboxed vector, and the plural scope benchmark that threads a bundle, allocate 28% less, and the other growable and scope benchmarks are unchanged.
+- A `push` that grows an unboxed growable vector, and a plural scope that threads a bundle, allocate less; the other operations of the growable vectors and the other scopes are unchanged.
 - `parBO` is slower and allocates more, for its exception handling: a fork-join whose branches do little is noticeably slower, and the divide-and-conquer FFT and quicksort built on `parBO` slightly so.
   Its finished threads also stay in memory longer.
 - `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.

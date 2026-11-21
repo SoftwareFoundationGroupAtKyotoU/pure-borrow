@@ -61,9 +61,10 @@ instance
 
 {- | Clone every element through its own 'Clone' into independent storage.
 An unboxed representation may contain linear resources, so copying only the buffer is insufficient.
-See Note [Cloning the contents of a shared borrow] in Data.Ref.Linear.Internal and the lazy-field caveat in "Control.Monad.Borrow.Pure.Clone#lazy".
+See the lazy-field caveat in "Control.Monad.Borrow.Pure.Clone#lazy".
 -}
 instance (U.Unbox a, Clone a) => Clone (Vector a) where
+  -- See Note [Cloning the contents of a shared borrow] in "Data.Ref.Linear.Internal".
   clone :: forall α. Share α (Vector a) %1 -> BO α (Vector a)
   clone = Unsafe.toLinear \(UnsafeAlias (Vector buffer)) -> unsafeSystemIOToBO do
     let !count = UM.length buffer

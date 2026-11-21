@@ -89,8 +89,8 @@ The second run then reads what the first one wrote, and a clone can copy what th
 The owners of this library evaluate each value they take over linearly, once, to weak head normal form, before anything can share it: 'Data.Ref.Linear.new', the @fromList@ of the vectors, and their writes through a 'Control.Monad.Borrow.Pure.Mut'.
 A field that the value holds lazily is not evaluated, however: a component of a pair, the payload of a 'Just', an element of a list or a field of a record, including one that 'Control.Monad.Borrow.Pure.splitPair' or another @split@ hands out.
 Storing a value evaluates it, so a branch that stores a 'Control.Monad.Borrow.Pure.Share' of such a field in an owner, or writes it through a 'Control.Monad.Borrow.Pure.Mut', evaluates the field too, and runs the call while a sibling that reads or clones the field can run it as well.
-The BO runner keeps evaluation demanded by its action behind its guard, including strict unboxed writes.
-An explicit force outside the action, such as a bang on the argument of a user's wrapper function, is still outside that protection.
+What a 'BO' action evaluates is evaluated once as well, even when two branches force the same run at once.
+What is forced outside the action, such as through a bang on the argument of a wrapper function of your own, is not.
 Evaluate such a call before the value is shared, with a strict field, @StrictData@, or the linear @$!@ of "Prelude.Linear" where the field is built, as in @Just PL.$! Array.map f arr@ with "Prelude.Linear" imported as @PL@; the @$!@ of "Prelude" does not take a linear argument.
 @$!@ reaches only the outermost constructor, so evaluate each such call that a record, a list or a vector holds, not only the container.
 -}

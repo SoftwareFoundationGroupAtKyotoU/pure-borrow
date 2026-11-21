@@ -142,11 +142,7 @@ fromList =
     Unsafe.toLinear \values linear ->
       linear `lseq` Vector (unsafePerformIO (thawEvaluated values))
 
-{- | Store the elements of a list in a new mutable vector, each evaluated to weak head normal form.
-
-Run inside 'unsafePerformIO', after its 'GHC.noDuplicate#', both the list and its elements are evaluated once.
-'evaluate' keeps the demand on the list from GHC, and the list is taken as it is produced, one cell at a time, as 'U.fromList' takes it.
--}
+-- | Store the elements of a list in a new mutable vector, each evaluated to weak head normal form.
 thawEvaluated :: (U.Unbox a) => [a] -> IO (UM.IOVector a)
 {-# INLINE thawEvaluated #-}
 -- See Note [Stored contents are evaluated after noDuplicate#] in "Data.Ref.Linear.Unlifted.Internal".

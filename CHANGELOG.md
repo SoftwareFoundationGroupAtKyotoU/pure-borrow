@@ -16,15 +16,9 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   It rejects a borrow of an `Either e a` or `(e, a)` with "Use splitEither directly!" or "Use splitPair instead!".
 - `assocBOEq`, `assocBorrowEq` and `assocLendEq` are removed, since they let a program prove any two lifetimes equal and reclaim a resource while it was still borrowed.
   Use `assocLBO`, `assocRBO`, `assocBorrowL`, `assocBorrowR`, `assocLendL` or `assocLendR` instead.
-- `Clone` for `Ref` requires `Clone` of the contents instead of `Dupable`, and clones each piece of the contents through a shared borrow of it, without consuming the original or writing to it.
-  `dup2` consumes its argument, and linear-base's laws do not say which of its two copies, if either, is the original.
-  With a `Dupable` that returns two fresh copies, 0.1.0.0 consumed the original twice, and with one that returns the original second, a clone that kept the first copy would hand the original to the clone while a live `Share` could still read it.
-  Give the contents a `Clone` instance.
-  A `Copyable` type gets one with `deriving via AsCopyable T instance Clone T`, with `AsCopyable` from `Control.Monad.Borrow.Pure.Clone`.
-  A record or sum type of clonable fields gets one with `deriving anyclass instance Clone T`, once it has the `Generic` instance of linear-generics, from `$(deriveGeneric ''T)` of `Generics.Linear.TH`, which takes `TemplateHaskell` and `TypeFamilies`.
-  An immutable, GC-owned type with neither, such as `Text` or `ByteString`, can be stored as `Ur Text`, since `Clone (Ur a)` shares its payload.
-  A type of your own that owns a resource needs an instance written through `Control.Monad.Borrow.Pure.BO.Unsafe`, under the obligations stated on `Clone`.
-  Contents that are `Dupable` but none of these, such as linear-base's mutable arrays, can no longer be cloned through a borrow without an instance of that kind; contents that are `Clone` but not `Dupable`, as in `Ref (Vector (Ref Int))`, now can be.
+- `Clone` for `Ref` requires `Clone` of the contents instead of `Dupable`, since cloning through `Dupable` could consume the original or hand it to the clone while a `Share` could still read it.
+  A `Copyable` type gets the instance with `deriving via AsCopyable T instance Clone T`, a record or sum of clonable fields with `deriving anyclass instance Clone T` and a linear-generics `Generic` instance, and an immutable type such as `Text` can be stored as `Ur Text`.
+  Contents that are `Clone` but not `Dupable`, as in `Ref (Vector (Ref Int))`, can now be cloned.
 - The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)` or a `(<:)` instance for `Maybe`; delete the orphan.
 
 ### Changed

@@ -29,8 +29,8 @@ An operation that looks like a copy may not make one: linear-base's @Data.Vector
 Each copy must also depend on something of its own, or GHC merges the copies of two clones of one borrow into one, as it does in a loop that clones the same borrow.
 Either allocate and fill the copy with IO actions in the state thread, as the vector instances do under 'Control.Monad.Borrow.Pure.BO.Unsafe.unsafeSystemIOToBO', or pass a t'Control.Monad.Borrow.Pure.Linearly' taken with 'Control.Monad.Borrow.Pure.BO.askLinearly' to the function that makes the copy, make that function @NOINLINE@, and define it as 'GHC.Exts.noinline' applied to a lambda, as @copyArray@ below is.
 A pure copy is not enough however it is evaluated, even with @$!@ inside 'Control.Monad.Borrow.Pure.BO.Unsafe.unsafeSystemIOToBO'.
-Neither is consuming the token beside the copy outside such a function, nor passing it to a function that is only @NOINLINE@ or only @OPAQUE@: such a function's demand signature shows when it ignores the token, and GHC may then drop the token on the way to it.
-Inside the function, consuming the token is enough, since 'GHC.Exts.noinline' hides from GHC that the function ignores it.
+Neither is consuming the token beside the copy outside such a function, nor passing it to a function that is only @NOINLINE@ or only @OPAQUE@.
+Inside the function, consuming the token is enough.
 
 The library's instance for linear-base's arrays is written this way, as follows.
 Only @clone@, and the signature, the pragma, the 'GHC.Exts.noinline' and the 'Prelude.Linear.lseq' on the token of @copyArray@, are the pattern.

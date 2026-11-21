@@ -49,14 +49,11 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `Data.Ref.Linear.Borrow.update`, `modify`, `swap` and `readShare`, and the hash map's queries and `take`, `take_` and `swap`, read and write inside `BO`, at their place in the sequence; a write could previously land only when its result was forced, after the lifetime had ended.
 - `reclaim` forces the `EndToken` it is discharged with; `withEnd` leaves it alone.
 - `copy` of a mutable container is rejected with a message that points to `clone` inside `BO`, for linear-base's `Array`, `Vector`, `HashMap` and `Set` as well as pure-borrow's references and vectors.
-- `Data.Ref.Linear.new` and `unsafeWriteRef`, and the `fromList` of the boxed, unboxed, unboxed growable and multiplicity vectors, evaluate the value they store to weak head normal form, once, as the owner itself is evaluated, which borrowing it does; the multiplicity vector does so only at `One`, where it owns its elements.
-  Writes through a `Mut` evaluate what they store inside the guarded run, including unboxed writes.
-  Demand is hidden at the run boundary, allowing arithmetic and writes to remain strict and specialize inside the run without allocating a thunk for each updated element.
-  A call stored unevaluated that updates memory in place, such as `Array.map f arr`, could otherwise run in both branches of a `parBO` that read it.
-  A placeholder stored in an owner, such as `undefined`, therefore raises when the owner is borrowed, even if nothing reads it and it is dropped with `aff`; one returned inside an owner by the `divide` of `divideAndConquer` or `divideAndConquer'` now raises in a worker, and the caller blocks (see "Known issues"), where it used to raise when the caller freed the owner.
-  A `Share` is stored as the value it points to, so storing one evaluates that value.
-  The thread that evaluates the owner, usually the parent before a `parBO` forks, now computes what it stores, and a `fromList` computes its elements one after another, where branches that read different contents used to compute them in parallel; this also holds for the hash map's `fromList` and `union`, whose tables are now built as the map is evaluated.
-  Build an expensive value inside the branch that needs it, or store a GC-owned one in a lazy box such as `Ur`, which is evaluated only to the box.
+- `Data.Ref.Linear.new` and `unsafeWriteRef`, and the `fromList` of the boxed, unboxed, unboxed growable and multiplicity vectors, evaluate the value they store to weak head normal form; the multiplicity vector does so only at `One`, where it owns its elements.
+  So do the writes through a `Mut`, and storing a `Share` evaluates the value it points to.
+  The thread that evaluates an owner, usually the parent before a `parBO` forks, therefore computes its contents, and a `fromList` its elements one after another, where branches that read different contents used to compute them in parallel; the hash map's `fromList` and `union` likewise build their tables as the map is evaluated.
+  A placeholder such as `undefined` raises when its owner is borrowed, even if nothing reads it, and in a worker when the `divide` of `divideAndConquer` or `divideAndConquer'` returns it inside an owner (see "Clarified").
+  To keep an expensive value for the branch that needs it, build it there, or store a GC-owned one in a lazy box such as `Ur`, which is evaluated only to the box.
 
 ### Fixed
 
@@ -72,13 +69,10 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `stealHalf` of `Control.Concurrent.Queue.ChaseLev` may return fewer than half the tasks, and the deque no longer misplaces its elements when it grows or, on ARM64, hands a thief what a slot held before the owner's write.
 - Deriving `Control.Monad.Borrow.Pure.Experimental.Loop.Foldable` via `Generically1` failed for every type with a field mentioning its parameter, for lack of instances for `Par1` and `:.:`.
   It still fails on a field that does not mention the parameter, such as `Int`.
-- A call that updates memory in place, stored unevaluated by `Data.Ref.Linear.new`, by the `fromList` of the boxed, unboxed or multiplicity vectors, or by the multiplicity vector's `write` at `One`, could run twice when both branches of a `parBO` read or cloned it through a `Share` at once: `Ref.new (Array.map (+ 1) arr)` added 2 to some elements, a clone could copy the array halfway through, and a `map` that changes the element type crashed the program.
-  The same happened to a call of one of those constructors left unevaluated where both branches reached it, such as a component of a pair, and to a list whose cells make the call as they are produced.
-  Strict writes could make a wrapper around `modifyBO_` strict in its payload, allowing its caller to evaluate the payload before the run's guard.
-  Two branches forcing a delayed wrapper could then run a linear `Array.map` twice, even when the stored value was an ordinary `Int` computed by summing the array.
-  The runner now hides demand on the complete state continuation until after `noDuplicate#`; its result consumer remains inside the same continuation so intermediate lifetime/result pairs can be eliminated.
-  The borrow-aware hash map's `union` stored its in-place insertions unevaluated, so two branches that looked keys up in the union could corrupt it: a union of 12 entries with 4 lost entries or answered a lookup wrongly in 99 of 100 runs at `-N2`.
-  These fixes hold under GHC's default lazy blackholing; a module compiled with `-feager-blackholing` can still run such a call twice.
+- A call that updates memory in place, such as `Array.map f arr`, runs once when both branches of a `parBO` read or clone through a `Share` a value that `Data.Ref.Linear.new`, the `fromList` of the boxed, unboxed or multiplicity vectors, or the multiplicity vector's `write` at `One` stores, or a value that such a call computes, as an `Int` summed from an `Array.map` is.
+  It could run twice: `Ref.new (Array.map (+ 1) arr)` added 2 to some elements, a clone could copy the array halfway through, and a `map` that changes the element type crashed the program.
+  The same held for a call of one of those constructors left unevaluated where both branches reach it, such as a component of a pair, and for a list whose cells make the call as they are produced.
+  The borrow-aware hash map's `union` no longer stores its insertions unevaluated, which let two branches that looked keys up in the union lose entries or answer a lookup wrongly.
 
 ### Clarified
 
@@ -121,7 +115,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 ### Known issues
 
 - `insert`, `delete` and `alter` of the owned hash map in `Data.HashMap.RobinHood.Mutable.Linear`, and linear-base's in-place operations such as `set`, `write` and `map` of `Data.Array.Mutable.Linear`, can run twice when two threads force the same unevaluated call, as both branches of a `parBO` can through a `Share`: `Array.map (+ 1)` can add 2, a clone can copy an array halfway through an update, and a linear-base container can be left inconsistent.
-  So can the pure operations of `Ref` and the runs of `runBO` and `modifyBO` in a module compiled with `-feager-blackholing`; a program on one capability is not affected.
+  So can the pure operations of `Ref`, the runs of `runBO` and `modifyBO`, and a call that an owner stores, in a module compiled with `-feager-blackholing`; a program on one capability is not affected.
   The owners evaluate what they store, but not a lazy field inside it, such as a component of a pair or the payload of a `Just`, and not a call forced outside a `BO` action, as by a bang on an argument.
   Evaluate such a call before storing it where several branches reach it, with a strict field, `StrictData` or the linear `$!` of `Prelude.Linear`, as in `Just PL.$! Array.map f arr`, and each call that a record, a list or a vector holds.
 

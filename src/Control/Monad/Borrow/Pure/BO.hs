@@ -94,13 +94,10 @@ module Control.Monad.Borrow.Pure.BO (
   -- *** Manual lifetime reassociation
   assocRBO,
   assocLBO,
-  assocBOEq,
   assocBorrowL,
   assocBorrowR,
-  assocBorrowEq,
   assocLendL,
   assocLendR,
-  assocLendEq,
 
   -- * Re-exports
   module Control.Monad.Borrow.Pure.Lifetime,

@@ -54,7 +54,6 @@ import Data.Monoid qualified as Mon
 import Data.Ord qualified as Ord
 import Data.Semigroup qualified as Sem
 import Data.Tuple (Solo (..))
-import Data.Type.Equality ((:~:) (Refl))
 import GHC.Base (TYPE)
 import GHC.Base qualified as GHC
 import GHC.Exts (Multiplicity (..), State#, runRW#)
@@ -124,9 +123,17 @@ assocLBO :: BO (α /\ (β /\ γ)) a %1 -> BO ((α /\ β) /\ γ) a
 {-# INLINE assocLBO #-}
 assocLBO = unsafeCastBO
 
-assocBOEq :: forall α β γ a. BO ((α /\ β) /\ γ) a :~: BO (α /\ (β /\ γ)) a
-{-# INLINE assocBOEq #-}
-assocBOEq = Unsafe.coerce $ Refl @(BO (α /\ β /\ γ) a)
+{-
+Note [No equality between lifetimes]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The two associations of a meet are converted by functions, 'assocRBO' and 'assocLBO' here and their counterparts for borrows and lenders, and never by a type equality.
+0.1.0.0 also exported @assocBOEq :: BO ((α /\\ β) /\\ γ) a ':~:' BO (α /\\ (β /\\ γ)) a@, with one each for 'Borrow' and 'Lend'.
+@/\\@ is a promoted data constructor, hence injective, so @inner@ and @outer@ of "Data.Type.Equality" took such an equality apart into @γ ':~:' (β /\\ γ)@ and @(α /\\ β) ':~:' α@, and those two compose into an equality between any two lifetimes.
+With that, the 'EndToken' of a lifetime that had ended discharged a 'reclaim'' in one that was still running, and an owner came back while its 'Mut' was live.
+
+So the safe modules export no @(':~:')@ or @(':~~:')@ between types that differ in a lifetime: a nominal equality is taken apart by injectivity, whatever justified it.
+@test/typing-fail/AssocEqualityAnyLifetime.hs@ is the program that did it.
+-}
 
 instance Data.Functor (BO α) where
   fmap f (BO g) = BO \s -> case g s of
@@ -437,12 +444,6 @@ assocBorrowL ::
 {-# INLINE assocBorrowL #-}
 assocBorrowL = coerceLin
 
-assocBorrowEq ::
-  forall (bk :: BorrowKind) α β γ a.
-  Borrow bk ((α /\ β) /\ γ) a :~: Borrow bk (α /\ (β /\ γ)) a
-{-# INLINE assocBorrowEq #-}
-assocBorrowEq = Unsafe.coerce $ Refl @(Borrow bk ((α /\ β) /\ γ) a)
-
 assocLendR ::
   Lend ((α /\ β) /\ γ) a %1 ->
   Lend (α /\ (β /\ γ)) a
@@ -454,10 +455,6 @@ assocLendL ::
   Lend ((α /\ β) /\ γ) a
 {-# INLINE assocLendL #-}
 assocLendL = coerceLin
-
-assocLendEq :: forall α β γ a. (Lend ((α /\ β) /\ γ) a) :~: (Lend (α /\ (β /\ γ)) a)
-{-# INLINE assocLendEq #-}
-assocLendEq = Unsafe.coerce $ Refl @(Lend (α /\ β /\ γ) a)
 
 instance (bk ~ 'Mut) => LinearOnly (Borrow bk α a) where
   linearOnly = UnsafeLinearOnly

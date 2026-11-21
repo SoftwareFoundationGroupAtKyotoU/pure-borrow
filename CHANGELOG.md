@@ -14,6 +14,9 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Replace `foldBorrowOf fld` with `foldBorrowVia sp` for a splitter `sp` such as `split`.
   `foldBorrow`, which was `foldBorrowOf foldMap`, is now `foldBorrowVia split`, so it requires `DistributesAlias t`.
   It rejects a borrow of an `Either e a` or `(e, a)` with "Use splitEither directly!" or "Use splitPair instead!".
+- `assocBOEq`, `assocBorrowEq` and `assocLendEq` are removed: each was an equality, `:~:`, between a type at `(α /\ β) /\ γ` and the same type at `α /\ (β /\ γ)`, which `inner` and `outer` of `Data.Type.Equality` took apart into an equality between any two lifetimes.
+  With that, the evidence that one lifetime had ended discharged a `reclaim'` in another that was still running, and an owner came back while its `Mut` was live.
+  Convert with `assocLBO`, `assocRBO`, `assocBorrowL`, `assocBorrowR`, `assocLendL` and `assocLendR`, or with `upcast`, instead.
 
 ### Changed
 

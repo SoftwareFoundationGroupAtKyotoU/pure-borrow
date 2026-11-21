@@ -6,6 +6,17 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Breaking changes
 
+- In the three growable vector modules, `size`, `capacity` and `getContents` are `BO` actions, since as pure functions of a borrow they could return the size or contents from another point of the computation, even from after the borrow's lifetime had ended:
+
+    ```haskell
+    -- before
+    getContents :: Borrow bk α (GrowableVector a) %1 -> Borrow bk α (Fixed.Vector a)
+    -- after
+    getContents :: (α >= β) => Borrow bk α (GrowableVector a) %1 -> BO β (Borrow bk α (Fixed.Vector a))
+    ```
+
+  Bind the result with `<-`, and `move` a shared projection before passing it to a reader that takes it unrestricted, such as `Fixed.copyAt`: `Ur content <- move Control.<$> getContents shared`.
+  A helper that calls one of them may need `α >= β` in its signature.
 - `LinearOnlyWitness` now has a `representational` role instead of the `phantom` one it had before, which unsoundly allowed virtually any type to derive `LinearOnly`.
 - `nowStatic :: BO α (Now Static)` replaces the top-level `nowStatic :: Now Static`, and has moved to `Control.Monad.Borrow.Pure.BO`.
   The previous, pure `nowStatic` could unsoundly let a `Linearly` token spill into a non-linear context.
@@ -65,6 +76,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 ### Performance
 
 - `modifyBoxedVector` is slower by one pass over the vector.
+- A `push` that grows an unboxed growable vector allocates less; the other operations of the growable vectors are unchanged.
 - `parBO` is slower and allocates more, for its exception handling: a fork-join whose branches do little is noticeably slower, and the divide-and-conquer FFT and quicksort built on `parBO` slightly so.
   Its finished threads also stay in memory longer.
 - `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.

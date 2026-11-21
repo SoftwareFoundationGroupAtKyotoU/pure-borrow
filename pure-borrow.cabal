@@ -265,6 +265,7 @@ test-suite pure-borrow-inspection
     PureBorrow.Inspection.Fft
     PureBorrow.Inspection.Flags
     PureBorrow.Inspection.GenericGrowableUnrestricted
+    PureBorrow.Inspection.GrowableAccess
     PureBorrow.Inspection.MultiStoreScan
     PureBorrow.Inspection.QSort
     PureBorrow.Inspection.Sublifetime
@@ -366,6 +367,7 @@ benchmark pure-borrow-bench
     PureBorrow.Bench.CopyAt
     PureBorrow.Bench.ForkJoin
     PureBorrow.Bench.Growable
+    PureBorrow.Bench.GrowableAccess
     PureBorrow.Bench.HashMap
     PureBorrow.Bench.Ingredients
     PureBorrow.Bench.MultiStoreScan

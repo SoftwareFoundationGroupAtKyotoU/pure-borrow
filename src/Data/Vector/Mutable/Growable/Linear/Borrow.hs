@@ -11,6 +11,9 @@ converts a mutable or shared growable borrow into the corresponding fixed-size
 borrow of exactly the initialized logical prefix. The fixed view cannot
 reserve, grow, freeze, consume the growable owner, or expose spare capacity.
 
+Every operation that reads the header -- 'size', 'capacity', 'getContents' and the element accessors alike -- is a @BO@ action, unlike the fixed vectors' @size@: growth replaces the header, so a read has to be ordered with the operations around it, and has to happen while the borrow's lifetime lasts.
+A shared projection is bound linearly like any other result, while readers such as @Fixed.copyAt@ take a shared borrow unrestricted, so move it first, even for a single read: @Ur content <- move Control.\<$\> getContents shared@.
+
 'withContent' combines this constant-time projection with a short borrow scope
 that preserves the input borrow kind. Its callback receives one linear
 occurrence; shared content can use @move@ to recover unrestricted use. A mutable

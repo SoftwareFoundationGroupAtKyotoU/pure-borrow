@@ -4,6 +4,8 @@
 {- |
 A growable unboxed variant of
 "Data.Vector.Mutable.Growable.Linear.Borrow".
+
+As there, every operation that reads the header -- 'size', 'capacity', 'getContents' and the element accessors alike -- is a @BO@ action.
 -}
 module Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow (
   GrowableVector,

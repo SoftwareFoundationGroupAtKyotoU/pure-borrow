@@ -51,6 +51,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 ### Clarified
 
 - `divideAndConquer` and `divideAndConquer'` require `divide` and `conquer` to raise no exception: they do not propagate one raised during the parallel computation, and block instead.
+- The callback of `unsafeInplace` must only rearrange elements, never duplicate, drop or replace one; `unsafeFromMutable` requires every element to be initialised.
 
 ### New
 
@@ -61,10 +62,6 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
 - `Control.Monad.Borrow.Pure.BO.Unsafe` exports `restoreWithEnd`, `reviveAliasWithEnd#`, `endHere` and `withEndL`, for a delimiter of your own that discharges an `After`.
-
-### Clarified
-
-- The callback of `unsafeInplace` must only rearrange elements, never duplicate, drop or replace one; `unsafeFromMutable` requires every element to be initialised.
 
 ### Performance
 

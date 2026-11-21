@@ -486,8 +486,9 @@ We also provide experimental splitting on record types in "Data.Record.Linear.Bo
 {- | Run a computation on every element that a traversal visits, in parallel, through 'Par'.
 
 An exception from the computation of any element is rethrown unchanged, but unlike @mapConcurrently@ from @async@, the computations of the other elements are not all stopped.
-The traversal nests one 'parBO' per element, and a failure stops only the computation it is paired with.
-A list is traversed with the rest of the list nested to the right, so a failure of the last element stops every other element on its way up, while a failure of the first element stops only the computation holding the rest of the list, whose elements then run to completion.
+The traversal pairs the computations as it combines them, through one 'parBO' for each pair.
+A failure stops the computation it is paired with, then the one that its pair is paired with, and so on outwards, but never what a stopped computation started with a nested 'parBO'.
+For a list, whose tail is nested to the right, a failure of the last element thus stops every other element, while a failure of the first stops only the computation of the tail, whose elements then run to completion.
 See 'parBO' for when the exception arrives.
 -}
 mapConcurrentlyOf ::

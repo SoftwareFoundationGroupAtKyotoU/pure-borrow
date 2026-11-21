@@ -37,6 +37,10 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - Deriving `Control.Monad.Borrow.Pure.Experimental.Loop.Foldable` via `Generically1` failed for every type with a field mentioning its parameter, for lack of instances for `Par1` and `:.:`.
   It still fails on a field that does not mention the parameter, such as `Int`.
 
+### Clarified
+
+- `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` require `divide` and `conquer` to raise no exception: they do not propagate one raised during the parallel computation, and block instead.
+
 ### New
 
 - `DistributesAlias` for `NonEmpty`.
@@ -52,10 +56,6 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - Stealing work from the deque of `Control.Concurrent.Queue.ChaseLev` is slower, more so on x86-64, though the work-stealing quicksort and FFT show no measurable slowdown.
 - Allocations that take a `Linearly` token, such as `Ref.new` and the constructors of the vectors, are slightly slower.
 - `foldBorrow` over a list or `NonEmpty` allocates more.
-
-### Known issues
-
-- `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` do not propagate an exception raised by `divide` or `conquer`; the caller blocks instead.
 
 ## 0.1.0.0 - 2026-09-19
 

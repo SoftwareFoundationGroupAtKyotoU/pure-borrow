@@ -172,8 +172,8 @@ enqueues q work = case q of
 
 {- | Run a divide-and-conquer computation on a pool of workers, stealing and sharing work.
 
-Known issue: an exception raised by @divide@ or @conquer@ is not propagated; the computation waiting for the result blocks instead.
-'naiveDivideAndConquer', built on 'parBO', does propagate exceptions.
+@divide@ and @conquer@ must raise no exception: this function does not propagate one raised during the parallel computation, and blocks instead.
+'naiveDivideAndConquer', built on 'parBO', propagates exceptions.
 -}
 divideAndConquer ::
   forall c α β t a g.
@@ -188,7 +188,7 @@ divideAndConquer g n dc = Control.fmap (uncurry lseq) . divideAndConquer' g n dc
 
 {- | 'divideAndConquer' that also returns the result of the root's @conquer@.
 
-The same known issue applies: exceptions from @divide@ or @conquer@ are not propagated.
+The same contract applies: @divide@ and @conquer@ must raise no exception.
 -}
 divideAndConquer' ::
   forall c α β t a r g.
@@ -487,7 +487,7 @@ parIf condition =
 The worker count must be positive. Subvectors no longer than the threshold are
 sorted sequentially.
 
-Like 'divideAndConquer', it does not propagate an exception raised while sorting (for example by the comparison): the caller blocks instead.
+Sorting, the comparison included, must raise no exception: like 'divideAndConquer', this function does not propagate one, and blocks instead.
 -}
 qsortDC ::
   (G.Vector v a, Ord a, α >= β, RandomGen g) =>
@@ -545,7 +545,7 @@ The worker count must be positive. The vector length is checked here and must
 be a power of two. Subvectors no longer than the threshold are transformed
 sequentially.
 
-Like 'divideAndConquer', it does not propagate an exception raised during the transform: the caller blocks instead.
+The transform must raise no exception: like 'divideAndConquer', this function does not propagate one, and blocks instead.
 -}
 fftDC ::
   ( G.Vector v (Complex Double)

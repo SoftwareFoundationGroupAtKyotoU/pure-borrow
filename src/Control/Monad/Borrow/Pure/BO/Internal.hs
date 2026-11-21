@@ -300,7 +300,7 @@ unsafePerformEvaluateUndupableBO (BO f) = runBO# \s ->
 
 {- | Run two computations in parallel and return both results.
 
-If either computation throws, 'parBO' stops the other, waits for it to stop, and rethrows the exception unchanged; if both throw, which of the two you get is unspecified.
+If either computation throws an exception, 'parBO' stops the other, waits for it to stop, and rethrows the exception unchanged; if both throw, which of the two you get is unspecified.
 Stopping reaches only the other computation of this 'parBO': what that one started with a nested 'parBO' runs to completion.
 A computation in a loop that never allocates is stopped only when the loop ends; compile its module with @-fno-omit-yields@ to make it stoppable.
 An asynchronous exception to the thread running 'parBO', such as from 'System.Timeout.timeout', does not stop the computations: forcing the interrupted value again collects their results.

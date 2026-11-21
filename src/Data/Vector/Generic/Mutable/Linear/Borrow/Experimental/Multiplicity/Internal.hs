@@ -144,9 +144,9 @@ instance (G.Vector v a) => Clone (Vector Many v a) where
 {- | Each element is cloned through a shared borrow of it, with its own 'Clone', into a fresh vector.
 
 The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same vector at once.
-See Note [Cloning the contents of a shared borrow] in @Data.Ref.Linear.Internal@.
 -}
 instance (G.Vector v a, Clone a) => Clone (Vector One v a) where
+  -- See Note [Cloning the contents of a shared borrow] in "Data.Ref.Linear.Internal".
   clone :: forall α. Share α (Vector One v a) %1 -> BO α (Vector One v a)
   clone = Unsafe.toLinear \(UnsafeAlias (Vector source)) ->
     Vector Control.<$> unsafeSystemIOToBO do

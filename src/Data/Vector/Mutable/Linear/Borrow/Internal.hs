@@ -51,9 +51,9 @@ instance
 {- | Each element is cloned through a shared borrow of it, with its own 'Clone', into a fresh vector.
 
 The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same vector at once.
-See Note [Cloning the contents of a shared borrow] in @Data.Ref.Linear.Internal@.
 -}
 instance (Clone a) => Clone (Vector a) where
+  -- See Note [Cloning the contents of a shared borrow] in "Data.Ref.Linear.Internal".
   clone :: forall α. Share α (Vector a) %1 -> BO α (Vector a)
   clone = Unsafe.toLinear \(UnsafeAlias (Vector v)) -> unsafeSystemIOToBO do
     let !n = MV.length v

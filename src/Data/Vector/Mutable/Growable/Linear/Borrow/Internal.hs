@@ -264,20 +264,22 @@ Consuming a whole owner ('consume', 'toVector') still reads the header with the 
 An owner reclaimed after a scope is handed back through the barrier of Note [Owners handed back by reclaim] in "Control.Monad.Borrow.Pure.BO.Internal", so that free is not the same expression as anything before the scope.
 -}
 
--- | Read the header inside 'BO'. See Note [Growable header reads].
+-- | Read the header inside 'BO'.
 readHeader :: GrowableVector a -> BO β (Ur (Int, MV.IOVector a))
 {-# INLINE readHeader #-}
+-- See Note [Growable header reads].
 readHeader (GrowableVector ref) =
   (Unsafe.toLinear \(Header logicalSize buffer) -> Ur (logicalSize, buffer))
     Control.<$> Ref.unsafeReadRefBO ref
 
--- | Read, transform and write back the header inside 'BO'. See Note [Growable header reads].
+-- | Read, transform and write back the header inside 'BO'.
 withHeader ::
   (α >= β) =>
   (Header a %1 -> BO β (result, Header a)) %1 ->
   Mut α (GrowableVector a) %1 ->
   BO β (result, Mut α (GrowableVector a))
 {-# INLINE withHeader #-}
+-- See Note [Growable header reads].
 withHeader =
   Unsafe.toLinear2 \action vector@(UnsafeAlias (GrowableVector ref)) -> Control.do
     header <- Ref.unsafeReadRefBO ref

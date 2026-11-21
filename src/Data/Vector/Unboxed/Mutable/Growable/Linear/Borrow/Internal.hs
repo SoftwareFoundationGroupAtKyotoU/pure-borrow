@@ -271,20 +271,22 @@ consumeInitialized =
               go (index + 1)
      in unsafePerformIO (go 0)
 
--- | Read the header inside 'BO'. See Note [Growable header reads] in "Data.Vector.Mutable.Growable.Linear.Borrow.Internal".
+-- | Read the header inside 'BO'.
 readHeader :: GrowableVector a -> BO β (Ur (Int, UM.IOVector a))
 {-# INLINE readHeader #-}
+-- See Note [Growable header reads] in "Data.Vector.Mutable.Growable.Linear.Borrow.Internal".
 readHeader (GrowableVector ref) =
   (Unsafe.toLinear \(Header logicalSize buffer) -> Ur (logicalSize, buffer))
     Control.<$> Ref.unsafeReadRefBO ref
 
--- | Read, transform and write back the header inside 'BO'. See Note [Growable header reads] in "Data.Vector.Mutable.Growable.Linear.Borrow.Internal".
+-- | Read, transform and write back the header inside 'BO'.
 withHeader ::
   (α >= β) =>
   (Header a %1 -> BO β (result, Header a)) %1 ->
   Mut α (GrowableVector a) %1 ->
   BO β (result, Mut α (GrowableVector a))
 {-# INLINE withHeader #-}
+-- See Note [Growable header reads] in "Data.Vector.Mutable.Growable.Linear.Borrow.Internal".
 withHeader =
   Unsafe.toLinear2 \action vector@(UnsafeAlias (GrowableVector ref)) -> Control.do
     header <- Ref.unsafeReadRefBO ref

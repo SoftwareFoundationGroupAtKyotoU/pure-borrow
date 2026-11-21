@@ -262,20 +262,22 @@ copyToVector =
       snapshot <- G.freeze (GM.unsafeTake logicalSize buffer)
       NonLinear.pure (Ur snapshot, vector)
 
--- | Read the header inside 'BO'. See Note [Growable header reads] in "Data.Vector.Mutable.Growable.Linear.Borrow.Internal".
+-- | Read the header inside 'BO'.
 readHeader :: GrowableVector v a -> BO β (Ur (Int, G.Mutable v RealWorld a))
 {-# INLINE readHeader #-}
+-- See Note [Growable header reads] in "Data.Vector.Mutable.Growable.Linear.Borrow.Internal".
 readHeader (GrowableVector ref) =
   (Unsafe.toLinear \(Header logicalSize buffer) -> Ur (logicalSize, buffer))
     Control.<$> Ref.unsafeReadRefBO ref
 
--- | Read, transform and write back the header inside 'BO'. See Note [Growable header reads] in "Data.Vector.Mutable.Growable.Linear.Borrow.Internal".
+-- | Read, transform and write back the header inside 'BO'.
 withHeader ::
   (α >= β) =>
   (Header v a %1 -> BO β (result, Header v a)) %1 ->
   Mut α (GrowableVector v a) %1 ->
   BO β (result, Mut α (GrowableVector v a))
 {-# INLINE withHeader #-}
+-- See Note [Growable header reads] in "Data.Vector.Mutable.Growable.Linear.Borrow.Internal".
 withHeader =
   Unsafe.toLinear2 \action vector@(UnsafeAlias (GrowableVector ref)) -> Control.do
     header <- Ref.unsafeReadRefBO ref

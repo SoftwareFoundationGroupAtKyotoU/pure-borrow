@@ -280,19 +280,19 @@ These representation and ownership assumptions hold in linear-base 0.7.0 and 0.8
 Array's clone completes its copy in BO and obtains a fresh allocation token for every call, including repeated clones of the same shared borrow.
 -}
 
--- | Copy the backing array, preserving capacity and sharing GC-owned elements.
+-- | A copy of the same size and capacity, which shares the GC-owned elements.
 instance Clone (LinearVector.Vector a) where
   clone = Unsafe.toLinear \(UnsafeAlias (LinearVector.Vec count buffer)) ->
     LinearVector.Vec count Control.<$> clone (UnsafeAlias buffer)
   {-# INLINE clone #-}
 
--- | Copy the slot array, sharing GC-owned keys and values.
+-- | A copy with the same entries and capacity, which shares the GC-owned keys and values.
 instance Clone (LinearHashMap.HashMap k v) where
   clone = Unsafe.toLinear \(UnsafeAlias (LinearHashMap.HashMap count capacity buffer)) ->
     LinearHashMap.HashMap count capacity Control.<$> clone (UnsafeAlias buffer)
   {-# INLINE clone #-}
 
--- | Copy the backing hash map, sharing GC-owned elements.
+-- | A copy of the set, which shares the GC-owned elements.
 instance Clone (LinearSet.Set a) where
   clone = Unsafe.toLinear \(UnsafeAlias (LinearSet.Set table)) ->
     LinearSet.Set Control.<$> clone (UnsafeAlias table)

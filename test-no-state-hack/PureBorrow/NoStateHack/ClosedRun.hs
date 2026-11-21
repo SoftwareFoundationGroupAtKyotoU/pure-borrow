@@ -7,7 +7,7 @@
 
 None of these kernels forces a token.
 While 'newLifetime' built its 'Now' from constants, such a run depended on nothing but constants once inlined, and GHC made it one top-level value: every kernel here but 'twoMkRefInline' handed out one resource twice, or the same resource on every call.
-See Note [Tokens carry a field] in "Control.Monad.Borrow.Pure.Lifetime.Token.Internal".
+See Note [Tokens are opaque values] in "Control.Monad.Borrow.Pure.Lifetime.Token.Internal".
 
 This module is a copy of @Control.Monad.Borrow.Pure.Lifetime.TokenSpec.ClosedRun@ in the main test suite, built here with @-fno-state-hack@.
 -}

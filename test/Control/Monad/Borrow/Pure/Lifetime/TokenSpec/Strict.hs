@@ -8,7 +8,7 @@
 
 @Strict@ makes every binding strict and every field of a data type declared here strict, so the tokens bound by the 'DataFlow.do' patterns, and those stored in 'Env', are forced.
 With a nullary 'Linearly', 'twoRefsEnv' made one reference out of two.
-See Note [Tokens carry a field] in "Control.Monad.Borrow.Pure.Lifetime.Token.Internal".
+See Note [Tokens are opaque values] in "Control.Monad.Borrow.Pure.Lifetime.Token.Internal".
 -}
 module Control.Monad.Borrow.Pure.Lifetime.TokenSpec.Strict (twoRefsStrict, twoRefsEnv) where
 

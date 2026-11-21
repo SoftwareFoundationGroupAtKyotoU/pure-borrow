@@ -485,8 +485,6 @@ parIf condition =
 
 The worker count must be positive. Subvectors no longer than the threshold are
 sorted sequentially.
-
-Sorting, the comparison included, must raise no exception: like 'divideAndConquer', this function does not propagate one, and blocks instead.
 -}
 qsortDC ::
   (G.Vector v a, Ord a, α >= β, RandomGen g) =>
@@ -543,8 +541,6 @@ qsortDC' threshold =
 The worker count must be positive. The vector length is checked here and must
 be a power of two. Subvectors no longer than the threshold are transformed
 sequentially.
-
-The transform must raise no exception: like 'divideAndConquer', this function does not propagate one, and blocks instead.
 -}
 fftDC ::
   ( G.Vector v (Complex Double)

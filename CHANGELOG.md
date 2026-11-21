@@ -39,7 +39,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Clarified
 
-- `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` require `divide` and `conquer` to raise no exception: they do not propagate one raised during the parallel computation, and block instead.
+- `divideAndConquer` and `divideAndConquer'` require `divide` and `conquer` to raise no exception: they do not propagate one raised during the parallel computation, and block instead.
 
 ### New
 

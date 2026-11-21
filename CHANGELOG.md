@@ -14,10 +14,6 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Replace `foldBorrowOf fld` with `foldBorrowVia sp` for a splitter `sp` such as `split`.
   `foldBorrow`, which was `foldBorrowOf foldMap`, is now `foldBorrowVia split`, so it requires `DistributesAlias t`.
   It rejects a borrow of an `Either e a` or `(e, a)` with "Use splitEither directly!" or "Use splitPair instead!".
-- `Linearly`, `Now` and `EndToken` are no longer data types with one nullary constructor, so that GHC cannot learn which value a token is, and `Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe` exports `UnsafeLinearly`, `UnsafeNow` and `UnsafeEnd` as patterns, which build a token and match an unrestricted one as the constructors did.
-  GHC does not let a pattern synonym match a linearly bound value, and rejects such a match with "Couldn't match type ‘Many’ with ‘One’" arising from "a non-linear pattern" "(pattern synonyms aren't linear)", or, in a `case`, arising from the "multiplicity of" the variable matched.
-  Where you matched a linear token to drop it, call `consume` on it, after `aff` for a `Now`.
-  Where you matched one token to build another, call `newLifetime` or `endLifetime` instead: a token built with a pattern is a constant, which GHC may share between allocations.
 
 ### Changed
 
@@ -45,7 +41,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `DistributesAlias` for `NonEmpty`.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
-- `Control.Monad.Borrow.Pure.BO.Unsafe` exports `restoreWithEnd`, `reviveAliasWithEnd#`, `endHere` and `withEndL`, for a delimiter of your own that discharges an `After`: its end token must come from the state thread rather than from `UnsafeEnd`.
+- `Control.Monad.Borrow.Pure.BO.Unsafe` exports `restoreWithEnd`, `reviveAliasWithEnd#`, `endHere` and `withEndL`, for a delimiter of your own that discharges an `After`.
 
 ### Performance
 

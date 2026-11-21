@@ -123,15 +123,12 @@ reborrows = Unsafe.toLinear \v -> (unsafeCoerce v, unsafeCoerce v)
 {- | Return a bundle of borrows to the caller of a delimiter, through a barrier the optimizer cannot see through.
 
 This is the plural counterpart of 'Control.Monad.Borrow.Pure.BO.Unsafe.reviveAlias', and it exists for the same reason.
-See Note [Restoring a borrow must break its Core identity] in @Control.Monad.Borrow.Pure.BO.Internal@.
-
-'reborrowings'' would otherwise restore the caller's own occurrence, since 'reborrows' hands the same value out as both borrow and lender and 'reclaim' is a newtype unwrap.
-'reclaim' now hands its result back through the barrier of Note [Owners handed back by reclaim], but a delimiter restores its borrow through this barrier regardless, as the Note on 'Control.Monad.Borrow.Pure.BO.Unsafe.reviveAlias' requires.
 
 This is exported so that the Core obligations in @pure-borrow-inspection@ can state what the erased plural delimiters must compile to, barrier included.
 Exporting it weakens nothing: it is 'Control.Functor.Linear.pure' behind an @OPAQUE@, so the worst a caller can do with it is add a barrier that was not needed.
 -}
 reviveAliases :: Aliases k xs %1 -> BO α (Aliases k xs)
+-- See Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Pure.BO.Internal".
 {-# OPAQUE reviveAliases #-}
 reviveAliases as = Control.pure as
 
@@ -187,8 +184,7 @@ obligations, and `Experimental.Borrows` is a documented module rather than an
 {- |
 The plural non-finalizing delimiter, restoring the bundle on normal return.
 
-See Note [The plural delimiters are separate functions] and the obligations on
-'Control.Monad.Borrow.Pure.BO.Unsafe.unsafeBorrowScope'.
+See the obligations on 'Control.Monad.Borrow.Pure.BO.Unsafe.unsafeBorrowScope'.
 -}
 unsafeBorrowsScope ::
   forall α α' xs r.
@@ -196,6 +192,7 @@ unsafeBorrowsScope ::
   (forall β. Muts (β /\ α) xs %1 -> BO (β /\ α') r) %1 ->
   BO α' (r, Muts α xs)
 {-# INLINE unsafeBorrowsScope #-}
+-- See Note [The plural delimiters are separate functions].
 unsafeBorrowsScope = Unsafe.toLinear2 \muts k ->
   unsafeSrunBO_ Control.do
     r <- k (unsafeCastAliases muts)
@@ -229,7 +226,7 @@ Asserting that the sublifetime has ended is sound for the reason given on
 'Control.Monad.Borrow.Pure.BO.Unsafe.unsafeBorrowScope'': the continuation has
 returned by the time it is applied, so the sublifetime it was typechecked in is
 over, and the caller-fixed result type cannot mention it.
-Taking the token from the state thread makes whatever the 'After' reclaims depend on the scope's effects; see Note [Owners handed back by reclaim] in @Control.Monad.Borrow.Pure.BO.Internal@.
+Taking the token from the state thread makes whatever the 'After' reclaims depend on the scope's effects.
 -}
 unsafeBorrowsScope' ::
   forall α α' xs r.
@@ -237,6 +234,7 @@ unsafeBorrowsScope' ::
   (forall β. Muts (β /\ α) xs %1 -> BO (β /\ α') (After β r)) %1 ->
   BO α' (r, Muts α xs)
 {-# INLINE unsafeBorrowsScope' #-}
+-- See Note [Owners handed back by reclaim] in "Control.Monad.Borrow.Pure.BO.Internal".
 unsafeBorrowsScope' = Unsafe.toLinear2 \muts k ->
   unsafeSrunBO_ Control.do
     after <- k (unsafeCastAliases muts)

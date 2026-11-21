@@ -860,9 +860,6 @@ callback receives one linear occurrence for either kind; use 'move' on shared
 content when unrestricted use is desired. For a mutable input, the growable
 borrow is restored only after the callback result is produced and the fixed
 view has ended.
-
-See Note [Uniformly linear content callback] for why the callback stays linear
-for a shared borrow too.
 -}
 withContent ::
   Borrow bk α (GrowableVector a) %1 ->
@@ -872,6 +869,7 @@ withContent ::
   ) %1 ->
   BO α (result, Borrow bk α (GrowableVector a))
 {-# INLINE withContent #-}
+-- The callback stays linear for a shared borrow too: see Note [Uniformly linear content callback].
 withContent =
   Unsafe.toLinear2 \vector action ->
     -- The growable borrow is handed back through `reviveAlias`, as the scalar delimiters do: see Note [Restoring a borrow must break its Core identity] in "Control.Monad.Borrow.Pure.BO.Internal".

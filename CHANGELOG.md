@@ -16,9 +16,15 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   It rejects a borrow of an `Either e a` or `(e, a)` with "Use splitEither directly!" or "Use splitPair instead!".
 - `assocBOEq`, `assocBorrowEq` and `assocLendEq` are removed, since they let a program prove any two lifetimes equal and reclaim a resource while it was still borrowed.
   Use `assocLBO`, `assocRBO`, `assocBorrowL`, `assocBorrowR`, `assocLendL` or `assocLendR` instead.
+- The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)` or a `(<:)` instance for `Maybe`; delete the orphan.
 
 ### Changed
 
+- `parBO` rethrows a branch's exception, unchanged, once the other branch has stopped, instead of blocking forever or dying with `BlockedIndefinitelyOnMVar`; `Par`, `mapConcurrentlyOf`, `naiveDivideAndConquer` and the parallel `qsort` inherit this.
+  Stopping reaches only the other branch: whatever it had started with a nested `parBO` runs to completion, so `mapConcurrentlyOf` over a list stops none of the other elements when the first one throws, and all of them when the last one does.
+  A branch in a loop that does not allocate cannot be stopped until the loop ends; compile the module that contains such a loop with `-fno-omit-yields` if the rethrow must be prompt.
+  An asynchronous exception to the caller, such as a `timeout`, does not stop the branches: forcing the interrupted value again collects their results, and a value that is dropped instead leaves them running to completion.
+  A computation's thread stays in memory after it finishes: the second computation's until the first one finishes, and the first computation's until the thread running `parBO` runs again; `Par` and `mapConcurrentlyOf` over a list put the short computation first.
 - `reclaim` forces the `EndToken` it is discharged with; `withEnd` leaves it alone.
 
 ### Fixed
@@ -32,8 +38,13 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - Deriving `Control.Monad.Borrow.Pure.Experimental.Loop.Foldable` via `Generically1` failed for every type with a field mentioning its parameter, for lack of instances for `Par1` and `:.:`.
   It still fails on a field that does not mention the parameter, such as `Int`.
 
+### Clarified
+
+- `divideAndConquer` and `divideAndConquer'` require `divide` and `conquer` to raise no exception: they do not propagate one raised during the parallel computation, and block instead.
+
 ### New
 
+- `Clone` for `Ur`, `Sum`, `Product`, `Min`, `Max`, `Arg` and `Complex`.
 - `DistributesAlias` for `NonEmpty`.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
@@ -41,6 +52,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Performance
 
+- `parBO` is slower and allocates more, for its exception handling: a fork-join whose branches do little is noticeably slower, and the divide-and-conquer FFT and quicksort built on `parBO` slightly so.
+  Its finished threads also stay in memory longer.
 - `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.
 - Stealing work from the deque of `Control.Concurrent.Queue.ChaseLev` is slower, more so on x86-64, though the work-stealing quicksort and FFT show no measurable slowdown.
 - Allocations that take a `Linearly` token, such as `Ref.new` and the constructors of the vectors, are slightly slower.

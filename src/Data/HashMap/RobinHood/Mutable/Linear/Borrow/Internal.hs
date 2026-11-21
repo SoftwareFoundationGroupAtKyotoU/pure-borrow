@@ -99,14 +99,14 @@ would keep serving the old array. Every mutating operation goes through
 
 {- | Run a table query that threads the table through, and return the borrow.
 
-The query must not replace the table's backing array. See
-Note [Reading through a borrow leaks an alias].
+The query must not replace the table's backing array.
 -}
 askRaw ::
   (Raw.HashMap k v %1 -> (a, Raw.HashMap k v)) %1 ->
   Borrow bk α (HashMap k v) %1 ->
   BO α (a, Borrow bk α (HashMap k v))
 {-# INLINE askRaw #-}
+-- See Note [Reading through a borrow leaks an alias].
 askRaw = Unsafe.toLinear2 \f borrow ->
   case borrow of
     UnsafeAlias (HashMap ref) ->
@@ -116,14 +116,14 @@ askRaw = Unsafe.toLinear2 \f borrow ->
 
 {- | Run a table query that consumes the table and materializes its result.
 
-The query must not replace the table's backing array. See
-Note [Reading through a borrow leaks an alias].
+The query must not replace the table's backing array.
 -}
 askRawUr ::
   (Raw.HashMap k v %1 -> Ur a) %1 ->
   Borrow bk α (HashMap k v) %1 ->
   BO α (Ur a, Borrow bk α (HashMap k v))
 {-# INLINE askRawUr #-}
+-- See Note [Reading through a borrow leaks an alias].
 askRawUr = Unsafe.toLinear2 \f borrow ->
   case borrow of
     UnsafeAlias (HashMap ref) ->

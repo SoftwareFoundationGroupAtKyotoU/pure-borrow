@@ -213,8 +213,9 @@ tryPopBack q = do
           pure $! Just $ Found task
         Nothing -> pure $ Just Race
 
--- | Take element @t@, which a thief has seen below 'bottom', if 'top' is still @t@; see Note [Barriers of a thief].
+-- | Take element @t@, which a thief has seen below 'bottom', if 'top' is still @t@.
 takeBack :: ChaseLevDeq a -> Int -> IO (Maybe a)
+-- See Note [Barriers of a thief].
 {-# INLINE takeBack #-}
 takeBack q t = do
   loadLoadBarrier
@@ -227,9 +228,10 @@ takeBack q t = do
 
 {- | Steals about half of the elements, the back element first.
 
-It takes them one at a time, as 'tryPopBack' does, so it returns fewer when the owner or another thief takes the rest meanwhile (Note [Barriers of a thief]).
+It takes them one at a time, as 'tryPopBack' does, so it returns fewer when the owner or another thief takes the rest meanwhile.
 -}
 stealHalf :: ChaseLevDeq a -> IO (Maybe (StealResult (NonEmpty a)))
+-- See Note [Barriers of a thief].
 stealHalf q = do
   !t <- readPrimVar q.top
   -- See Note [Barriers of a thief].

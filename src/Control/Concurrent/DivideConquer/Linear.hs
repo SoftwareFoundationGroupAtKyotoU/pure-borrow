@@ -170,6 +170,10 @@ enqueues :: QState c α a t r %1 -> [Work c α a t r] %1 -> BO α (QState c α a
 enqueues q work = case q of
   Idle q -> Idle Control.<$> pushWorks q work
 
+{- | Run a divide-and-conquer computation on a pool of workers, stealing and sharing work.
+
+@divide@ and @conquer@ must raise no exception: this function does not propagate one raised during the parallel computation, and blocks instead.
+-}
 divideAndConquer ::
   forall c α β t a g.
   (Data.Traversable t, α >= β, RandomGen g) =>
@@ -181,6 +185,10 @@ divideAndConquer ::
   BO β (Mut α a)
 divideAndConquer g n dc = Control.fmap (uncurry lseq) . divideAndConquer' g n dc
 
+{- | 'divideAndConquer' that also returns the result of the root's @conquer@.
+
+The same contract applies: @divide@ and @conquer@ must raise no exception.
+-}
 divideAndConquer' ::
   forall c α β t a r g.
   (Data.Traversable t, α >= β, RandomGen g) =>

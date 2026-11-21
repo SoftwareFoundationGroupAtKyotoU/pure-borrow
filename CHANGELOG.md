@@ -72,8 +72,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Its finished threads also stay in memory longer.
 - `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.
 - Owner-level operations on a `Ref` are slower when the program runs on several capabilities, and unchanged on one.
-- `clone` of a boxed vector of references allocates about 25% more than 0.1.0.0, 4.16 MB against 3.31 MB per clone of 100,000 `Ref Int`s, because each element's clone is a new `Ref`, allocated when the clone is taken rather than left as a thunk.
-  `clone` of a vector of values such as `Int` allocates exactly what it did in 0.1.0.0.
+- `clone` of a boxed vector of references allocates more, since it copies each reference when the clone is taken; `clone` of a vector of values such as `Int` allocates as before.
 - Stealing work from the deque of `Control.Concurrent.Queue.ChaseLev` is slower, more so on x86-64, though the work-stealing quicksort and FFT show no measurable slowdown.
 - Allocations that take a `Linearly` token, such as `Ref.new` and the constructors of the vectors, are slightly slower.
 - `foldBorrow` over a list or `NonEmpty` allocates more.

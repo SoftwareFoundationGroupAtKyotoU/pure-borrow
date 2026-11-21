@@ -268,6 +268,11 @@ Includes a demonstrative in-place parallel `qsort` (budgeted `parBO`; the heavie
   This governs every kind of prose you write: Markdown files, Haddock and ordinary source comments, and commit-message bodies.
   It keeps diffs sentence-scoped, so rewording one sentence never reflows the paragraph around it.
 - **Golden rule: Haddock never describes implementation details.** A Haddock comment tells a user what a function does and what they must guarantee; how it is implemented, and why, goes in a plain comment at the code or in a `Note [...]` cited from there, never from the Haddock.
+- **Golden rule: Haddock never mentions a development note.** There are two kinds of comment, for two readers.
+  A Haddock comment appears in the API reference and carries only what a user needs to use the API.
+  A development note, `Note [...]`, is for whoever maintains the library and never appears in the API reference, so a user cannot follow a pointer to one.
+  A Haddock comment therefore never mentions a note at all, not even as "see Note [...]", and that holds for every Haddock comment, including those in `.Internal` and `.Unsafe` modules.
+  If a Haddock comment seems to need a note, what goes where is misclassified: put what the user needs in the Haddock comment, the rest in the note, and cite the note from a plain comment at the code.
 - **`Note [...]` blocks are dev notes, never Haddock.** The convention is GHC's: a note is a named, cross-referenced explanation addressed to whoever maintains the code, and it is cited from elsewhere as ``See Note [Its name]``.
   Write one in a plain block comment — `{- ... -}`, not `{- | ... -}` and not `-- |` — with the name on its own line underlined by `~`, and place it at the top level near what it explains rather than attached to a binding.
   It is not part of the published API: a note explains why the implementation is the way it is, whereas Haddock tells a user what a function does and what they must guarantee.

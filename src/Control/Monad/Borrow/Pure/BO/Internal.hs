@@ -234,9 +234,10 @@ runBOResult (BO f) = case runBO# f of
 
 {- | Hand a 'Now' back after the effects that precede it, through a barrier the optimizer cannot see through.
 
-Semantically this is 'Control.pure'; see Note [Owners handed back by reclaim] for why it is opaque and threads the state token.
+Semantically this is 'Control.pure'.
 -}
 reviveNow :: Now α %1 -> BO β (Now α)
+-- Opaque and threading the state token: see Note [Owners handed back by reclaim].
 {-# OPAQUE reviveNow #-}
 reviveNow now = BO \s -> (# s, now #)
 
@@ -368,9 +369,11 @@ Limits that remain: a branch in a loop that never allocates cannot be interrupte
 
 {- | Stops a 'parBO' branch after its sibling has failed.
 
-It carries the thread that sent it: see Note [parBO and exceptions].
+It carries the thread that sent it.
 -}
 newtype ParBOCancelled = ParBOCancelled ThreadId
+
+-- See Note [parBO and exceptions].
 
 instance NonLinear.Show ParBOCancelled where
   show (ParBOCancelled sender) = "ParBOCancelled " <> NonLinear.show sender
@@ -379,8 +382,9 @@ instance SystemIO.Exception ParBOCancelled where
   toException = SystemIO.asyncExceptionToException
   fromException = SystemIO.asyncExceptionFromException
 
--- | The fork-join protocol behind 'parBO'. See Note [parBO and exceptions].
+-- | The fork-join protocol behind 'parBO'.
 parallelIO :: NonLinear.IO a -> NonLinear.IO b -> NonLinear.IO (a, b)
+-- See Note [parBO and exceptions].
 {-# INLINE parallelIO #-}
 parallelIO runA runB = do
   aVar <- newEmptyMVar
@@ -412,8 +416,9 @@ rethrow :: SystemIO.SomeException -> NonLinear.IO a
 {-# INLINE rethrow #-}
 rethrow failure = GHC.IO (GHC.raiseIO# failure)
 
--- | Fork a branch without the handler that 'forkIO' installs; see Note [parBO and exceptions].
+-- | Fork a branch without the handler that 'forkIO' installs.
 forkBranch :: NonLinear.IO () -> NonLinear.IO ThreadId
+-- See Note [parBO and exceptions].
 {-# INLINE forkBranch #-}
 forkBranch (GHC.IO action) = GHC.IO \s -> case GHC.fork# action s of
   (# s, tid #) -> (# s, ThreadId tid #)
@@ -530,28 +535,30 @@ That is also why it comes with no @TypingCases@ entry: there is no program that 
 What it does carry is an obligation on /callers/.
 Any delimiter that runs a continuation and then hands the caller back the borrow it was given must restore it through this.
 Returning the caller's own occurrence instead lets common-subexpression elimination serve a post-scope read of the resource from a pre-scope one, across every write the scope performed.
-See Note [Restoring a borrow must break its Core identity] for why, and for why the @OPAQUE@ and the state token are both load-bearing.
 -}
 reviveAlias :: Alias ak a %1 -> BO α (Alias ak a)
+-- The OPAQUE and the state token are both load-bearing: see Note [Restoring a borrow must break its Core identity].
 {-# OPAQUE reviveAlias #-}
 reviveAlias a = BO \s -> (# s, a #)
 
 {- | 'reviveAlias' for a delimiter that also discharges its continuation's 'After': it hands back, in the same out-of-line call, an t'EndToken' for the sublifetime the delimiter has just closed.
 
 It restores a borrow or a bundle of them, such as the t'Control.Monad.Borrow.Pure.Experimental.Borrows.Muts' of 'Control.Monad.Borrow.Pure.Experimental.Borrows.reborrowings''.
-Discharging the 'After' with this token rather than with the constant 'UnsafeEnd' makes whatever the 'After' reclaims depend on the scope's effects; see Note [Owners handed back by reclaim].
+Discharging the 'After' with this token rather than with the constant 'UnsafeEnd' makes whatever the 'After' reclaims depend on the scope's effects.
 It carries the obligation of 'reviveAlias', and it asserts that @β@ has ended: call it only once the continuation typed in @β@, whose result type cannot mention @β@, has returned, as 'unsafeBorrowScope'' does.
 -}
 reviveAliasWithEnd# :: forall β α a. a %1 -> State# (ForBO α) %1 -> (# State# (ForBO α), EndToken β, a #)
+-- See Note [Owners handed back by reclaim].
 {-# OPAQUE reviveAliasWithEnd# #-}
 reviveAliasWithEnd# a s = (# s, UnsafeEnd, a #)
 
 {- | An t'EndToken' taken from the state thread, for a delimiter that discharges an 'After' without restoring a borrow.
 
 It asserts that @β@ has ended: call it only once the computation typed in @β@, whose result type cannot mention @β@, has returned, as 'Control.Monad.Borrow.Pure.BO.srunBO' does.
-A delimiter that applied the constant 'UnsafeEnd' instead would lose the ordering that Note [Owners handed back by reclaim] relies on.
+A delimiter that applied the constant 'UnsafeEnd' instead could hand an owner back before the writes of its scope.
 -}
 endHere :: BO α (EndToken β)
+-- See Note [Owners handed back by reclaim].
 {-# OPAQUE endHere #-}
 endHere = BO \s -> (# s, UnsafeEnd #)
 
@@ -674,11 +681,9 @@ share = Unsafe.toLinear \(UnsafeAlias !a) -> Ur (UnsafeAlias a)
 reclaim' :: Lend α a %1 -> After α a
 reclaim' l = After (reclaim l)
 
-{- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
-
-The resource comes back through 'reviveOwner', applied to the evidence that @α@ has ended; see Note [Owners handed back by reclaim].
--}
+-- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
 reclaim :: forall α a. (End α) => Lend α a %1 -> a
+-- The owner comes back through 'reviveOwner': see Note [Owners handed back by reclaim].
 reclaim = \(UnsafeAlias !a) -> reviveOwner (endToken @α) a
 
 {-
@@ -734,9 +739,9 @@ A closed 'After' is no longer floated to a constant, so on each such crossing 'w
 {- | Hand a reclaimed resource back through a barrier the optimizer cannot see through, strict in the end token.
 
 Semantically this is the identity on the resource.
-Both of its properties are load-bearing; see Note [Owners handed back by reclaim].
 -}
 reviveOwner :: EndToken α -> a %1 -> a
+-- Both of its properties are load-bearing: see Note [Owners handed back by reclaim].
 {-# OPAQUE reviveOwner #-}
 reviveOwner UnsafeEnd a = a
 
@@ -758,9 +763,6 @@ function while the continuation runs. The continuation result is consumed
 before the outer borrow is restored. The continuation and state token are each
 consumed exactly once. Since the lifetime indices have runtime-erased
 representations, no runtime lifetime token or lender is required.
-
-The borrow is handed back through 'reviveAlias' rather than returned directly;
-see Note [Restoring a borrow must break its Core identity] there.
 -}
 unsafeBorrowScope_ ::
   forall bk α α' a r.
@@ -769,6 +771,7 @@ unsafeBorrowScope_ ::
   (forall β. Borrow bk (β /\ α) a %(BorrowMultiplicity bk) -> BO (β /\ α') r) %1 ->
   BO α' (Mut α a)
 {-# INLINE unsafeBorrowScope_ #-}
+-- The borrow is restored through 'reviveAlias': see Note [Restoring a borrow must break its Core identity].
 unsafeBorrowScope_ = Unsafe.toLinear2 \mut k ->
   unsafeSrunBO_ Control.do
     r <- k (unsafeCastAlias mut)
@@ -809,7 +812,7 @@ Asserting that the sublifetime has ended is sound for the same reason it is in
 'Control.Monad.Borrow.Pure.BO.srunBO': the continuation has already returned, so
 the sublifetime it was typechecked in is over by the time the token is applied,
 and the caller-fixed result type cannot mention that lifetime.
-Taking the token from the state thread, rather than using the constant 'UnsafeEnd', makes whatever the 'After' reclaims depend on the scope's effects; see Note [Owners handed back by reclaim].
+Taking the token from the state thread, rather than using the constant 'UnsafeEnd', makes whatever the 'After' reclaims depend on the scope's effects.
 -}
 unsafeBorrowScope' ::
   forall bk α α' a r.
@@ -817,6 +820,7 @@ unsafeBorrowScope' ::
   (forall β. Borrow bk (β /\ α) a %(BorrowMultiplicity bk) -> BO (β /\ α') (After β r)) %1 ->
   BO α' (r, Mut α a)
 {-# INLINE unsafeBorrowScope' #-}
+-- See Note [Owners handed back by reclaim].
 unsafeBorrowScope' = Unsafe.toLinear2 \mut k ->
   unsafeSrunBO_ Control.do
     after <- k (unsafeCastAlias mut)

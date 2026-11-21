@@ -158,9 +158,10 @@ instance Consumable (Slots k v) where
 {- | \(O(n)\). Clone the slot array.
 
 Keys and values are GC-owned, so a shallow copy of the backing store is a
-complete duplication. See Note [Element ownership].
+complete duplication.
 -}
 instance Dupable (Slots k v) where
+  -- See Note [Element ownership].
   dup2 (Slots arr) =
     dup2 arr & \(arr1, arr2) -> (Slots arr1, Slots arr2)
   {-# INLINE dup2 #-}
@@ -182,9 +183,9 @@ allocSlots = GHC.noinline \count linear ->
 {- | A mutable hash table using Robin Hood hashing with backward-shift deletion.
 
 The table linearly owns its backing store; its keys and values are GC-owned.
-See Note [Element ownership].
 -}
 data HashMap k v where
+  -- See Note [Element ownership].
   HashMap ::
     -- | Number of live entries.
     {-# UNPACK #-} !Int ->

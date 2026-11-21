@@ -8,7 +8,7 @@ Application code should import only the safe modules (no suffix); the linear-has
 - **No suffix**: the safe public API.
 - **`.Internal`**: the real definitions and `Unsafe*` constructors, hidden from Haddock; some escape hatches, such as `unsafeCastBO`, live only here.
 - **`.Unsafe`**: trusted escape hatches.
-  `Control.Monad.Borrow.Pure.BO.Unsafe` exports `BO (..)`, `Alias (..)`, `unsafeUnalias`, `unsafeMapAlias`, `unsafeCastAlias`, `reviveAlias`, and the conversions between `BO` and `IO`, linear `IO`, and `ST`; `Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe` exports token constructors, `LinearOnly`/`LinearOnlyWitness`, and `End` with its method.
+  `Control.Monad.Borrow.Pure.BO.Unsafe` exports `BO (..)`, `Alias (..)`, `unsafeUnalias`, `unsafeMapAlias`, `unsafeCastAlias`, `reviveAlias`, and the conversions between `BO` and `IO`, linear `IO`, and `ST`; `Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe` exports the token patterns, `LinearOnly`/`LinearOnlyWitness`, and `End` with its method.
   Import only the names you need, and treat every use as a proof obligation: write down the invariant it relies on and why it holds.
 
 ## An owner type
@@ -47,7 +47,8 @@ A typical mutable container:
   A delimiter discharging `After` obtains its end token from the state thread with the supplied trusted helpers; it must not build a constant `UnsafeEnd` beside the result.
 - `Linearly`, `Now`, and `EndToken` are opaque values, which keeps their identity unknown to GHC even after user code forces one.
   `UnsafeLinearly`, `UnsafeNow`, and `UnsafeEnd` are pattern synonyms: they build a token and match an unrestricted one, but cannot match a linear value.
-  Drop a linear token with `consume`, after `aff` for a `Now`, and convert one token into another with `newLifetime` or `endLifetime`, never by dropping it and building the other.
+  Drop a linear `Linearly` with `consume` and a `Now` with `consume (aff now)`; `withEndL` uses up a linear `EndToken`.
+  Convert one token into another with `newLifetime` or `endLifetime`, never by dropping it and building the other.
   A token built with a pattern is a constant: build one only inside a function that is `NOINLINE` and applied through `noinline`, which a function returning two tokens must be as well, since two equal-looking tokens can let GHC merge allocations.
 - The instances of `(<=)`, `End`, and `(<:)` decide lifetime soundness: never write one of `(<=)` or `End`, and give a type of your own `(<:)` only through `deriveSubtype`, under its caveat about mutable data structures, or by deriving it via `AsCoercible`, which the role of its witness checks.
 

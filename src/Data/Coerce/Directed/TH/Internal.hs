@@ -24,11 +24,10 @@ import Prelude
 >
 > deriveSubtype ''Env
 
-declares
+The splice above declares the following instance, so that @upcast :: (α >= β) => Env α X %1 -> Env β X@ holds:
 
 > instance (Share α Int <: Share α' Int, Mut α a <: Mut α' a', (a -> Bool) <: (a' -> Bool)) => Env α a <: Env α' a'
 
-so that @upcast :: (α >= β) => Env α X %1 -> Env β X@ holds.
 Each field is covariant: its type in the source must be a subtype of its type in the target.
 Every field that mentions a parameter, also inside a kind, becomes one constraint at its declared type, so a parameter varies the way its fields allow: covariantly under a t'Control.Monad.Borrow.Pure.Share', invariantly under a t'Control.Monad.Borrow.Pure.Mut', contravariantly as the argument of a function.
 A field stored at a multiplicity that mentions a parameter may become linear where it was unrestricted, never the other way round.

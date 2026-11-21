@@ -278,12 +278,10 @@ class KnownMultiplicity p where
     Borrow bk α (Vector p v a) %1 ->
     BO β (GetResult p bk α v a)
 
-  {- | Build fresh storage, forcing linearly owned elements and preserving GC-owned element laziness.
-  Keeping producer and consumer in this method lets the stream fuse after instance selection.
-  -}
+  -- | Build fresh storage, forcing linearly owned elements and preserving GC-owned element laziness.
   mFromList :: forall v a. (G.Vector v a) => [a] -> IO (G.Mutable v RealWorld a)
 
-  -- | Force a write payload to WHNF inside the guarded BO run.
+  -- | Evaluate a value to be written to weak head normal form, where the write runs.
   mEvaluateStored :: a -> IO a
 
 instance KnownMultiplicity Many where
@@ -357,6 +355,7 @@ instance KnownMultiplicity One where
       UnsafeAlias Control.<$> unsafeSystemIOToBO (GM.unsafeRead vector index)
   {-# INLINE mUnsafeGet #-}
 
+  -- Producer and consumer stay in this method, so that the stream fuses once the instance is chosen.
   mFromList values = do
     immutable <- evaluate (G.unstream (evaluatingBundle values))
     G.thaw immutable

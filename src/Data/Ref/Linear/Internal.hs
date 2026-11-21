@@ -108,8 +108,7 @@ unsafeReadRefBO (Ref v) = unsafeSystemIOToBO (unsafeReadRefIO# v)
 {- | Replace the contents inside 'BO', ordered by the state token after every earlier effect of the computation.
 
 This is unsafe in the same way as 'unsafeWriteRef': the ownership of the previous contents is dropped, so the caller must already have taken it over, as a read-modify-write does.
-The new contents are forced to WHNF before storing them.
-The BO run hides demand from its caller; evaluation may move within that run, so this does not specify precise exception ordering.
+The new contents are evaluated to weak head normal form before they are stored, inside the same run but not necessarily at this point of it, so an exception they raise is not ordered with the run's other effects.
 -}
 unsafeWriteRefBO :: Ref a -> a %1 -> BO α ()
 {-# INLINE unsafeWriteRefBO #-}

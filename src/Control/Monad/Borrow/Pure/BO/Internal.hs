@@ -246,9 +246,10 @@ execBO :: BO α a %1 -> Now α %1 -> (Now α, a)
 {-# INLINE execBO #-}
 execBO bo now = execBOWith bo now id
 
--- | Consume the result in the same guarded continuation as the run.
+-- | 'execBO', handing the result to the given function inside the run.
 execBOWith :: BO α a %1 -> Now α %1 -> ((Now α, a) %1 -> b) %1 -> b
 {-# INLINE execBOWith #-}
+-- See Note [Demand stays inside a BO run].
 execBOWith bo !now k =
   runBOResultWith
     ( Control.do
@@ -264,9 +265,10 @@ runBOResult :: BO α a %1 -> a
 {-# INLINE runBOResult #-}
 runBOResult bo = runBOResultWith bo id
 
--- | Keep the result consumer behind the run's demand barrier.
+-- | 'runBOResult', handing the result to the given function inside the run.
 runBOResultWith :: BO α a %1 -> (a %1 -> b) %1 -> b
 {-# INLINE runBOResultWith #-}
+-- See Note [Demand stays inside a BO run].
 runBOResultWith (BO f) k = runBO# \s -> case f s of
   (# s, !a #) -> dropState# s `PL.lseq` k a
 

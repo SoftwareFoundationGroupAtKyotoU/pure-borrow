@@ -483,10 +483,10 @@ It is morally an instance method of the 'DistributesAlias' class, and you can de
 We also provide experimental splitting on record types in "Data.Record.Linear.Borrow.Experimental.PatternMatch" and "Data.Record.Linear.Borrow.Experimental.Split".
 -}
 
-{- | Run a computation on every focus of a traversal in parallel, through 'Par'.
+{- | Run a computation on every element that a traversal visits, in parallel, through 'Par'.
 
-An exception from any focus is rethrown unchanged, but unlike @mapConcurrently@ from @async@, the computations for the other foci are not all stopped.
-The traversal nests one 'parBO' per focus, and a failure stops only the computation it is paired with.
+An exception from the computation of any element is rethrown unchanged, but unlike @mapConcurrently@ from @async@, the computations of the other elements are not all stopped.
+The traversal nests one 'parBO' per element, and a failure stops only the computation it is paired with.
 A list is traversed with the rest of the list nested to the right, so a failure of the last element stops every other element on its way up, while a failure of the first element stops only the computation holding the rest of the list, whose elements then run to completion.
 See 'parBO' for when the exception arrives.
 -}

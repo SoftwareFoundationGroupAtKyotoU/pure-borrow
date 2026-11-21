@@ -78,7 +78,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 - `divideAndConquer` and `divideAndConquer'` require `divide` and `conquer` to raise no exception: they do not propagate one raised during the parallel computation, and block instead.
 - The callback of `unsafeInplace` must only rearrange elements, never duplicate, drop or replace one; `unsafeFromMutable` requires every element to be initialised.
-- A call of the owned hash map's `insert`, `delete` or `alter`, or of one of linear-base's in-place operations, must be evaluated before it is stored where several branches of a `parBO` reach it, as in `Ref.new $! HashMap.insert k v m`, and so must each such call that a record, a list or a vector holds (see "Known issues").
+- The owners evaluate what they store, but not a lazy field inside it, such as a component of a pair or the payload of a `Just`, and not a call forced outside a `BO` action, as by a bang on an argument.
+  Such a call of the owned hash map's `insert`, `delete` or `alter`, or of one of linear-base's in-place operations, must be evaluated before it is stored where several branches of a `parBO` reach it, with a strict field, `StrictData` or the linear `$!` of `Prelude.Linear`, as in `Just PL.$! Array.map f arr`, and so must each such call that a record, a list or a vector holds (see "Known issues").
 
 ### New
 
@@ -116,8 +117,6 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 - `insert`, `delete` and `alter` of the owned hash map in `Data.HashMap.RobinHood.Mutable.Linear`, and linear-base's in-place operations such as `set`, `write` and `map` of `Data.Array.Mutable.Linear`, can run twice when two threads force the same unevaluated call, as both branches of a `parBO` can through a `Share`: `Array.map (+ 1)` can add 2, a clone can copy an array halfway through an update, and a linear-base container can be left inconsistent.
   So can the pure operations of `Ref`, the runs of `runBO` and `modifyBO`, and a call that an owner stores, in a module compiled with `-feager-blackholing`; a program on one capability is not affected.
-  The owners evaluate what they store, but not a lazy field inside it, such as a component of a pair or the payload of a `Just`, and not a call forced outside a `BO` action, as by a bang on an argument.
-  Evaluate such a call before storing it where several branches reach it, with a strict field, `StrictData` or the linear `$!` of `Prelude.Linear`, as in `Just PL.$! Array.map f arr`, and each call that a record, a list or a vector holds.
 
 ## 0.1.0.0 - 2026-09-19
 

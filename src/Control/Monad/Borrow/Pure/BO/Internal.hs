@@ -298,32 +298,16 @@ unsafePerformEvaluateUndupableBO (BO f) = runBO# \s ->
   case f s of
     (# s, !a #) -> dropState# s `PL.lseq` a
 
-{- | Run two computations in parallel, each in its own thread, and return both results once both have finished.
+{- | Run two computations in parallel and return both results.
 
-If either computation throws, 'parBO' stops the other one, waits until it has stopped, and rethrows the exception unchanged.
-If both throw, which of the two exceptions you get is unspecified.
-
-Only the other computation of the same 'parBO' is stopped.
-If it was itself waiting in a nested 'parBO' — as with 'Control.Monad.Borrow.Pure.Par', 'Control.Monad.Borrow.Pure.mapConcurrentlyOf' and the parallel @qsort@ of "Data.Vector.Mutable.Linear.Borrow", which nest one per element or per level — the computations it had started run to completion after the exception has reached you.
-For example, 'Control.Monad.Borrow.Pure.mapConcurrentlyOf' over a list pairs each element with the rest of the list, so when one element fails, the elements before it are stopped and those after it run to completion.
-
-A computation in a loop that never allocates cannot be stopped until the loop ends, so it delays the rethrow until then; compiling the module that contains the loop with @-fno-omit-yields@ makes it stoppable.
-An allocation limit, enabled with 'GHC.Conc.enableAllocationLimit', is not inherited by the threads that 'parBO' forks, so it does not bound their computations.
-
-An asynchronous exception delivered to the thread running 'parBO', such as from 'System.Timeout.timeout' or 'Control.Concurrent.killThread', does not stop the computations.
-If 'parBO' was running inside a pure value, forcing that value again resumes it and collects their results, so the value is not left broken; if the value is dropped instead, the computations run to completion.
-A timeout therefore bounds how long you wait, not how much work is done.
-
-A computation's thread, stack included, stays in memory for a while after it finishes, about 1 KB each: the second computation's until the first one finishes, and the first computation's until the thread running 'parBO' runs again, which on few capabilities can be long after.
-Put the shorter computation first where a chain of 'parBO's could keep many of them alive; 'Control.Monad.Borrow.Pure.Par' and 'Control.Monad.Borrow.Pure.mapConcurrentlyOf' over a list pair each element, first, with the rest of the list.
-A 'parBO' interrupted by an asynchronous exception while it waits for the first computation keeps that computation's thread until the interrupted value is resumed or dropped.
-
-In pure code none of this is observable, because the memory those computations write is reachable only from the failed or interrupted computation.
-Memory that came from 'System.IO.IO' or 'Control.Monad.ST.ST', as with 'Data.Vector.Mutable.Linear.Borrow.unsafeModifyBoxedMVector', is different: after catching an exception from such a computation, do not read or reuse it.
-
-See Note [parBO and exceptions] in @Control.Monad.Borrow.Pure.BO.Internal@.
+If either computation throws, 'parBO' stops the other, waits for it to stop, and rethrows the exception unchanged; if both throw, which of the two you get is unspecified.
+Stopping reaches only the other computation of this 'parBO': what that one started with a nested 'parBO' runs to completion.
+A computation in a loop that never allocates is stopped only when the loop ends; compile its module with @-fno-omit-yields@ to make it stoppable.
+An asynchronous exception to the thread running 'parBO', such as from 'System.Timeout.timeout', does not stop the computations: forcing the interrupted value again collects their results.
+After catching an exception from a computation that wrote memory from 'System.IO.IO' or 'Control.Monad.ST.ST', do not read or reuse that memory.
 -}
 parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
+-- See Note [parBO and exceptions].
 parBO = Unsafe.toLinear2 \a b ->
   unsafeSystemIOToBO (parallelIO (unsafeBOToSystemIO a) (unsafeBOToSystemIO b))
 

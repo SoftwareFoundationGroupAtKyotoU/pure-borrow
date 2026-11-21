@@ -144,11 +144,12 @@ fromList =
 
 {- | Store the elements of a list in a new mutable vector, each evaluated to weak head normal form.
 
-Run inside 'unsafePerformIO', after its 'GHC.noDuplicate#', both the list and its elements are evaluated once: see Note [Stored contents are evaluated after noDuplicate#] in "Data.Ref.Linear.Unlifted.Internal".
+Run inside 'unsafePerformIO', after its 'GHC.noDuplicate#', both the list and its elements are evaluated once.
 'evaluate' keeps the demand on the list from GHC, and the list is taken as it is produced, one cell at a time, as 'U.fromList' takes it.
 -}
 thawEvaluated :: (U.Unbox a) => [a] -> IO (UM.IOVector a)
 {-# INLINE thawEvaluated #-}
+-- See Note [Stored contents are evaluated after noDuplicate#] in "Data.Ref.Linear.Unlifted.Internal".
 thawEvaluated values = evaluate (G.unstream (evaluatingBundle values)) NonLinear.>>= U.unsafeThaw
 
 -- | \(O(n)\). Copy an immutable unboxed vector into a new owner.

@@ -110,10 +110,11 @@ fromList = GHC.noinline $ Unsafe.toLinear \as l ->
 
 {- | Store the elements of a list in a new mutable vector, each evaluated to weak head normal form.
 
-Run inside 'unsafePerformIO', after its 'GHC.noDuplicate#', both the list and its elements are evaluated once: see Note [Stored contents are evaluated after noDuplicate#] in "Data.Ref.Linear.Unlifted.Internal".
+Run inside 'unsafePerformIO', after its 'GHC.noDuplicate#', both the list and its elements are evaluated once.
 'evaluate' keeps the demand on the list from GHC, and the list is taken as it is produced, one cell at a time, as 'V.fromList' takes it.
 -}
 thawEvaluated :: [a] -> NonLinear.IO (MV.IOVector a)
+-- See Note [Stored contents are evaluated after noDuplicate#] in "Data.Ref.Linear.Unlifted.Internal".
 thawEvaluated as = evaluate (G.unstream (evaluatingBundle as)) NonLinear.>>= V.unsafeThaw
 
 -- | Convert a 'V.Vector' (from @vector@ package) to a 'Vector'.

@@ -7,10 +7,9 @@
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_HADDOCK hide #-}
 
-{- | The primitives behind "Data.Ref.Linear.Unlifted", including the ones that run inside 'SystemIO.IO' and are meant only for the library's own state-threaded accessors.
+-- See Note [Pure Ref primitives run their effects at most once].
 
-See Note [Pure Ref primitives run their effects at most once].
--}
+-- | The primitives behind "Data.Ref.Linear.Unlifted", including the ones that run inside 'SystemIO.IO' and are meant only for the library's own state-threaded accessors.
 module Data.Ref.Linear.Unlifted.Internal (
   Ref# (..),
   newRef#,

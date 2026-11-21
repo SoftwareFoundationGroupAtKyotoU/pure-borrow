@@ -224,11 +224,12 @@ instance Dupable (HashMap k v) where
      in (HashMap size capa maxDIB slots1, HashMap size capa maxDIB slots2)
   {-# INLINE dup2 #-}
 
-{- | \(O(n)\). Copies the slot array, which is all a table owns: its keys and values are GC-owned, see Note [Element ownership] in @Data.HashMap.RobinHood.Mutable.Linear.Internal@.
+{- | \(O(n)\). Copies the slot array, which is all a table owns: its keys and values are GC-owned.
 
 The table is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same table at once.
 -}
 instance Clone (HashMap k v) where
+  -- See Note [Element ownership].
   clone = Unsafe.toLinear \(UnsafeAlias table) -> Control.do
     linear <- askLinearly
     evaluateBO (copyUnconsumed table linear)

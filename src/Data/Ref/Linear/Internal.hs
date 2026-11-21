@@ -109,9 +109,9 @@ instance
 {- | The contents are cloned through a shared borrow of them, with their own 'Clone', into a fresh reference.
 
 The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same reference at once.
-See Note [Cloning the contents of a shared borrow] in @Data.Ref.Linear.Internal@.
 -}
 instance (Clone a) => Clone (Ref a) where
+  -- See Note [Cloning the contents of a shared borrow].
   clone = Unsafe.toLinear \(UnsafeAlias ref) -> Control.do
     contents <- unsafeReadRefBO ref
     copied <- clone (UnsafeAlias contents)

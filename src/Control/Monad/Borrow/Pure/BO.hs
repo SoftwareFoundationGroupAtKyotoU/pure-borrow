@@ -94,13 +94,10 @@ module Control.Monad.Borrow.Pure.BO (
   -- *** Manual lifetime reassociation
   assocRBO,
   assocLBO,
-  assocBOEq,
   assocBorrowL,
   assocBorrowR,
-  assocBorrowEq,
   assocLendL,
   assocLendR,
-  assocLendEq,
 
   -- * Re-exports
   module Control.Monad.Borrow.Pure.Lifetime,
@@ -120,10 +117,6 @@ import Data.Function qualified as NonLinear
 import Data.Functor.Linear qualified as Data
 import Data.Type.Coercion (Coercion (..))
 import Prelude.Linear
-
-#ifndef PURE_BORROW_SLOW_SCOPES
-import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe qualified as Unsafe
-#endif
 
 {- |
 Runs a 'BO' computation and returns the result of postprocessing 'After' the lifetime has ended.
@@ -422,7 +415,9 @@ srunBO bo = asksLinearlyM \lin ->
 #else
 srunBO bo = Control.do
   after <- unsafeCastBO bo
-  Control.pure $! withEnd Unsafe.UnsafeEnd after
+  -- The token comes from the state thread, after the scope's effects; see Note [Owners handed back by reclaim].
+  end <- endHere
+  Control.pure $! withEndL end after
 #endif
 
 -- | A variant of 'srunBO' that returns the direct value of 'BO' computation.

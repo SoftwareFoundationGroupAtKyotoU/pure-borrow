@@ -41,7 +41,7 @@ performed. A delimiter that returns its caller's own binder makes a post-scope
 read syntactically identical to a pre-scope one; the result is a stale length
 and a stale buffer, and writing through them runs off the end of the
 allocation. See @Note [Restoring a borrow must break its Core identity]@ in
-"Control.Monad.Borrow.Pure.BO.Internal" for the full argument, and treat it as
+@Control.Monad.Borrow.Pure.BO.Internal@ for the full argument, and treat it as
 binding on any instance you write.
 
 Each method is separately overridable, so each one owes this independently:

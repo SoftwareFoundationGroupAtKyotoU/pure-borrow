@@ -27,7 +27,6 @@ import Data.HashMap.RobinHood.Mutable.Linear.Borrow qualified as HashMap
 import Data.List qualified as List
 import Data.Ref.Linear qualified as Ref
 import Data.Ref.Linear.Borrow qualified as RefBorrow
-import Data.Type.Equality ((:~:))
 import Data.Vector qualified as V
 import Data.Vector.Mutable.Growable.Linear.Borrow qualified as Growable
 import Data.Vector.Unboxed qualified as U
@@ -39,10 +38,11 @@ import Unsafe.Linear qualified as Unsafe
 import Prelude (Int, Maybe (..), otherwise, show, (+), (-), (<>), (>=))
 import Prelude qualified as NonLinear
 
-assocBorrowEqTypingCase ::
+assocBorrowTypingCase ::
   forall (bk :: BO.BorrowKind) α β γ a.
-  BO.Borrow bk ((α /\ β) /\ γ) a :~: BO.Borrow bk (α /\ (β /\ γ)) a
-assocBorrowEqTypingCase = BO.assocBorrowEq @bk @α @β @γ @a
+  BO.Borrow bk ((α /\ β) /\ γ) a %1 ->
+  BO.Borrow bk (α /\ (β /\ γ)) a
+assocBorrowTypingCase = BO.assocBorrowR
 
 shortenShare :: (α >= β) => Share α a -> Share β a
 shortenShare = subShare

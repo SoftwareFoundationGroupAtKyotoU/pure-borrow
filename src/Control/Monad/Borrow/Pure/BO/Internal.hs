@@ -54,7 +54,6 @@ import Data.Monoid qualified as Mon
 import Data.Ord qualified as Ord
 import Data.Semigroup qualified as Sem
 import Data.Tuple (Solo (..))
-import Data.Type.Equality ((:~:) (Refl))
 import GHC.Base (TYPE)
 import GHC.Base qualified as GHC
 import GHC.Exts (Multiplicity (..), State#, runRW#)
@@ -116,6 +115,7 @@ unsafeUnBO :: BO α a %1 -> State# (ForBO α) %1 -> (# State# (ForBO α), a #)
 {-# INLINE unsafeUnBO #-}
 unsafeUnBO (BO f) = f
 
+-- Functions rather than an equality: see Note [No equality between lifetimes].
 assocRBO :: BO ((α /\ β) /\ γ) a %1 -> BO (α /\ (β /\ γ)) a
 {-# INLINE assocRBO #-}
 assocRBO = unsafeCastBO
@@ -124,9 +124,17 @@ assocLBO :: BO (α /\ (β /\ γ)) a %1 -> BO ((α /\ β) /\ γ) a
 {-# INLINE assocLBO #-}
 assocLBO = unsafeCastBO
 
-assocBOEq :: forall α β γ a. BO ((α /\ β) /\ γ) a :~: BO (α /\ (β /\ γ)) a
-{-# INLINE assocBOEq #-}
-assocBOEq = Unsafe.coerce $ Refl @(BO (α /\ β /\ γ) a)
+{-
+Note [No equality between lifetimes]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The two associations of a meet are converted by functions, 'assocRBO' and 'assocLBO' here and their counterparts for borrows and lenders, and never by a type equality.
+0.1.0.0 also exported @assocBOEq :: BO ((α /\\ β) /\\ γ) a ':~:' BO (α /\\ (β /\\ γ)) a@, with one each for 'Borrow' and 'Lend'.
+@/\\@ is a promoted data constructor, hence injective, so @inner@ and @outer@ of "Data.Type.Equality" took such an equality apart into @γ ':~:' (β /\\ γ)@ and @(α /\\ β) ':~:' α@, and those two compose into an equality between any two lifetimes.
+With that, the 'EndToken' of a lifetime that had ended discharged a 'reclaim'' in one that was still running, and an owner came back while its 'Mut' was live.
+
+So the safe modules export no @(':~:')@ or @(':~~:')@ between types that differ in a lifetime: a nominal equality is taken apart by injectivity, whatever justified it.
+@test/typing-fail/AssocEqualityAnyLifetime.hs@ is the program that did it, and its two siblings pin the other two names.
+-}
 
 instance Data.Functor (BO α) where
   fmap f (BO g) = BO \s -> case g s of
@@ -188,16 +196,34 @@ unsafeLinIOToBO :: L.IO a %1 -> BO α a
 {-# INLINE unsafeLinIOToBO #-}
 unsafeLinIOToBO (L.IO f) = BO (Unsafe.coerce f)
 
+-- | Run a state-threaded computation to completion.
 runBO# :: forall {rep} α (o :: TYPE rep). (State# (ForBO α) %1 -> o) %1 -> o
 {-# INLINE runBO# #-}
 runBO# = Unsafe.toLinear \f -> runRW# \s ->
-  f (unsafeCoerce# s)
+  f (unsafeCoerce# (GHC.noDuplicate# s)) -- see Note [Pure Ref primitives run their effects at most once] in "Data.Ref.Linear.Unlifted.Internal"
 
+-- | Run a computation in the lifetime of the given 'Now', and hand the 'Now' back once the computation is over.
 execBO :: BO α a %1 -> Now α %1 -> (Now α, a)
 {-# INLINE execBO #-}
-execBO (BO f) !now =
-  case runBO# f of
-    (# s, !a #) -> dropState# s `PL.lseq` (now, a)
+execBO bo !now = runBOResult Control.do
+  !a <- bo
+  -- The 'Now' comes back through 'reviveNow', after the computation's last effect, so that the evidence of the lifetime's end derived from it depends on those effects; see Note [Owners handed back by reclaim].
+  now <- reviveNow now
+  Control.pure (now, a)
+
+-- | Run a computation and return its result, dropping the final state token.
+runBOResult :: BO α a %1 -> a
+{-# INLINE runBOResult #-}
+runBOResult (BO f) = case runBO# f of
+  (# s, !a #) -> dropState# s `PL.lseq` a
+
+{- | Hand a 'Now' back after the effects that precede it, through a barrier the optimizer cannot see through.
+
+Semantically this is 'Control.pure'; see Note [Owners handed back by reclaim] for why it is opaque and threads the state token.
+-}
+reviveNow :: Now α %1 -> BO β (Now α)
+{-# OPAQUE reviveNow #-}
+reviveNow now = BO \s -> (# s, now #)
 
 dropState# :: State# a %1 -> ()
 {-# INLINE dropState# #-}
@@ -206,7 +232,11 @@ dropState# = Unsafe.toLinear \ !_ -> ()
 -- | See also 'Control.Monad.Borrow.Pure.scope'.
 sexecBO :: BO (α /\ β) a %1 -> Now α %1 -> BO β (Now α, a)
 {-# INLINE sexecBO #-}
-sexecBO f now = unsafeCastBO ((now,) PL.. Unsafe.toLinear (\ !a -> a) Control.<$> f)
+sexecBO f now = Control.do
+  a <- unsafeCastBO f
+  -- See 'execBO': the 'Now' comes back after the computation's effects.
+  now <- reviveNow now
+  Control.pure (now, a)
 
 {- |
 Coerces lifetime in 'BO' computation usafely and brutally.
@@ -248,10 +278,10 @@ unsafeBOToSystemIO :: BO α a %1 -> IO a
 unsafeBOToSystemIO (BO f) = GHC.IO (Unsafe.coerce f)
 
 unsafePerformEvaluateUndupableBO :: BO α a %1 -> a
+-- 'runBO#' makes the evaluation undupable already.
 unsafePerformEvaluateUndupableBO (BO f) = runBO# \s ->
-  case Unsafe.toLinear GHC.noDuplicate# s of
-    s -> case f s of
-      (# s, !a #) -> dropState# s `PL.lseq` a
+  case f s of
+    (# s, !a #) -> dropState# s `PL.lseq` a
 
 -- | Run two computations in parallel, returning their results as a tuple.
 parBO :: BO α a %1 -> BO α b %1 -> BO α (a, b)
@@ -298,16 +328,15 @@ unsafeCastAlias = coerceLin
 {-
 Note [Restoring a borrow must break its Core identity]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Not every read of a borrowed resource is threaded through this monad's state token.
-A growable vector keeps its length and its backing buffer behind a `Data.Ref.Linear.Ref`, and the reads that only project that header -- `size`, `capacity`, `getContents` and their neighbours -- go through `Data.Ref.Linear.unsafeReadRef`, an @INLINE@ pass-through to the `GHC.Magic.noinline`-wrapped `Data.Ref.Linear.Unlifted.unsafeReadRef#`, which opens its own `runRW#`.
+Until 0.2.0.0 not every read of a borrowed resource was threaded through this monad's state token.
+The growable vectors' header reads, the robin-hood hash map's table reads and `Data.Ref.Linear.Borrow.update` read a `Data.Ref.Linear.Ref` with `Data.Ref.Linear.unsafeReadRef`, an @INLINE@ pass-through to the `GHC.Magic.noinline`-wrapped `Data.Ref.Linear.Unlifted.unsafeReadRef#`, which opens its own `runRW#`.
 To GHC such a read is a plain function of the borrow.
 Two of them on the same borrow /variable/ are therefore the same Core expression, and common-subexpression elimination is entitled to serve the second from the first.
 
-What keeps that honest is that every operation which replaces the header writes through `Data.Ref.Linear.Unlifted.unsafeWriteRef#`, which is @NOINLINE@, and hands back the reference that write returned.
-The optimizer cannot see through it, so a read after a growth scrutinises a different expression than a read before it, and the two do not merge.
-The whole ordering guarantee for header traffic rests on that one data dependency.
+What kept that honest was that every operation which replaced a reference's contents wrote through `Data.Ref.Linear.Unlifted.unsafeWriteRef#`, which is @NOINLINE@, and handed back the reference that write returned.
+The optimizer cannot see through it, so a read after a write scrutinised a different expression than a read before it, and the two did not merge.
 
-A delimiter that returns the borrow its caller passed in throws the dependency away.
+A delimiter that returns the borrow its caller passed in throws that dependency away.
 The restored borrow is then the caller's own binder, so a read after the scope is syntactically the read before it, and CSE deletes the later one -- serving a stale length and a stale buffer across every growth the scope performed.
 Writing through the stale buffer at an index the fresh length admits runs off the end of the allocation, which is how this last surfaced downstream: a SIGSEGV inside the collector, or silently wrong data under a nursery large enough that the damage is never traversed.
 
@@ -317,6 +346,7 @@ Do not weaken the @OPAQUE@ to @NOINLINE@.
 Measured on GHC 9.12.4 at -O2 a @NOINLINE@ version is an equally good barrier today, and for a knowable reason: the argument's demand comes out lazy and the result is already an unboxed tuple, so no worker/wrapper split occurs and no @$w@ worker is generated.
 But that is a property of one demand signature rather than a guarantee, and @OPAQUE@ is the one pragma GHC documents as suppressing inlining, worker/wrapper, specialisation and rules together.
 The barrier is the whole of the memory safety of these delimiters, so it should rest on a contract rather than on a coincidence.
+The other barriers showed that the coincidence is narrow: while the tokens were constructors, 'reviveOwner', 'reviveAliasWithEnd#' and 'endHere' made @NOINLINE@ were split by worker/wrapper, whose workers dropped the token or returned a constant one, and the kernels of the @pure-borrow-no-state-hack@ suite failed.
 
 It lives in `BO` rather than being a pure function because a pure barrier depends on nothing the scope produced, so nothing would stop it -- or the reads that consume its result -- from floating above the scope body.
 Consuming the state token pins the restoration after the scope's effects.
@@ -325,9 +355,11 @@ A pure @OPAQUE@ barrier also measures a few percent worse in a tight loop, but t
 The cost is one out-of-line call per scope exit, around 0.7ns on aarch64-darwin with GHC 9.12.4, plus whatever it costs that a loop-carried borrow can no longer be unboxed past the barrier: measured together at 14-20% of a tight L1-resident loop that does nothing but the scope, and unmeasurable in any benchmark this repository ships.
 No closure is allocated and the recursion remains a self tail call; what the call adds is a non-tail continuation and, in a loop, a boxed rather than unboxed loop-carried borrow.
 
-This is a statement about the delimiters, not about `Ref` in general.
-Threading the header reads through the state token, so that they are ordered like every other mutable operation and this whole hazard disappears, would be the durable fix; it is an API break and is not attempted here.
-The barrier is also one-directional -- it stops a post-scope read being served from a pre-scope one, but nothing stops a pre-scope read from sinking below the scope -- so that deferral should not drift indefinitely.
+Threading the reads through the state token, so that they are ordered like every other mutable operation, is the durable fix, and every read through a borrow in this package now takes it (see Note [Growable header reads] in "Data.Vector.Mutable.Growable.Linear.Borrow.Internal").
+No read *through a borrow* can be served stale in the way above any more.
+A read through an *owner* after a scope can, by the same mechanism, which Note [Owners handed back by reclaim] addresses.
+The barrier stays all the same, because the obligation belongs to the delimiter rather than to the set of pure readers that happen to exist: a pure reader added later, here or in a data structure built on the @.Unsafe@ modules, would otherwise depend on it silently.
+It is also one-directional -- it stops a post-scope read being served from a pre-scope one, but nothing stops a pre-scope read from sinking below the scope -- so it is no substitute for ordering reads by the state token.
 -}
 
 {- | Return a borrow to the caller of a delimiter, through a barrier the optimizer cannot see through.
@@ -343,6 +375,39 @@ See Note [Restoring a borrow must break its Core identity] for why, and for why 
 reviveAlias :: Alias ak a %1 -> BO α (Alias ak a)
 {-# OPAQUE reviveAlias #-}
 reviveAlias a = BO \s -> (# s, a #)
+
+{- | 'reviveAlias' for a delimiter that also discharges its continuation's 'After': it hands back, in the same out-of-line call, an t'EndToken' for the sublifetime the delimiter has just closed.
+
+It restores a borrow or a bundle of them, such as the t'Control.Monad.Borrow.Pure.Experimental.Borrows.Muts' of 'Control.Monad.Borrow.Pure.Experimental.Borrows.reborrowings''.
+Discharging the 'After' with this token rather than with the constant 'UnsafeEnd' makes whatever the 'After' reclaims depend on the scope's effects; see Note [Owners handed back by reclaim].
+It carries the obligation of 'reviveAlias', and it asserts that @β@ has ended: call it only once the continuation typed in @β@, whose result type cannot mention @β@, has returned, as 'unsafeBorrowScope'' does.
+-}
+reviveAliasWithEnd# :: forall β α a. a %1 -> State# (ForBO α) %1 -> (# State# (ForBO α), EndToken β, a #)
+{-# OPAQUE reviveAliasWithEnd# #-}
+reviveAliasWithEnd# a s = (# s, UnsafeEnd, a #)
+
+{- | An t'EndToken' taken from the state thread, for a delimiter that discharges an 'After' without restoring a borrow.
+
+It asserts that @β@ has ended: call it only once the computation typed in @β@, whose result type cannot mention @β@, has returned, as 'Control.Monad.Borrow.Pure.BO.srunBO' does.
+A delimiter that applied the constant 'UnsafeEnd' instead would lose the ordering that Note [Owners handed back by reclaim] relies on.
+-}
+endHere :: BO α (EndToken β)
+{-# OPAQUE endHere #-}
+endHere = BO \s -> (# s, UnsafeEnd #)
+
+-- | 'withEnd' for a token bound linearly, as the delimiters receive it.
+withEndL :: EndToken α %1 -> After α r %1 -> r
+{-# INLINE withEndL #-}
+withEndL = Unsafe.toLinear withEnd
+
+{- | The exit of a delimiter that discharges an 'After': restore the borrow, or the bundle, and discharge the 'After' with the token that 'reviveAliasWithEnd#' hands back with it.
+
+It asserts that @β@ has ended; see 'reviveAliasWithEnd#'.
+-}
+restoreWithEnd :: forall β α a r. a %1 -> After β r %1 -> BO α (r, a)
+{-# INLINE restoreWithEnd #-}
+restoreWithEnd a after = BO \s -> case reviveAliasWithEnd# @β a s of
+  (# s, end, restored #) -> (# s, (withEndL end after, restored) #)
 
 type role Alias nominal representational
 
@@ -380,12 +445,6 @@ assocBorrowL ::
 {-# INLINE assocBorrowL #-}
 assocBorrowL = coerceLin
 
-assocBorrowEq ::
-  forall (bk :: BorrowKind) α β γ a.
-  Borrow bk ((α /\ β) /\ γ) a :~: Borrow bk (α /\ (β /\ γ)) a
-{-# INLINE assocBorrowEq #-}
-assocBorrowEq = Unsafe.coerce $ Refl @(Borrow bk ((α /\ β) /\ γ) a)
-
 assocLendR ::
   Lend ((α /\ β) /\ γ) a %1 ->
   Lend (α /\ (β /\ γ)) a
@@ -397,10 +456,6 @@ assocLendL ::
   Lend ((α /\ β) /\ γ) a
 {-# INLINE assocLendL #-}
 assocLendL = coerceLin
-
-assocLendEq :: forall α β γ a. (Lend ((α /\ β) /\ γ) a) :~: (Lend (α /\ (β /\ γ)) a)
-{-# INLINE assocLendEq #-}
-assocLendEq = Unsafe.coerce $ Refl @(Lend (α /\ β /\ γ) a)
 
 instance (bk ~ 'Mut) => LinearOnly (Borrow bk α a) where
   linearOnly = UnsafeLinearOnly
@@ -459,9 +514,71 @@ share = Unsafe.toLinear \(UnsafeAlias !a) -> Ur (UnsafeAlias a)
 reclaim' :: Lend α a %1 -> After α a
 reclaim' l = After (reclaim l)
 
--- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
-reclaim :: (End α) => Lend α a %1 -> a
-reclaim = \(UnsafeAlias !a) -> a
+{- | Reclaims a 'borrow'ed resource at the 'End' of lifetime @α'.
+
+The resource comes back through 'reviveOwner', applied to the evidence that @α@ has ended; see Note [Owners handed back by reclaim].
+-}
+reclaim :: forall α a. (End α) => Lend α a %1 -> a
+reclaim = \(UnsafeAlias !a) -> reviveOwner (endToken @α) a
+
+{-
+Note [Owners handed back by reclaim]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+'borrow' hands out its 'Mut' and its 'Lend' as the same object, and 'reclaim' hands that object back, so after inlining, the owner a scope returns is the very Core variable that went into 'borrow'.
+Nothing in it depends on the writes made through the borrow in between: those are ordered by the state token, and the owner is not.
+A pure read of the reclaimed owner ('Data.Ref.Linear.free', 'consume', a vector's @toList@) is then syntactically a pure read of that owner made before the borrow, and common-subexpression elimination serves the later one from the earlier.
+This happened: 'Data.Ref.Linear.Dupable' for 'Data.Ref.Linear.Ref' read the reference purely and handed the same reference back, and a program that duplicated a reference, bumped one copy through a scope and freed it afterwards got the value from before the bump, or, for a reference to a reference, a second owner of a reference it had given away (the kernels of @Control.Monad.Borrow.Pure.OrderingSpec@).
+Floating combined with strictness analysis is the other risk: the state token is @State# (ForBO α)@, which the demand analyser's IO hack, keyed on @State# RealWorld@, does not cover, and under @-fno-state-hack@ GHC floats an 'After' whose inputs all exist before the scope out of the state-threaded lambda and evaluates it before the scope's writes.
+
+So the evidence that the lifetime has ended carries the dependency, and the reclaimed owner is computed from it:
+
+\* 'execBO' and 'sexecBO' hand their 'Now' back through 'reviveNow', an opaque action that runs after the computation's last effect;
+\* 'endLifetime' is opaque, so the 'EndToken' it derives from that 'Now' is the result of a call rather than a constant;
+\* the erased delimiters take their token from the state thread rather than using the constant 'UnsafeEnd': 'reviveAliasWithEnd#' restores the borrow, or the bundle, and hands back the token in one out-of-line call, and 'Control.Monad.Borrow.Pure.BO.srunBO' calls 'endHere';
+\* 'reclaim' returns the owner through 'reviveOwner', an opaque function of the token.
+
+A read of the reclaimed owner is then a read of a call result whose inputs exist only once the scope's effects have run.
+
+That holds only while the token stays an unknown value on its way from the call that produced it to 'reviveOwner'.
+If the optimizer learns which value a token is, it puts that value in place of the variable, and 'reviveOwner' is then applied to a constant and the pre-scope owner, which exist before the scope.
+With a single nullary constructor, forcing the token was enough to teach it: after a @case@ or a @seq@, the token is known to be that constructor.
+This happened: while 'withEnd' forced its token, the 'Control.Monad.Borrow.Pure.BO.srunBO' kernels of @Control.Monad.Borrow.Pure.OrderingSpec@, built with @-fno-state-hack@, read the owner before the scope's writes, and one handed back an inner reference the scope had already freed, on GHC 9.10, 9.12 and 9.14; a function written with the safe modules alone, forcing the token before 'withEnd', did the same.
+Two changes close it:
+
+\* 'EndToken' is a newtype over a type that has no constructors, so forcing a token tells GHC nothing: it stays the unknown result of the call.
+  This is what protects a token that user code forces.
+  A type with a single nullary constructor brings the problem back, and so does a newtype over one.
+  'Now', from which 'endLifetime' derives the token, is such a newtype for the same reason; see Note [Tokens are opaque values] in "Control.Monad.Borrow.Pure.Lifetime.Token.Internal".
+\* 'withEnd' leaves the token alone, since nothing needs it forced before 'reviveOwner'.
+  With the nullary token, that alone fixed the library's own delimiters, but not the user's function.
+
+Both properties of 'reviveOwner' are load-bearing.
+Its result must be opaque: with an inline @case@ on the token in its place, the kernels above fail again, because the alternative returns the caller's own variable.
+And it must force the token: 'withEnd', which the safe modules export, accepts any 'EndToken', including a bottom one, so a 'reclaim' that ignored its token would hand an owner back while its borrows are still live, giving two live 'Mut's over one resource.
+It forces the token inside its opaque body, and it covers a token supplied through 'withEnd' and through 'GHC.Exts.withDict' alike.
+Do not make it @INLINE@ or @NOINLINE@, and do not replace it by a @case@: while a token was a constructor, worker/wrapper split a @NOINLINE@ 'reviveOwner' into a worker that dropped the token, @$wreviveOwner = \a -> a@, which 'reclaim' called on the owner alone.
+The same holds for 'reviveNow', 'endLifetime', 'reviveAliasWithEnd#' and 'endHere': each is @OPAQUE@, which is what keeps its token an argument or a result of a call.
+
+@OPAQUE@ hides the body but not the demand signature, and that of 'reviveOwner', @<1A><1L>@, says that the token is forced and otherwise unused.
+A caller's worker drops an argument whose demand is absent and puts a constant in its place, so that signature must keep saying that the token is forced: the bang of the pattern 'UnsafeEnd' is what makes it so.
+A token that is forced is passed on as it is, since it is not a constructor that a worker could take apart and rebuild.
+Programs that reclaim through a token taken as an argument, forced or not, or through the evidence of a constraint, and that read the owner both before the scope and after it, read the value the scope wrote, under @-fdicts-strict@ and @-fno-state-hack@ as well.
+
+The barrier is one-directional, like 'reviveAlias': it stops a read after the scope being served from one before it.
+A read before the scope cannot sink below it, because 'borrow' consumes the owner it would read.
+
+The cost is an out-of-line call per 'reclaim', two per run of 'execBO' ('reviveNow' and 'endLifetime'), and one per crossing of a delimiter that discharges an 'After'.
+A closed 'After' is no longer floated to a constant, so on each such crossing 'withDict' runs as well; allocation is unchanged, except that an 'After' reclaiming an owner of several fields captures the fields.
+-}
+
+{- | Hand a reclaimed resource back through a barrier the optimizer cannot see through, strict in the end token.
+
+Semantically this is the identity on the resource.
+Both of its properties are load-bearing; see Note [Owners handed back by reclaim].
+-}
+reviveOwner :: EndToken α -> a %1 -> a
+{-# OPAQUE reviveOwner #-}
+reviveOwner UnsafeEnd a = a
 
 -- | Reborrow a mutable borrow into a sublifetime.
 reborrow :: forall β α a. (α >= β) => Mut α a %1 -> (Mut β a, Lend β (Mut α a))
@@ -527,10 +644,12 @@ result 'After' the sublifetime, and this discharges that 'After' before
 restoring the original mutable borrow.
 
 Beyond the obligations of 'unsafeBorrowScope', the 'EndToken' supplied to
-'withEnd' is the runtime-erased one. That is sound for the same reason it is in
+'withEnd' comes from 'reviveAliasWithEnd#', which restores the borrow in the same call.
+Asserting that the sublifetime has ended is sound for the same reason it is in
 'Control.Monad.Borrow.Pure.BO.srunBO': the continuation has already returned, so
 the sublifetime it was typechecked in is over by the time the token is applied,
 and the caller-fixed result type cannot mention that lifetime.
+Taking the token from the state thread, rather than using the constant 'UnsafeEnd', makes whatever the 'After' reclaims depend on the scope's effects; see Note [Owners handed back by reclaim].
 -}
 unsafeBorrowScope' ::
   forall bk α α' a r.
@@ -541,7 +660,7 @@ unsafeBorrowScope' ::
 unsafeBorrowScope' = Unsafe.toLinear2 \mut k ->
   unsafeSrunBO_ Control.do
     after <- k (unsafeCastAlias mut)
-    (withEnd UnsafeEnd after,) Control.<$> reviveAlias mut
+    restoreWithEnd mut after
 
 type BorrowMultiplicity :: BorrowKind -> Multiplicity
 type family BorrowMultiplicity bk where

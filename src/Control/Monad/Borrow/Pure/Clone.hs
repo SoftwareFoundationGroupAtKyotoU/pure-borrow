@@ -57,7 +57,7 @@ It must finish the copy inside the 'BO' action it returns, before the lifetime o
 And each copy must depend on something of its own, or GHC merges the copies of two clones of one borrow into one, as it does in a loop that clones the same borrow.
 Either allocate and fill the copy with IO actions in the state thread, as the vector instances do under 'Control.Monad.Borrow.Pure.BO.Unsafe.unsafeSystemIOToBO', or pass a t'Control.Monad.Borrow.Pure.Linearly' taken with 'Control.Monad.Borrow.Pure.BO.askLinearly' to the function that makes the copy, and make that function @NOINLINE@ and apply it through 'GHC.Exts.noinline', as below.
 A pure copy is not enough however it is evaluated, even with @$!@ inside 'Control.Monad.Borrow.Pure.BO.Unsafe.unsafeSystemIOToBO'.
-Neither is consuming the token beside the copy, nor passing it to a function that is only @NOINLINE@ or only @OPAQUE@: such a function's demand signature shows that it ignores the token's field, and GHC may then drop the token on the way to it.
+Neither is consuming the token beside the copy, nor passing it to a function that is only @NOINLINE@ or only @OPAQUE@.
 For linear-base's arrays, whose elements are GC-owned, that gives the following, with "Control.Monad.Borrow.Pure" imported, @Alias (..)@ from "Control.Monad.Borrow.Pure.BO.Unsafe", 'Control.Monad.Borrow.Pure.BO.evaluateBO' from "Control.Monad.Borrow.Pure.BO", 'GHC.Exts.noinline', "Unsafe.Linear" as @Unsafe@ and "Data.Array.Mutable.Linear" as @Array@:
 
 > instance Clone (Array a) where

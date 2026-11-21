@@ -60,7 +60,7 @@ tokenRep :: TokenRep
 {-# INLINE tokenRep #-}
 tokenRep = unsafeCoerce ()
 
--- A 'TokenRep' owns nothing, so it may be used any number of times; the bang evaluates it.
+-- A 'TokenRep' owns nothing, so it may be dropped or kept unrestricted, as an 'EndToken' is; the bang evaluates it.
 unrestrictRep :: TokenRep %1 -> Ur TokenRep
 {-# INLINE unrestrictRep #-}
 unrestrictRep = Unsafe.toLinear \ !rep -> Ur rep
@@ -243,16 +243,16 @@ One that built its result from 'tokenRep' would return a constant however unknow
 This happened as well: 'newLifetime' built its 'Now' from a constant, so a 'Control.Monad.Borrow.Pure.runBO' whose action has no free variables depended on nothing but constants, and GHC made the whole run one top-level constant.
 Every call of a function that allocated a reference with such a run got the same reference.
 A function that returns two tokens cannot hand its argument on twice, since two tokens that are one variable are one expression, and allocations made with them merge: it must be @NOINLINE@ and applied through 'noinline', as 'dup2' is.
-Only such a function, or an @OPAQUE@ one that takes no token, as 'reviveAliasWithEnd#' and 'endHere' in "Control.Monad.Borrow.Pure.BO.Internal" are, may build a token from 'tokenRep'.
+Only such a function, a lambda applied through 'noinline', as in 'withLinearly#', or an @OPAQUE@ function that takes no token, as 'reviveAliasWithEnd#' and 'endHere' in "Control.Monad.Borrow.Pure.BO.Internal" are, may build a token from 'tokenRep'.
 
 The newtype constructors are not exported, even to the rest of the library.
 The three tokens have one representation, so wherever the constructors are in scope 'Data.Coerce.coerce' and 'Data.Coerce.Directed.upcast' turn a 'Now' into the 'EndToken' of its own lifetime, or an 'EndToken' into a 'Linearly'.
 The patterns 'UnsafeLinearly', 'UnsafeNow' and 'UnsafeEnd' build a token and match an unrestricted one.
-GHC does not let a pattern synonym match a linearly bound value, so a linear token is dropped with 'consume', after 'aff' for a 'Now'.
+GHC does not let a pattern synonym match a linearly bound value, so a linear 'Linearly' is dropped with 'consume', a 'Now' with @'consume' ('aff' now)@, and a linear 'EndToken' is used up by @withEndL@ in "Control.Monad.Borrow.Pure.BO.Unsafe".
 
 Forcing a token costs a call.
 GHC cannot rule out that a value of type 'GHC.Any' is a function, so it evaluates one through the runtime's generic entry, @stg_ap_0_fast@, rather than by testing the tag of the pointer.
-On aarch64-darwin with GHC 9.12.4 that is about 0.5 ns for each token forced: 2 to 3 ns for a run that allocates, borrows and reclaims, and 0.25 ns for each crossing of a scope that discharges an 'After'.
+On aarch64-darwin with GHC 9.12.4 that is about 0.5 ns for each token forced: a run forces a handful, an allocation one, and a crossing of a scope one only if its 'After' reclaims.
 The first fix, a constructor with a lazy field that nothing reads, was forced inline but allocated the 'Now' and the 'EndToken' of every run, 32 bytes, and left a box that worker/wrapper took apart and rebuilt from a constant unless every function passed the field on.
 -}
 

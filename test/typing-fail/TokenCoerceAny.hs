@@ -1,6 +1,9 @@
 module TokenCoerceAny where
 
-import Control.Monad.Borrow.Pure.Lifetime.Token (Linearly)
+-- The token modules are imported whole, so that a constructor any of them exported would be in scope.
+import Control.Monad.Borrow.Pure.Lifetime.Token
+import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
+import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe
 import Data.Coerce (coerce)
 import GHC.Exts (Any)
 

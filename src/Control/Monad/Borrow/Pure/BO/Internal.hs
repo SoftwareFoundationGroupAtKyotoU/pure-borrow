@@ -338,7 +338,7 @@ Do not weaken the @OPAQUE@ to @NOINLINE@.
 Measured on GHC 9.12.4 at -O2 a @NOINLINE@ version is an equally good barrier today, and for a knowable reason: the argument's demand comes out lazy and the result is already an unboxed tuple, so no worker/wrapper split occurs and no @$w@ worker is generated.
 But that is a property of one demand signature rather than a guarantee, and @OPAQUE@ is the one pragma GHC documents as suppressing inlining, worker/wrapper, specialisation and rules together.
 The barrier is the whole of the memory safety of these delimiters, so it should rest on a contract rather than on a coincidence.
-The other barriers show that the coincidence is narrow: made @NOINLINE@, 'reviveOwner', 'reviveAliasWithEnd#' and 'endHere' are split by worker/wrapper, whose workers drop the token or return a constant one, and the kernels of the @pure-borrow-no-state-hack@ suite fail.
+The other barriers showed that the coincidence is narrow: while the tokens were constructors, 'reviveOwner', 'reviveAliasWithEnd#' and 'endHere' made @NOINLINE@ were split by worker/wrapper, whose workers dropped the token or returned a constant one, and the kernels of the @pure-borrow-no-state-hack@ suite failed.
 
 It lives in `BO` rather than being a pure function because a pure barrier depends on nothing the scope produced, so nothing would stop it -- or the reads that consume its result -- from floating above the scope body.
 Consuming the state token pins the restoration after the scope's effects.

@@ -3,7 +3,10 @@
 
 module TokenDerivingViaLinearly where
 
-import Control.Monad.Borrow.Pure.Lifetime.Token (LinearOnly, Linearly)
+-- The token modules are imported whole, so that a constructor any of them exported would be in scope.
+import Control.Monad.Borrow.Pure.Lifetime.Token
+import Control.Monad.Borrow.Pure.Lifetime.Token.Internal
+import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe
 import GHC.Exts (Any)
 
 newtype Fake = Fake Any

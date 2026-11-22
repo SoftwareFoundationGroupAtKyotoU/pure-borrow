@@ -245,21 +245,24 @@ take_ :: forall k v α. Mut α (HashMap k v) %1 -> BO α (HashMap k v)
 {-# INLINE take_ #-}
 take_ dic = Control.fmap (uncurry $ flip lseq) $ take dic
 
-{- | \(O(n)\) amortized. Union of two tables.
+{- | \(O(n)\) amortized, for \(n\) the capacity of the table with fewer entries. Union of two tables.
 
-The smaller table is inserted into the larger, so a key present in both takes
-the value from the table that is inserted second.
+A key present in both takes the second table's value, as if the second table's entries were inserted into the first.
+linear-base's @Data.HashMap.Mutable.Linear.union@ has the same bias, while @Data.Map.union@ and @Data.HashMap.Strict.union@ keep the first map's value.
 -}
 union :: (Hashable k) => HashMap k v %1 -> HashMap k v %1 -> HashMap k v
 {-# INLINE union #-}
 union (HashMap ref1) (HashMap ref2) = DataFlow.do
   (l, ref1) <- withLinearly ref1
-  HashMap $! Ref.new (Raw.union (Ref.free ref1) (Ref.free ref2)) l
+  HashMap $! Ref.new (Raw.extend (Ref.free ref1) (Ref.free ref2)) l
 
--- | \(O(n)\) amortized. Insert every entry of a table into a borrowed one.
+{- | \(O(n)\) amortized, for \(n\) the capacity of the table with fewer entries. Insert every entry of a table into a borrowed one.
+
+A key present in both takes the inserted table's value, as with 'insert'.
+-}
 extend :: (Hashable k) => HashMap k v %1 -> Mut α (HashMap k v) %1 -> BO α (Mut α (HashMap k v))
 {-# INLINE extend #-}
 extend donor dic = Control.do
   let %1 !donor' = Ref.free (inner donor)
-  !dic <- Ref.modify (\ !s -> Raw.union s donor') $ coerceBor dic
+  !dic <- Ref.modify (\ !s -> Raw.extend s donor') $ coerceBor dic
   Control.pure $! recoerceBor dic

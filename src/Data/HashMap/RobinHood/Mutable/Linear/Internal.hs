@@ -367,19 +367,53 @@ capacity :: HashMap k v %1 -> (Ur Int, HashMap k v)
 {-# INLINE capacity #-}
 capacity (HashMap sz capa maxDIB slots) = (Ur capa, HashMap sz capa maxDIB slots)
 
-{- | \(O(n)\) amortized. Union of two tables.
+{- | \(O(n)\) amortized, for \(n\) the capacity of the table with fewer entries. Insert every entry of the second table into the first.
 
-The smaller table is inserted into the larger, so a key present in both takes
-the value from the table that is inserted second.
+A key present in both takes the second table's value, as with 'insert'.
 -}
-union :: (Hashable k) => HashMap k v %1 -> HashMap k v %1 -> HashMap k v
-{-# INLINE union #-}
-union hm1 hm2 = case (size hm1, size hm2) of
-  ((Ur sz1, hm1), (Ur sz2, hm2)) -> DataFlow.do
-    (parent, child) <- if sz1 >= sz2 then (hm1, hm2) else (hm2, hm1)
-    appEndo
-      (foldMapWithKey (\ !k !v -> Endo $ uncurry lseq . insert k v) child)
-      parent
+extend :: (Hashable k) => HashMap k v %1 -> HashMap k v %1 -> HashMap k v
+extend target donor = case (size target, size donor) of
+  ((Ur targetSize, target), (Ur donorSize, donor)) ->
+    -- The smaller table's entries move into the larger one.
+    if donorSize NonLinear.<= targetSize
+      then moveEntriesWith insertReplacing donor target
+      else moveEntriesWith insertAbsent target donor
+
+-- | Insert every entry of the first table into the second with the given insertion, consuming the first.
+moveEntriesWith ::
+  forall k v.
+  (k -> v -> HashMap k v %1 -> HashMap k v) ->
+  HashMap k v %1 ->
+  HashMap k v %1 ->
+  HashMap k v
+{-# INLINE moveEntriesWith #-}
+moveEntriesWith place (HashMap size capa _ slots) = go 0 0 slots
+  where
+    physCapa = capa + fromIntegral maxDibLimit
+    go :: Int -> Int -> Slots k v %1 -> HashMap k v %1 -> HashMap k v
+    go !i !count !slots !dest
+      | count == size || i == physCapa = slots `lseq` dest
+      | otherwise =
+          unsafeGetSlot i slots & \case
+            (Ur (Occupied _ _ k v), slots') -> go (i + 1) (count + 1) slots' (place k v dest)
+            (Ur Empty, slots') -> go (i + 1) count slots' dest
+
+-- | Insert an entry, replacing the value at its key, if any.
+insertReplacing :: (Hashable k) => k -> v -> HashMap k v %1 -> HashMap k v
+{-# INLINE insertReplacing #-}
+insertReplacing k v hm = case probeKeyForAlter k hm of
+  (# NotFound st, hm #) -> probeForInsert k v st hm
+  (# Found Location {foundAt, slotFp, slotDIB}, hm #) ->
+    hm & \(HashMap size capa maxDIB slots) -> DataFlow.do
+      slots <- unsafeSetSlot foundAt (Occupied slotFp slotDIB k v) slots
+      HashMap size capa maxDIB slots
+
+-- | Insert an entry only where its key is absent, keeping the value already there otherwise.
+insertAbsent :: (Hashable k) => k -> v -> HashMap k v %1 -> HashMap k v
+{-# INLINE insertAbsent #-}
+insertAbsent k v hm = case probeKeyForAlter k hm of
+  (# NotFound st, hm #) -> probeForInsert k v st hm
+  (# Found _, hm #) -> hm
 
 -- | \(O(1)\) amortized. 'alter' with the replacement produced in a functor.
 alterF ::

@@ -193,6 +193,22 @@ test_extend = testCase "extend merges an owned table into a borrowed one" do
         consume table `lseq` Control.pure (Ur entries)
   sorted entries @?= [("a", 1), ("b", 20), ("c", 3)]
 
+-- | Extend a table holding @a@ and @b@ with a donor of the given entries.
+extendWith :: [(String, Int)] -> [(String, Int)]
+extendWith donorPairs =
+  let Ur entries = withTable 16 \table -> Control.do
+        table <- insertAll [("a", 1), ("b", 2)] table
+        donor <- asksLinearlyM \lin -> Control.pure (HM.fromList donorPairs lin)
+        table <- HM.extend donor table
+        (Ur entries, table) <- HM.toList table
+        consume table `lseq` Control.pure (Ur entries)
+   in sorted entries
+
+test_extendKeepsTheInsertedValue :: TestTree
+test_extendKeepsTheInsertedValue = testCase "extend keeps the inserted value, whichever table is larger" do
+  extendWith [("b", 20)] @?= [("a", 1), ("b", 20)]
+  extendWith [("b", 20), ("c", 3), ("d", 4)] @?= [("a", 1), ("b", 20), ("c", 3), ("d", 4)]
+
 test_union :: TestTree
 test_union = testCase "union of two owned tables" do
   let Ur entries = linearly \linear -> DataFlow.do
@@ -203,6 +219,18 @@ test_union = testCase "union of two owned tables" do
               (HM.fromList [("b", 20), ("c", 3)] linRight)
           )
   sorted entries @?= [("a", 1), ("b", 20), ("c", 3)]
+
+test_unionKeepsTheSecondTablesValue :: TestTree
+test_unionKeepsTheSecondTablesValue = testCase "union keeps the second table's value, whichever table is larger" do
+  unionOf [("b", 2)] [("b", 20), ("c", 3)] @?= [("b", 20), ("c", 3)]
+  unionOf [("a", 1), ("b", 2)] [("b", 20)] @?= [("a", 1), ("b", 20)]
+  where
+    unionOf :: [(String, Int)] -> [(String, Int)] -> [(String, Int)]
+    unionOf left right =
+      let Ur entries = linearly \linear -> DataFlow.do
+            (linLeft, linRight) <- dup linear
+            drainTable (HM.union (HM.fromList left linLeft) (HM.fromList right linRight))
+       in sorted entries
 
 -- | Mutations through a borrow agree with @unordered-containers@.
 test_randomMutations :: TestTree

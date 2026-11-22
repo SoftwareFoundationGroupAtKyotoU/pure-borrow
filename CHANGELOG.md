@@ -57,6 +57,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   The thread that evaluates an owner, usually the parent before a `parBO` forks, therefore computes its contents, and a `fromList` its elements one after another, where branches that read different contents used to compute them in parallel; the borrow-aware hash map's `fromList` and `union` likewise build their tables as the map is evaluated.
   A placeholder such as `undefined` raises when its owner is borrowed, even if nothing reads it, and in a worker when the `divide` of `divideAndConquer` or `divideAndConquer'` returns it inside an owner (see "Clarified").
   To keep an expensive value for the branch that needs it, build it there, or store a GC-owned one in a lazy box such as `Ur`, which is evaluated only to the box.
+- At a key that both tables hold, the borrow-aware hash map's `extend` keeps the value of the table it inserts, as its `insert` does, and its `union` keeps the second table's value.
+  Both used to keep the value of whichever table had fewer entries.
 
 ### Fixed
 

@@ -183,10 +183,7 @@ allocSlots :: Int -> Linearly %1 -> Slots k v
 allocSlots = GHC.noinline \count linear ->
   linear `lseq` Slots (unur (LA.alloc count Empty (Unsafe.toLinear Ur)))
 
-{- | A mutable hash table using Robin Hood hashing with backward-shift deletion.
-
-The table linearly owns its backing store; its keys and values are GC-owned.
--}
+-- | A hash table that linearly owns its backing store, with GC-owned keys and values.
 data HashMap k v where
   -- See Note [Element ownership].
   HashMap ::
@@ -224,7 +221,7 @@ instance Dupable (HashMap k v) where
      in (HashMap size capa maxDIB slots1, HashMap size capa maxDIB slots2)
   {-# INLINE dup2 #-}
 
-{- | \(O(n)\). Copies the slot array, which is all a table owns: its keys and values are GC-owned.
+{- | \(O(n)\). Copies the table, sharing its GC-owned keys and values.
 
 The table is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same table at once.
 -}
@@ -788,11 +785,11 @@ probeKeyForAlter k (HashMap size capa maxDIB slots) =
 
 {- | \(O(n)\). Consume the table into its entries.
 
-Entry order is unspecified. Accumulation goes through 'Endo' so that the list
-is built by one right-nested traversal rather than repeated concatenation.
+Entry order is unspecified.
 -}
 toList :: HashMap k v %1 -> Ur [(k, v)]
 {-# INLINE toList #-}
+-- Through 'Endo', so that the list is built by one right-nested traversal rather than repeated concatenation.
 toList =
   Ur.lift materialiseDiffList
     . foldMapWithKey (\ !k !v -> Ur (Endo ((k, v) :)))

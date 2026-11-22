@@ -35,6 +35,9 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Contents that are `Clone` but not `Dupable`, as in `Ref (Vector (Ref Int))`, can now be cloned, and linear-base's `Array`, `Vector`, `HashMap` and `Set` still can.
 - The multiplicity-polymorphic vector's `fromList` requires `KnownMultiplicity p`, which both multiplicities have, so that it evaluates its elements only where it owns them.
   A function polymorphic in `p` that calls it is rejected with "No instance for `KnownMultiplicity p`"; add the constraint to its signature.
+- `Data.HashMap.RobinHood.Mutable.Linear` exports only `HashMap`, `Hashable`, `fromList`, `lookup`, `member`, `size`, `capacity`, `foldMapWithKey` and `toList`, since its `insert`, `insertMany`, `delete`, `alter`, `alterF`, `unsafeInsertPrepared` and `union` updated a table they were given in place, so a call left unevaluated where both branches of a `parBO` reach it could run twice and leave the table inconsistent.
+  Build a table that changes with `Data.HashMap.RobinHood.Mutable.Linear.Borrow` instead, whose `HashMap` is a different type and whose mutations and queries are `BO` actions on a borrow of it.
+  Each removed name has a namesake there, `InsertPlan`, `lookupForInsert` and `unsafeInsertPrepared` included, except `new`, which is its `empty`, and `insertMany`, for which fold its `insert` over the list.
 - The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)`, `Clone (Array a)` for linear-base's `Array`, `Clone` for a boxed growable or unboxed vector, or a `(<:)` instance for `Maybe`; delete the orphan.
   Call sites of an old shallow vector-cloning orphan now need `Clone a`, since those vectors own their elements.
   An orphan as general as the new instance, such as `Clone (Array a)`, is rejected with "Duplicate instance declarations"; a narrower one, such as `Clone (Array Int)`, compiles, and each use of it is rejected with "Overlapping instances".
@@ -79,7 +82,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `divideAndConquer` and `divideAndConquer'` require `divide` and `conquer` to raise no exception: they do not propagate one raised during the parallel computation, and block instead.
 - The callback of `unsafeInplace` must only rearrange elements, never duplicate, drop or replace one; the boxed vector's `unsafeFromMutable` requires every element to be initialised.
 - The owners evaluate what they store, but not a lazy field inside it, such as a component of a pair or the payload of a `Just`, and not a call forced outside a `BO` action, as by a bang on an argument.
-  Such a call of the owned hash map's `insert`, `delete` or `alter`, or of one of linear-base's in-place operations, such as `set`, `write` and `map` of `Data.Array.Mutable.Linear`, must be evaluated before it is stored where several branches of a `parBO` reach it, with a strict field, `StrictData` or the linear `$!` of `Prelude.Linear`, as in `Just PL.$! Array.map f arr`, and so must each such call that a record, a list or a vector holds.
+  Such a call of one of linear-base's in-place operations, such as `set`, `write` and `map` of `Data.Array.Mutable.Linear`, must be evaluated before it is stored where several branches of a `parBO` reach it, with a strict field, `StrictData` or the linear `$!` of `Prelude.Linear`, as in `Just PL.$! Array.map f arr`, and so must each such call that a record, a list or a vector holds.
   Two branches that force it at once can both run it: `Array.map (+ 1)` can add 2, a clone can copy an array halfway through an update, and a linear-base container can be left inconsistent.
 
 ### New
@@ -91,7 +94,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Growable copies retain length and capacity and clone only initialized elements.
 - `Clone` and `Copyable` for `Identity`, `Down`, `Const`, `Dual`, semigroup `First` and `Last`, `WrappedMonoid`, `Any`, `All`, `Alt`, and tuples through arity six.
   Newtype wrappers delegate to the contained value's instance; an unboxed representation does not imply a shallow copy is safe.
-- `Clone` for the owned hash map of `Data.HashMap.RobinHood.Mutable.Linear`, which copies its slot array; the borrow-aware hash map clones through it.
+- `Clone` for the hash map of `Data.HashMap.RobinHood.Mutable.Linear`, which copies the table and shares its GC-owned keys and values.
 - `DistributesAlias` for `NonEmpty`.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.

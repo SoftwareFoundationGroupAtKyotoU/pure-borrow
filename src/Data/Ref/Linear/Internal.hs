@@ -123,7 +123,7 @@ instance
 
 {- | The contents are cloned through a shared borrow of them, with their own 'Clone', into a fresh reference.
 
-The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same reference at once, unless the contents hold, in a lazy field, a call that is not evaluated yet and updates memory in place, such as linear-base's @Data.Array.Mutable.Linear.map@ or the owned hash map's @insert@: see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same reference at once, unless the contents hold, in a lazy field, a call that is not evaluated yet and updates memory in place, such as linear-base's @Data.Array.Mutable.Linear.map@: see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
 'new' evaluates the contents themselves.
 -}
 instance (Clone a) => Clone (Ref a) where

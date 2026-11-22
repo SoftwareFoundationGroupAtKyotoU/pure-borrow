@@ -13,7 +13,7 @@ import Control.Monad (forM)
 import Control.Monad.Borrow.Pure (linearly)
 import Data.Bifunctor.Linear qualified as BiL
 import Data.Foldable (forM_)
-import Data.HashMap.RobinHood.Mutable.Linear qualified as LHM
+import Data.HashMap.RobinHood.Mutable.Linear.Internal qualified as LHM
 import Data.HashMap.RobinHood.Mutable.LinearSpec.Cases
 import Data.HashMap.Strict qualified as HMS
 import Data.HashSet qualified as HashSet

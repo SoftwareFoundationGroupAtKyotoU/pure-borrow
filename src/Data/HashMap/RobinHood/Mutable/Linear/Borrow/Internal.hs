@@ -18,28 +18,20 @@ import Control.Monad.Borrow.Pure.BO.Unsafe
 import Control.Monad.Borrow.Pure.Clone
 import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Utils (coerceLin, unsafeLeak)
-import Data.HashMap.RobinHood.Mutable.Linear qualified as Raw
+import Data.HashMap.RobinHood.Mutable.Linear.Internal qualified as Raw
 import Data.Ref.Linear (Ref)
 import Data.Ref.Linear.Internal qualified as Ref
 import GHC.TypeError
 import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
 
-{- | A borrow-aware Robin Hood hash table.
+-- The table sits behind a 'Ref', since growing replaces its array and a borrow has nowhere to thread the new table back.
 
-The owned table of "Data.HashMap.RobinHood.Mutable.Linear" replaces its own
-backing array when it grows, so a mutation returns a table value rather than
-writing through the old one. Threading that value back is impossible through a
-borrow, which is why this wrapper keeps the table behind a linear 'Ref': a
-growth updates the reference in place, and a @'Mut' α@ of an enclosing
-structure sees the new array without the enclosing structure being rebuilt.
-
-Its keys and values are GC-owned, exactly as the underlying table's are.
--}
+-- | A borrow-aware Robin Hood hash table, whose keys and values are GC-owned.
 newtype HashMap k v = HashMap (Ref (Raw.HashMap k v))
   deriving newtype (LinearOnly, Consumable, Dupable, Clone)
 
--- | A 'Raw.InsertPlan' suspended against a borrowed table.
+-- | An insertion that @lookupForInsert@ prepared against a borrowed table, for @unsafeInsertPrepared@ to complete.
 newtype InsertPlan k = InsertPlan (Raw.InsertPlan k)
 
 {- | A 'HashMap' cannot be 'Copyable', because it owns a mutable reference.

@@ -14,7 +14,7 @@ module Data.HashMap.RobinHood.Mutable.LinearSpec.Cases (
 
 import Control.Monad.Borrow.Pure (linearly)
 import Control.Syntax.DataFlow qualified as DataFlow
-import Data.HashMap.RobinHood.Mutable.Linear as HM
+import Data.HashMap.RobinHood.Mutable.Linear.Internal as HM
 import Data.Map.Strict qualified as Map
 import Data.Unrestricted.Linear qualified as Ur
 import Prelude.Linear hiding (lookup)

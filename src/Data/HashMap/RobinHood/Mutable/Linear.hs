@@ -1,21 +1,12 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 
 {- |
-A linearly owned mutable hash table, using Robin Hood hashing with
-backward-shift deletion.
+A linearly owned hash table, using Robin Hood hashing, that is built once with 'fromList' and then only queried.
 
-The table linearly owns its backing store, so it must be threaded through
-@%1 ->@ and consumed exactly once; its keys and values, by contrast, are
-GC-owned and bound nonlinearly. That is why 'lookup' hands back a plain
-@'Ur' ('Maybe' v)@ with no 'Movable' constraint, and why duplicating a table
-copies only the slot array. A table over linearly owned values would need a
-different representation, and is not what this module provides.
+The table linearly owns its backing store, so it must be threaded through @%1 ->@ and consumed exactly once; its keys and values, by contrast, are GC-owned and bound nonlinearly.
+That is why 'lookup' hands back a plain @'Ur' ('Maybe' v)@ with no 'Movable' constraint.
 
-Every operation here is an ordinary linear function rather than a 'BO' action.
-To mutate a table in place through a borrow — the usual shape once a table is
-a field of some larger structure — use
-"Data.HashMap.RobinHood.Mutable.Linear.Borrow", which keeps this table behind
-a linear 'Data.Ref.Linear.Ref'.
+A table that is to change after it is built must come from "Data.HashMap.RobinHood.Mutable.Linear.Borrow", whose hash map is a different type, mutated by 'BO' actions on a borrow of it.
 
 This module is intended to be imported qualified.
 -}
@@ -24,20 +15,7 @@ module Data.HashMap.RobinHood.Mutable.Linear (
   Hashable,
 
   -- * Construction
-  new,
   fromList,
-
-  -- * Mutation
-  insert,
-  insertMany,
-  delete,
-  alter,
-  alterF,
-
-  -- * Suspended insertion
-  InsertPlan,
-  lookupForInsert,
-  unsafeInsertPrepared,
 
   -- * Query
   lookup,
@@ -48,9 +26,6 @@ module Data.HashMap.RobinHood.Mutable.Linear (
   -- * Iteration
   foldMapWithKey,
   toList,
-
-  -- * Combining maps
-  union,
 ) where
 
 import Data.HashMap.RobinHood.Mutable.Linear.Internal

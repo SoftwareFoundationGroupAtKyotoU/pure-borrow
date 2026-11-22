@@ -21,7 +21,7 @@ import Data.Complex (Complex)
 import Data.Functor.Const (Const)
 import Data.Functor.Identity (Identity)
 import Data.HashMap.Mutable.Linear qualified as LH
-import Data.HashMap.RobinHood.Mutable.Linear qualified as HM
+import Data.HashMap.RobinHood.Mutable.Linear.Internal qualified as HM
 import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
 import Data.List qualified as List
 import Data.Monoid qualified as Monoid

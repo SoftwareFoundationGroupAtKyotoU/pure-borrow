@@ -64,11 +64,12 @@ import Data.Functor.Linear qualified as Data
 import Data.IntSet qualified as IntSet
 import Data.Unrestricted.Linear qualified as Ur
 import Data.Vector qualified as V
+import Data.Vector.Generic qualified as G
 import Data.Vector.Mutable (RealWorld)
 import Data.Vector.Mutable qualified as MV
 import Data.Vector.Mutable.Linear.Borrow.Internal (Vector (..))
 import GHC.Exts qualified as GHC
-import GHC.IO (unsafePerformIO)
+import GHC.IO (evaluate, unsafePerformIO)
 import GHC.Stack (HasCallStack)
 import Prelude.Linear hiding (head, last, splitAt)
 import Unsafe.Linear qualified as Unsafe
@@ -95,14 +96,22 @@ constant = GHC.noinline \n a l ->
       unsafePerformIO $!
         MV.replicate n a
 
+{- | Build a vector that owns the elements of a list.
+
+The list and each element are evaluated to weak head normal form, in order, as the vector itself is evaluated, which borrowing it does.
+A placeholder such as @undefined@ therefore raises then, and expensive elements are computed one after another by the thread that evaluates the vector, rather than by the branches that read them.
+To keep an expensive GC-owned element lazy, store it in a lazy box, such as t'Prelude.Linear.Ur'.
+A lazy field inside an element, such as the component of a pair, stays unevaluated; see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+-}
 fromList :: [a] %1 -> Linearly %1 -> Vector a
 {-# NOINLINE fromList #-}
 fromList = GHC.noinline $ Unsafe.toLinear \as l ->
-  l `lseq` do
-    Vector $!
-      unsafePerformIO $!
-        Unsafe.toLinear V.unsafeThaw $!
-          Unsafe.toLinear V.fromList as
+  l `lseq` (Vector $! unsafePerformIO (thawEvaluated as))
+
+-- | Store the elements of a list in a new mutable vector, each evaluated to weak head normal form.
+thawEvaluated :: [a] -> NonLinear.IO (MV.IOVector a)
+-- See Note [Stored contents are evaluated after noDuplicate#] in "Data.Ref.Linear.Unlifted.Internal".
+thawEvaluated as = evaluate (G.unstream (evaluatingBundle as)) NonLinear.>>= V.unsafeThaw
 
 -- | Convert a 'V.Vector' (from @vector@ package) to a 'Vector'.
 fromVector :: V.Vector a -> Linearly %1 -> Vector a
@@ -212,9 +221,11 @@ set i a v = DataFlow.do
 
 -- | 'set' without bound check.
 unsafeSet :: (α >= β) => Int -> a %1 -> Mut α (Vector a) %1 -> BO β (a, Mut α (Vector a))
-unsafeSet = Unsafe.toLinear3 \i !a mut@(UnsafeAlias (Vector v)) -> unsafeSystemIOToBO do
+unsafeSet = Unsafe.toLinear3 \i a mut@(UnsafeAlias (Vector v)) -> unsafeSystemIOToBO do
+  -- WHNF forcing stays inside the guarded run; see Note [Demand stays inside a BO run] in "Control.Monad.Borrow.Pure.BO.Internal".
+  stored <- evaluateStored a
   !old <- MV.unsafeRead v i
-  MV.unsafeWrite v i a
+  MV.unsafeWrite v i stored
   NonLinear.pure (old, mut)
 
 -- | 'get' without bounds check.
@@ -266,8 +277,10 @@ get i v = DataFlow.do
 unsafeUpdate :: (α >= β) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))
 unsafeUpdate i = Unsafe.toLinear2 \k (UnsafeAlias v) -> Control.do
   a <- unsafeSystemIOToBO $ MV.unsafeRead (content v) i
-  (!b, !a') <- k a
-  () <- unsafeSystemIOToBO $ Unsafe.toLinear3 MV.unsafeWrite (content v) i a'
+  (b, a') <- k a
+  -- WHNF forcing stays inside the guarded run; see Note [Demand stays inside a BO run] in "Control.Monad.Borrow.Pure.BO.Internal".
+  b <- unsafeSystemIOToBO (Unsafe.toLinear evaluateStored b)
+  () <- unsafeSystemIOToBO $ Unsafe.toLinear (\x -> evaluateStored x NonLinear.>>= MV.unsafeWrite (content v) i) a'
   Control.pure $ (b, UnsafeAlias v)
 
 update :: (α >= β) => Int -> (a %1 -> BO β (b, a)) %1 -> Mut α (Vector a) %1 -> BO β (b, Mut α (Vector a))

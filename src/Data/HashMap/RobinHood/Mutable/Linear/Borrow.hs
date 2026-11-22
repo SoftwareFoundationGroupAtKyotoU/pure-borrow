@@ -5,19 +5,10 @@
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 {- |
-A borrow-aware Robin Hood hash table, to be mutated as @'Mut' α ('HashMap' k v)@.
+A borrow-aware Robin Hood hash table, using backward-shift deletion, to be mutated as @'Mut' α ('HashMap' k v)@.
 
-This is "Data.HashMap.RobinHood.Mutable.Linear" behind a linear
-'Data.Ref.Linear.Ref'. The indirection is what makes the table usable through
-a borrow at all: the owned table replaces its backing array when it grows, so
-a mutation produces a new table value, and through a borrow there is nowhere
-to thread that value back to. Writing it into the reference instead means a
-growth is visible to every enclosing borrow without the enclosing structure
-being rebuilt.
-
-Keys and values are GC-owned, as in the underlying table. Consequently a
-lookup returns @'Ur' ('Maybe' v)@ rather than a borrow of the stored value,
-and duplicating a table copies only its slot array.
+Its mutations and queries are 'BO' actions on a borrow of the table.
+Keys and values are GC-owned, so a lookup returns @'Ur' ('Maybe' v)@ rather than a borrow of the stored value.
 
 This module is intended to be imported qualified.
 -}
@@ -61,9 +52,9 @@ import Control.Monad.Borrow.Pure
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Bifunctor.Linear qualified as Bi
 import Data.Functor.Linear qualified as Data
-import Data.HashMap.RobinHood.Mutable.Linear (Hashable)
-import Data.HashMap.RobinHood.Mutable.Linear qualified as Raw
 import Data.HashMap.RobinHood.Mutable.Linear.Borrow.Internal
+import Data.HashMap.RobinHood.Mutable.Linear.Internal qualified as Raw
+import Data.Hashable (Hashable)
 import Data.Ref.Linear qualified as Ref
 import Data.Ref.Linear.Borrow qualified as Ref
 import Prelude.Linear hiding (insert, lookup, take)
@@ -254,7 +245,7 @@ take_ :: forall k v α. Mut α (HashMap k v) %1 -> BO α (HashMap k v)
 {-# INLINE take_ #-}
 take_ dic = Control.fmap (uncurry $ flip lseq) $ take dic
 
-{- | \(O(n)\) amortized. Union of two owned tables.
+{- | \(O(n)\) amortized. Union of two tables.
 
 The smaller table is inserted into the larger, so a key present in both takes
 the value from the table that is inserted second.
@@ -265,7 +256,7 @@ union (HashMap ref1) (HashMap ref2) = DataFlow.do
   (l, ref1) <- withLinearly ref1
   HashMap $! Ref.new (Raw.union (Ref.free ref1) (Ref.free ref2)) l
 
--- | \(O(n)\) amortized. Insert every entry of an owned table into a borrowed one.
+-- | \(O(n)\) amortized. Insert every entry of a table into a borrowed one.
 extend :: (Hashable k) => HashMap k v %1 -> Mut α (HashMap k v) %1 -> BO α (Mut α (HashMap k v))
 {-# INLINE extend #-}
 extend donor dic = Control.do

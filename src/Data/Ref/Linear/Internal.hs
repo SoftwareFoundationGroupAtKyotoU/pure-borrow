@@ -24,17 +24,26 @@ import Control.Monad.Borrow.Pure.Lifetime.Token.Internal (
   LinearOnly (..),
   LinearOnlyWitness (..),
  )
+import Control.Monad.Borrow.Pure.Utils (evaluateStored)
 import Data.Ref.Linear.Unlifted.Internal
 import GHC.TypeError
 import Prelude.Linear (Consumable (..), Dupable (..))
 import Prelude.Linear qualified as PL
 import Unsafe.Linear qualified as Unsafe
+import Prelude qualified as NonLinear
 
 -- | Linearly owned mutable reference.
 data Ref a = Ref (Ref# a)
 
 type role Ref nominal
 
+{- | Allocate a reference that owns the given value.
+
+The value is evaluated to weak head normal form as the reference itself is evaluated, which borrowing it does.
+A placeholder such as @undefined@ therefore raises then, even if nothing reads it, and an expensive value is computed by the thread that evaluates the reference, usually the parent before a 'Control.Monad.Borrow.Pure.parBO' forks, rather than by the branch that reads it.
+To keep an expensive GC-owned value lazy, store it in a lazy box, such as t'Prelude.Linear.Ur'.
+A lazy field inside the value stays unevaluated; see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+-}
 new :: a %1 -> Linearly %1 -> Ref a
 {-# INLINE new #-}
 new a lin = Ref (newRef# a lin)
@@ -78,6 +87,10 @@ unsafeReadRef :: Ref a %1 -> (a, Ref a)
 unsafeReadRef (Ref v) = case unsafeReadRef# v of
   (# a, v' #) -> (a, Ref v')
 
+{- | Replace the contents, which is unsafe, because the ownership of the previous contents is dropped.
+
+The new contents are evaluated to weak head normal form as the write runs, as 'new' evaluates what it stores; see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+-}
 unsafeWriteRef :: Ref a %1 -> a %1 -> Ref a
 {-# INLINE unsafeWriteRef #-}
 unsafeWriteRef (Ref v) a = Ref (unsafeWriteRef# v a)
@@ -95,10 +108,12 @@ unsafeReadRefBO (Ref v) = unsafeSystemIOToBO (unsafeReadRefIO# v)
 {- | Replace the contents inside 'BO', ordered by the state token after every earlier effect of the computation.
 
 This is unsafe in the same way as 'unsafeWriteRef': the ownership of the previous contents is dropped, so the caller must already have taken it over, as a read-modify-write does.
+The new contents are evaluated to weak head normal form before they are stored, inside the same run but not necessarily at this point of it, so an exception they raise is not ordered with the run's other effects.
 -}
 unsafeWriteRefBO :: Ref a -> a %1 -> BO α ()
 {-# INLINE unsafeWriteRefBO #-}
-unsafeWriteRefBO (Ref v) = Unsafe.toLinear \ !a -> unsafeSystemIOToBO (unsafeWriteRefIO# v a)
+-- See Note [Demand stays inside a BO run] in "Control.Monad.Borrow.Pure.BO.Internal".
+unsafeWriteRefBO (Ref v) = Unsafe.toLinear \a -> unsafeSystemIOToBO (evaluateStored a NonLinear.>>= unsafeWriteRefIO# v)
 
 instance
   (Unsatisfiable (ShowType (Ref a) :<>: Text " cannot be copied!" :$$: Text "It is mutable: clone a shared borrow of it inside BO with 'clone' instead.")) =>
@@ -108,8 +123,8 @@ instance
 
 {- | The contents are cloned through a shared borrow of them, with their own 'Clone', into a fresh reference.
 
-The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same reference at once, unless the contents are still an unevaluated call that updates memory in place, such as linear-base's @Data.Array.Mutable.Linear.map@ or the owned hash map's @insert@.
-'new' stores its argument unevaluated, so evaluate such a call before storing it, as in @Ref.new $! Array.map f arr@: see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+The original is only read, so any number of 'Control.Monad.Borrow.Pure.parBO' branches may clone the same reference at once, unless the contents hold, in a lazy field, a call that is not evaluated yet and updates memory in place, such as linear-base's @Data.Array.Mutable.Linear.map@: see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+'new' evaluates the contents themselves.
 -}
 instance (Clone a) => Clone (Ref a) where
   -- See Note [Cloning the contents of a shared borrow].

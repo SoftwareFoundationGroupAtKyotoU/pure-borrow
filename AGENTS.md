@@ -286,6 +286,10 @@ Includes a demonstrative in-place parallel `qsort` (budgeted `parBO`; the heavie
   A development note, `Note [...]`, is for whoever maintains the library and never appears in the API reference, so a user cannot follow a pointer to one.
   A Haddock comment therefore never mentions a note at all, not even as "see Note [...]", and that holds for every Haddock comment, including those in `.Internal` and `.Unsafe` modules.
   If a Haddock comment seems to need a note, what goes where is misclassified: put what the user needs in the Haddock comment, the rest in the note, and cite the note from a plain comment at the code.
+- **Golden rule: name the module of every name that several modules export.** Many modules export `fromList`, `size`, `swap`, `Vector` or `HashMap`, so a bare one leaves the reader to guess which is meant.
+  In every kind of prose — release notes, Haddock, source comments, notes and the agent skills — write the qualified name, such as `Data.Vector.Mutable.Linear.Borrow.fromList`, or say whose it is, as in the `fromList` of `Data.Vector.Mutable.Linear.Borrow`; only the documentation of a module may name its own exports bare.
+  A qualified alias in an example, such as `Array.map`, needs a word on which module it stands for.
+  Call a data structure by its full description, such as the multiplicity-polymorphic vector; a shortened one, such as the multiplicity vector, no longer says what it is.
 - **`Note [...]` blocks are dev notes, never Haddock.** The convention is GHC's: a note is a named, cross-referenced explanation addressed to whoever maintains the code, and it is cited from elsewhere as ``See Note [Its name]``.
   Write one in a plain block comment — `{- ... -}`, not `{- | ... -}` and not `-- |` — with the name on its own line underlined by `~`, and place it at the top level near what it explains rather than attached to a binding.
   It is not part of the published API: a note explains why the implementation is the way it is, whereas Haddock tells a user what a function does and what they must guarantee.

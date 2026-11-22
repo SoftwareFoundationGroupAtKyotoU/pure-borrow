@@ -9,7 +9,8 @@
 
 Each group measures the same workload three ways: this package's table, owned and through its borrow-aware wrapper, @linear-base@'s own linear hash map, and the unrestricted @unordered-containers@ map.
 The owned rows drive the table's internal @new@ and @insertMany@, which the wrapper calls and a user cannot, so they are a lower bound for the wrapper rather than an API of their own.
-The expensive-key groups exist because the table caches a fingerprint per slot: a key whose hash is cheap but whose equality is not is exactly where that cache pays off, and the colliding group is the extreme of that, where every key lands in one bucket and only the fingerprint can reject a candidate without a full comparison.
+The expensive-key groups exist because the table caches a fingerprint per slot: a key whose hash is cheap but whose equality is not is exactly where that cache pays off.
+The colliding group is the opposite extreme, where every key has the same hash, so the fingerprint rejects no candidate and every probe step has to compare two keys.
 -}
 module PureBorrow.Bench.HashMap (
   test_hashMap,
@@ -253,8 +254,7 @@ test_hashMap =
             , bench "linear-base" $ nf (benchLookupLinearBase kvs) (map fst kvs)
             , bench "unordered-containers" $ nf (benchLookupUnordered kvs) (map fst kvs)
             ]
-      | -- Every key lands in one bucket, so the workload is quadratic; the
-      -- large size would dominate the whole suite's wall clock.
+      | -- Every key lands in one bucket, so the workload is quadratic.
       n <- collidingSizes
       ]
   ]
@@ -262,5 +262,6 @@ test_hashMap =
 sizes :: [Int]
 sizes = [100, 1000, 10000]
 
+-- | Sizes of the colliding group, up to the 128 keys of one hash that this package's table holds.
 collidingSizes :: [Int]
-collidingSizes = [100, 1000]
+collidingSizes = [100, 128]

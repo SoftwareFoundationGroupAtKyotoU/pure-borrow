@@ -727,7 +727,7 @@ maxBucketsPerEntry = 64
 
 -- | The error of an insertion whose key collides with more keys than a table can hold together.
 collidingKeysMessage :: NonLinear.String
-collidingKeysMessage = "Data.HashMap.RobinHood: too many keys collide: more than 128 keys have the same hash, or many hashes are each shared by dozens of keys; give the key type a Hashable instance under which fewer keys share a hash (see \"Colliding keys\" in the module's documentation)"
+collidingKeysMessage = "Data.HashMap.RobinHood: too many keys collide: more than 128 keys have the same hash, or many hashes are each shared by dozens of keys; this is expected to be rare, so please report it to the developers of pure-borrow, with a reproduction if possible (see \"Colliding keys\" in the module's documentation)"
 
 {-
 Note [Growing to separate colliding keys]

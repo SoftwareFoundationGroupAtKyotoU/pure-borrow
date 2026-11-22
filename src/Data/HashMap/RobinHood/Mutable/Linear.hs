@@ -12,11 +12,10 @@ This module is intended to be imported qualified.
 
 = Colliding keys #collisions#
 
-A table holds at most 128 keys with the same hash, and fewer when other keys collide with them, as happens where many hashes are each shared by dozens of keys.
-'fromList' raises an error, rather than lose an entry, when a table cannot hold the keys of the list: more than 128 keys of one hash, dozens of keys on each of many hashes, or keys chosen to collide by someone who knows their 'Hashable' instance.
-Keys whose hashes mostly differ practically never raise it.
-If yours do, give the key type a 'Hashable' instance under which fewer keys share a hash.
-Do not build a table from keys that an adversary chooses where failing is not acceptable.
+A table holds at most 128 keys with the same hash, and fewer when other keys collide with them.
+'fromList' raises an error, rather than lose an entry, when a table cannot hold the keys of the list.
+We anticipate that such collisions rarely occur.
+If you see the error, it may be a bug in this implementation or a failure of its design, so please report it to the developers, with a reproduction if possible.
 -}
 module Data.HashMap.RobinHood.Mutable.Linear (
   HashMap,

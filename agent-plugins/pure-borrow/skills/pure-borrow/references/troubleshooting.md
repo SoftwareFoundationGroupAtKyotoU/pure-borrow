@@ -97,7 +97,7 @@ Work through a borrow of the element (`VL.get` returns one), or `clone` it insid
 ## `too many keys collide` from a Robin Hood hash map
 
 A table of `Data.HashMap.RobinHood.Mutable.Linear` or `Data.HashMap.RobinHood.Mutable.Linear.Borrow` holds at most 128 keys with the same hash, and fewer when other keys collide with them; an insertion past that raises this error instead of losing an entry.
-Give the key type a `Hashable` instance under which fewer keys share a hash.
+The library expects such collisions to be rare, so report the error to its developers, with a reproduction if possible.
 
 ## `Not in scope: 'DataFlow.fail'`
 

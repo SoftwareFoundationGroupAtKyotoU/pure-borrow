@@ -56,7 +56,7 @@ So every primitive and safe constructor that takes a value linearly and stores i
 The value must be evaluated once, where one thread does it, and GHC must not see the demand on it.
 
 Where it is evaluated.
-The primitives and constructors that open their own 'GHC.runRW#' or 'System.IO.Unsafe.unsafePerformIO', 'newRef#' and 'unsafeWriteRef#' here and the @fromList@ of the boxed, unboxed and multiplicity vectors, evaluate the value after 'GHC.noDuplicate#', in the same 'GHC.runRW#' as their effect.
+The primitives and constructors that open their own 'GHC.runRW#' or 'System.IO.Unsafe.unsafePerformIO', 'newRef#' and 'unsafeWriteRef#' here and the @fromList@ of "Data.Vector.Mutable.Linear.Borrow", of "Data.Vector.Unboxed.Mutable.Linear.Borrow" and of the multiplicity-polymorphic vector of "Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity", evaluate the value after 'GHC.noDuplicate#', in the same 'GHC.runRW#' as their effect.
 Two threads that enter one unevaluated call of such a constructor then evaluate the value once: the one that reaches the guard second finds the call claimed, and waits.
 The writes through a 'Control.Monad.Borrow.Pure.Mut' ('set', 'update', 'push' and 'write' of the vectors, and the updates of "Data.Ref.Linear.Borrow") evaluate the value where they run, in a 'Control.Monad.Borrow.Pure.BO' action, which runs after the guard of its run.
 'atomicModify#' and 'atomicModify_#' store @f x@ unevaluated and evaluate it right after, under their own guard.

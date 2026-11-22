@@ -569,11 +569,11 @@ test_storedCall =
         runStored (storedCase Clones inPairedVector (inFirst firstOfVector)) >>= assertRanOnce
     , testCase "the boxed Vector.fromList left unevaluated in a pair, of a list whose first cell makes the call" do
         runStored (storedCase Clones inPairedVectorOfCell (inFirst firstOfVector)) >>= assertRanOnce
-    , testCase "the multiplicity vector's fromList at One" do
+    , testCase "the multiplicity-polymorphic vector's fromList at One" do
         runStored (storedCase Clones inOwningVector firstOfOwningVector) >>= assertRanOnce
-    , testCase "the multiplicity vector's fromList at One left unevaluated in a pair" do
+    , testCase "the multiplicity-polymorphic vector's fromList at One left unevaluated in a pair" do
         runStored (storedCase Clones inPairedOwningVector (inFirst firstOfOwningVector)) >>= assertRanOnce
-    , testCase "the multiplicity vector's write at One" do
+    , testCase "the multiplicity-polymorphic vector's write at One" do
         runStored (storedCase Clones writtenToOwningVector firstOfOwningVector) >>= assertRanOnce
     , testCase "the unboxed Vector.fromList of DoNotUnboxLazy" do
         runStored (storedCase Clones inUnboxed firstOfUnboxed) >>= assertRanOnce
@@ -595,7 +595,7 @@ test_storedCall =
         runStored (storedCase Clones (inPairedWriteBy pushToGrowable) (inFirst firstOfGrowable)) >>= assertRanOnce
     , testCase "the unboxed GrowableVector.push, of a call passed to the function that writes, left unevaluated in a pair" do
         runStored (storedCase Clones (inPairedWriteBy pushToUnboxedGrowable) (inFirst firstOfUnboxedGrowable)) >>= assertRanOnce
-    , testCase "the multiplicity vector's write at One, of a call passed to the function that writes, left unevaluated in a pair" do
+    , testCase "the multiplicity-polymorphic vector's write at One, of a call passed to the function that writes, left unevaluated in a pair" do
         runStored (storedCase Clones (inPairedWriteBy writeToOwningVector) (inFirst firstOfOwningVector)) >>= assertRanOnce
     , testCase "Data.Ref.Linear.Borrow.modify, of a call passed to the function that writes, left unevaluated in a pair" do
         runStored (storedCase Clones (inPairedWriteBy modifyRef) (inFirst readRef)) >>= assertRanOnce

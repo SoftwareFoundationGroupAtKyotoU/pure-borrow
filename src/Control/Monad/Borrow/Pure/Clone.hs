@@ -15,7 +15,8 @@
 
 = Writing an instance by hand #hand-written#
 
-Derive an instance when you can, in one of the ways listed under 'Clone'.
+Derive an instance when you can: via t'AsCopyable' for a 'Copyable' type, with @deriving newtype@ for a newtype over a type that has one, or from the default method for a record or sum type whose fields have one, as the documentation of the class 'Clone' details.
+Store an immutable, GC-owned value, such as a @Text@, as @t'Ur' Text@ instead.
 Write one by hand only for a type that holds a resource with no instance, and write it for a newtype of your own rather than as an orphan, which would clash with an instance that this library or the resource's package adds later.
 
 Such an instance must leave the original to its owner, since shared borrows of it may be live, in this thread or in a 'Control.Monad.Borrow.Pure.parBO' sibling.

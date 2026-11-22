@@ -134,7 +134,7 @@ constant =
 
 {- | \(O(n)\). Move a linear list into a new vector.
 
-Each element is evaluated to weak head normal form as it is stored, as 'Data.Vector.Unboxed.Mutable.Linear.Borrow.fromList' does; see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
+Each element is evaluated to weak head normal form as it is stored, as the fixed unboxed vector's @fromList@ does; see [Contents that are not evaluated yet]("Control.Monad.Borrow.Pure.Clone#lazy").
 -}
 fromList ::
   (U.Unbox a) =>

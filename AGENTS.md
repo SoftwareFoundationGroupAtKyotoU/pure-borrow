@@ -69,6 +69,7 @@ This is not hypothetical: a merge that kept every suite green locally at `-O1` f
 ### Tests — tasty + tasty-discover (property tests via `falsify`)
 
 `test/Main.hs` is only the `tasty-discover` driver (`-optF --tree-display`); real tests live in `test/**/*Spec.hs`, in modules mirroring the source tree.
+The other test suites have the same layout: the `Main.hs` of `pure-borrow-no-state-hack`, `pure-borrow-unoptimised` and `pure-borrow-inspection` is only the driver, and their tests are the `test_` bindings of the modules it discovers, a `*Spec` module beside each kernel module or, for an inspection, the module that states the obligations.
 Filter with tasty's `-p`:
 
 ```bash
@@ -86,7 +87,7 @@ A module of `pure-borrow-test` compiled at `-O0`, as its `TypingCases` modules a
 After a plain `-O0` module, the `-O2` modules of `pure-borrow-test` called `Clone (Array a)` through its dictionary instead of inlining it as user code at `-O2` does, so a test of what the optimiser does to library code tested nothing.
 `bash ci/scripts/check-o0-test-modules.sh` checks this rule, and CI runs it.
 With the flag, though, `-O0` still inlines the library's `INLINE` functions, which a user's `-O0` module or GHCi never sees.
-So a test of what an `-O0` user gets goes into a component of its own, with every module at plain `-O0`, as `pure-borrow-unoptimised` does.
+So a test of what an `-O0` user gets goes into a component of its own, with every test module at plain `-O0`, as `pure-borrow-unoptimised` does.
 
 Two kinds of failing test look superficially alike here, and they encode opposite intentions.
 Never convert one into the other.

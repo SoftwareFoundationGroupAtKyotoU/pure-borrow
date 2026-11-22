@@ -2,7 +2,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 
 module PureBorrow.Inspection.MultiStoreScan (
-  tests,
+  test_multiStoreScan,
   hotWorker,
   boxedContentProjection,
   unboxedContentProjection,
@@ -56,8 +56,8 @@ unboxedContentProjection ::
 {-# NOINLINE unboxedContentProjection #-}
 unboxedContentProjection = multiStoreScanUnboxedContentProjection
 
-tests :: TestTree
-tests =
+test_multiStoreScan :: TestTree
+test_multiStoreScan =
   testGroup
     "multi-store scan"
     [ $( inspectTest

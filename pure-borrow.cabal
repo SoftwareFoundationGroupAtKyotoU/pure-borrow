@@ -288,6 +288,9 @@ test-suite pure-borrow-inspection
     -O2
     -fplugin=Test.Tasty.Inspection.Plugin
 
+  build-tool-depends:
+    tasty-discover:tasty-discover >=5.0.1
+
   build-depends:
     pure-borrow,
     pure-borrow:test-bench-common,
@@ -307,15 +310,23 @@ test-suite pure-borrow-no-state-hack
   -- cabal-gild: discover test-no-state-hack --exclude=test-no-state-hack/Main.hs
   other-modules:
     PureBorrow.NoStateHack.ClosedRun
+    PureBorrow.NoStateHack.ClosedRunSpec
     PureBorrow.NoStateHack.ForcedLinearly
+    PureBorrow.NoStateHack.ForcedLinearlySpec
     PureBorrow.NoStateHack.ForcedToken
+    PureBorrow.NoStateHack.ForcedTokenSpec
     PureBorrow.NoStateHack.Owners
+    PureBorrow.NoStateHack.OwnersSpec
     PureBorrow.NoStateHack.Scopes
+    PureBorrow.NoStateHack.ScopesSpec
 
   ghc-options:
     -O2
     -threaded
     -fno-state-hack
+
+  build-tool-depends:
+    tasty-discover:tasty-discover >=5.0.1
 
   build-depends:
     pure-borrow,
@@ -331,8 +342,12 @@ test-suite pure-borrow-unoptimised
   -- cabal-gild: discover test-unoptimised --exclude=test-unoptimised/Main.hs
   other-modules:
     PureBorrow.Unoptimised.Ordering
+    PureBorrow.Unoptimised.OrderingSpec
 
   ghc-options: -threaded
+  build-tool-depends:
+    tasty-discover:tasty-discover >=5.0.1
+
   build-depends:
     pure-borrow,
     tasty,

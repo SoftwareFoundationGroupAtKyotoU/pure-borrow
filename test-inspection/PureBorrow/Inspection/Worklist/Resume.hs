@@ -3,7 +3,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 
 module PureBorrow.Inspection.Worklist.Resume (
-  tests,
+  test_resume,
   resumeEdgeWorker,
   openOnceEdgeWorker,
 ) where
@@ -63,8 +63,8 @@ openOnceEdgeWorker ::
 {-# NOINLINE openOnceEdgeWorker #-}
 openOnceEdgeWorker = worklistPureBorrowOpenOnceEdgeWorker
 
-tests :: TestTree
-tests =
+test_resume :: TestTree
+test_resume =
   testGroup
     "worklist resume"
     [ $( inspectTest

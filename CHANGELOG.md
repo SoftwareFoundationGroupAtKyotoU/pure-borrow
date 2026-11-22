@@ -6,7 +6,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Breaking changes
 
-- In `Data.Vector.Mutable.Growable.Linear.Borrow`, `Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow` and `Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted`, `size`, `capacity` and `getContents` are `BO` actions, since as pure functions of a borrow they could return the size or contents from another point of the computation, even from after the borrow's lifetime had ended; in the first module, with `Fixed` standing for `Data.Vector.Mutable.Linear.Borrow`:
+- In the three growable vector modules, `size`, `capacity` and `getContents` are `BO` actions, since as pure functions of a borrow they could return the size or contents from another point of the computation, even from after the borrow's lifetime had ended:
 
     ```haskell
     -- before
@@ -15,10 +15,10 @@ Each breaking change closes a soundness hole: a program that typechecks against 
     getContents :: (α >= β) => Borrow bk α (GrowableVector a) %1 -> BO β (Borrow bk α (Fixed.Vector a))
     ```
 
-  Bind the result with `<-`, and `move` a shared projection before passing it to a reader that takes it unrestricted, such as `Fixed.copyAt`: `Ur content <- move Control.<$> getContents shared`, with `Control` standing for `Control.Functor.Linear`.
+  Bind the result with `<-`, and `move` a shared projection before passing it to a reader that takes it unrestricted, such as `Fixed.copyAt`: `Ur content <- move Control.<$> getContents shared`.
   A helper that calls one of them may need `α >= β` in its signature.
 - `LinearOnlyWitness` now has a `representational` role instead of the `phantom` one it had before, which unsoundly allowed virtually any type to derive `LinearOnly`.
-- `Control.Monad.Borrow.Pure.BO.nowStatic :: BO α (Now Static)` replaces `Control.Monad.Borrow.Pure.Lifetime.Token.nowStatic :: Now Static`.
+- `nowStatic :: BO α (Now Static)` replaces the top-level `nowStatic :: Now Static`, and has moved to `Control.Monad.Borrow.Pure.BO`.
   The previous, pure `nowStatic` could unsoundly let a `Linearly` token spill into a non-linear context.
 - Fix the bug where the subtyping relation `(<:)` wrongly made `Many` a subtype of `One`, which allowed any nonlinear function to be unsoundly upcast into a linear one.
 - `Control.Monad.Borrow.Pure.Experimental.Loop.foldBorrowOf` is removed: it ran the `Fold` purely on the value behind a borrow, so reads of a mutable container were not ordered by `BO` and could see writes made after the borrow's lifetime.
@@ -27,15 +27,15 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   It rejects a borrow of an `Either e a` or `(e, a)` with "Use splitEither directly!" or "Use splitPair instead!".
 - `assocBOEq`, `assocBorrowEq` and `assocLendEq` are removed, since they let a program prove any two lifetimes equal and reclaim a resource while it was still borrowed.
   Use `assocLBO`, `assocRBO`, `assocBorrowL`, `assocBorrowR`, `assocLendL` or `assocLendR` instead.
-- `Data.Vector.Mutable.Linear.Borrow.modifyBoxedVector` requires `Movable a`, since its callback could store a linearly owned value, such as a `Ref`, into the GC-owned result.
-- `modifyBoxedMVector` of the same module is renamed `unsafeModifyBoxedMVector`, with the same `Movable` requirement.
+- `modifyBoxedVector` requires `Movable a`, since its callback could store a linearly owned value, such as a `Ref`, into the GC-owned result.
+- `modifyBoxedMVector` is renamed `unsafeModifyBoxedMVector`, with the same `Movable` requirement.
   The caller keeps the storage, so after catching an exception from it the storage must not be read or reused.
-- `Clone` for `Ref`, for `Data.Vector.Mutable.Linear.Borrow.Vector` and for the multiplicity-polymorphic vector of `Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity` requires `Clone` of the contents instead of `Dupable`, since cloning through `Dupable` could consume the original or hand it to the clone while a `Share` could still read it.
-  A `Copyable` type gets the instance with `deriving via AsCopyable T instance Clone T`, a record or sum of clonable fields with `deriving anyclass instance Clone T` and a `Generics.Linear.Generic` instance, a newtype with `deriving newtype Clone`, and an immutable type such as `Data.Text.Text` can be stored as `Ur Text`.
-  Contents that are `Clone` but not `Dupable`, as in a `Ref` of a `Data.Vector.Mutable.Linear.Borrow.Vector` of `Ref Int`, can now be cloned, and linear-base's `Data.Array.Mutable.Linear.Array`, `Data.Vector.Mutable.Linear.Vector`, `Data.HashMap.Mutable.Linear.HashMap` and `Data.Set.Mutable.Linear.Set` still can.
-- The `fromList` of `Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity`, for the multiplicity-polymorphic vector, requires `KnownMultiplicity p`, which both multiplicities have, so that it evaluates its elements only where it owns them.
+- `Clone` for `Ref`, the boxed `Vector` and the multiplicity-polymorphic vector requires `Clone` of the contents instead of `Dupable`, since cloning through `Dupable` could consume the original or hand it to the clone while a `Share` could still read it.
+  A `Copyable` type gets the instance with `deriving via AsCopyable T instance Clone T`, a record or sum of clonable fields with `deriving anyclass instance Clone T` and a linear-generics `Generic` instance, a newtype with `deriving newtype Clone`, and an immutable type such as `Text` can be stored as `Ur Text`.
+  Contents that are `Clone` but not `Dupable`, as in `Ref (Vector (Ref Int))`, can now be cloned, and linear-base's `Array`, `Vector`, `HashMap` and `Set` still can.
+- The multiplicity-polymorphic vector's `fromList` requires `KnownMultiplicity p`, which both multiplicities have, so that it evaluates its elements only where it owns them.
   A function polymorphic in `p` that calls it is rejected with "No instance for `KnownMultiplicity p`"; add the constraint to its signature.
-- The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)`, `Clone (Array a)` for the `Array` of `Data.Array.Mutable.Linear`, `Clone` for the vectors of `Data.Vector.Mutable.Growable.Linear.Borrow`, `Data.Vector.Unboxed.Mutable.Linear.Borrow` or `Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow`, or a `(<:)` instance for `Maybe`; delete the orphan.
+- The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)`, `Clone (Array a)` for linear-base's `Array`, `Clone` for a boxed growable or unboxed vector, or a `(<:)` instance for `Maybe`; delete the orphan.
   Call sites of an old shallow vector-cloning orphan now need `Clone a`, since those vectors own their elements.
   An orphan as general as the new instance, such as `Clone (Array a)`, is rejected with "Duplicate instance declarations"; a narrower one, such as `Clone (Array Int)`, compiles, and each use of it is rejected with "Overlapping instances".
 
@@ -46,12 +46,12 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   A branch in a loop that does not allocate cannot be stopped until the loop ends; compile the module that contains such a loop with `-fno-omit-yields` if the rethrow must be prompt.
   An asynchronous exception to the caller, such as a `timeout`, does not stop the branches: forcing the interrupted value again collects their results, and a value that is dropped instead leaves them running to completion.
   A computation's thread stays in memory after it finishes: the second computation's until the first one finishes, and the first computation's until the thread running `parBO` runs again; `Par` and `mapConcurrentlyOf` over a list put the short computation first.
-- `update`, `modify`, `swap` and `readShare` of `Data.Ref.Linear.Borrow`, and the queries, `take`, `take_` and `swap` of `Data.HashMap.RobinHood.Mutable.Linear.Borrow`, read and write inside `BO`, at their place in the sequence; a write could previously land only when its result was forced, after the lifetime had ended.
+- `Data.Ref.Linear.Borrow.update`, `modify`, `swap` and `readShare`, and the borrow-aware hash map's queries, `take`, `take_` and `swap`, read and write inside `BO`, at their place in the sequence; a write could previously land only when its result was forced, after the lifetime had ended.
 - `reclaim` forces the `EndToken` it is discharged with; `withEnd` leaves it alone.
-- `copy` of a mutable container is rejected with a message that points to `clone` inside `BO`, for linear-base's `Data.Array.Mutable.Linear.Array`, `Data.Vector.Mutable.Linear.Vector`, `Data.HashMap.Mutable.Linear.HashMap` and `Data.Set.Mutable.Linear.Set` as well as pure-borrow's references and vectors.
-- `Data.Ref.Linear.new` and `Data.Ref.Linear.unsafeWriteRef`, and the `fromList` of `Data.Vector.Mutable.Linear.Borrow`, `Data.Vector.Unboxed.Mutable.Linear.Borrow`, `Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow` and `Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity`, evaluate the value they store to weak head normal form; the multiplicity-polymorphic vector of the last module does so only at `One`, where it owns its elements.
+- `copy` of a mutable container is rejected with a message that points to `clone` inside `BO`, for linear-base's `Array`, `Vector`, `HashMap` and `Set` as well as pure-borrow's references and vectors.
+- `Data.Ref.Linear.new` and `unsafeWriteRef`, and the `fromList` of the boxed, unboxed, unboxed growable and multiplicity-polymorphic vectors, evaluate the value they store to weak head normal form; the multiplicity-polymorphic vector does so only at `One`, where it owns its elements.
   So do the writes through a `Mut`, and storing a `Share` evaluates the value it points to.
-  The thread that evaluates an owner, usually the parent before a `parBO` forks, therefore computes its contents, and each of those `fromList`s its elements one after another, where branches that read different contents used to compute them in parallel; the `fromList` and `union` of `Data.HashMap.RobinHood.Mutable.Linear.Borrow` likewise build their tables as the map is evaluated.
+  The thread that evaluates an owner, usually the parent before a `parBO` forks, therefore computes its contents, and a `fromList` its elements one after another, where branches that read different contents used to compute them in parallel; the borrow-aware hash map's `fromList` and `union` likewise build their tables as the map is evaluated.
   A placeholder such as `undefined` raises when its owner is borrowed, even if nothing reads it, and in a worker when the `divide` of `divideAndConquer` or `divideAndConquer'` returns it inside an owner (see "Clarified").
   To keep an expensive value for the branch that needs it, build it there, or store a GC-owned one in a lazy box such as `Ur`, which is evaluated only to the box.
 
@@ -60,38 +60,38 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - A pure read of an owner handed back by `runBO`, `runBOLend`, `modifyBO`, `modifyBO_`, `reclaim` or a scope that discharges an `After` sees the writes made during the scope; at `-O2` it could return what the owner held before the scope.
 - `reclaim` fails on a bottom `EndToken` given to `withEnd`, instead of handing back an owner whose borrows are still live.
 - Every allocation made with a `Linearly` token returns a fresh resource, even when the token is forced or the `runBO` that makes it has no free variables; at `-O2` two such allocations could return one reference.
-- `Data.Ref.Linear.new`, `Data.Ref.Linear.atomicModify`, `Data.Ref.Linear.atomicModify_` and `Data.Ref.Linear.unsafeWriteRef`, and runs of `runBO` and `modifyBO`, perform their effects once, even when several threads force the same call, as both branches of a `parBO` can through a `Share`; an increment could be applied twice, and two branches could see different references.
+- `Data.Ref.Linear.new`, `atomicModify`, `atomicModify_` and `unsafeWriteRef`, and runs of `runBO` and `modifyBO`, perform their effects once, even when several threads force the same call, as both branches of a `parBO` can through a `Share`; an increment could be applied twice, and two branches could see different references.
 - `Data.Ref.Linear.atomicModify_` crashed on a `Ref Int`, and on a `Ref` of a list stored the new head instead of the new list.
-  `Data.Ref.Linear.atomicModify` stored the first component of its function's result, meant to be returned, instead of the second, the new contents.
-- Cloning one shared `Ref` of a `Data.Array.Mutable.Linear.Array` more than once, as a loop does, gave every clone the same array at `-O2`, so a write to one clone reached them all.
+  `atomicModify` stored the first component of its function's result, meant to be returned, instead of the second, the new contents.
+- Cloning one shared `Ref` of a linear-base `Array` more than once, as a loop does, gave every clone the same array at `-O2`, so a write to one clone reached them all.
   Each clone now copies the array.
 - The work-stealing scheduler behind `divideAndConquer`, `divideAndConquer'`, `qsortDC` and `fftDC` runs every task exactly once; it could run a task twice and lose another, so that `qsortDC` occasionally hung or returned a vector it had not sorted.
 - `stealHalf` of `Control.Concurrent.Queue.ChaseLev` may return fewer than half the tasks, and the deque no longer misplaces its elements when it grows or, on ARM64, hands a thief what a slot held before the owner's write.
-- Deriving `Control.Monad.Borrow.Pure.Experimental.Loop.Foldable` via `Generics.Linear.Generically1` failed for every type with a field mentioning its parameter, for lack of instances for `Par1` and `:.:` of `Generics.Linear`.
+- Deriving `Control.Monad.Borrow.Pure.Experimental.Loop.Foldable` via `Generics.Linear.Generically1` failed for every type with a field mentioning its parameter, for lack of instances for `Par1` and `:.:`.
   It still fails on a field that does not mention the parameter, such as `Int`.
-- A call that updates memory in place, such as `Array.map f arr` with `Array` standing for `Data.Array.Mutable.Linear`, runs once when both branches of a `parBO` read or clone through a `Share` a value that `Data.Ref.Linear.new` or the `fromList` of `Data.Vector.Mutable.Linear.Borrow`, `Data.Vector.Unboxed.Mutable.Linear.Borrow` or `Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity` stores, or that the multiplicity-polymorphic vector's `write` stores at `One`, or a value that such a call computes, as an `Int` summed from an `Array.map` is.
-  It could run twice: `Data.Ref.Linear.new (Array.map (+ 1) arr)` added 2 to some elements, a clone could copy the array halfway through, and an `Array.map` that changes the element type crashed the program.
+- A call that updates memory in place, such as linear-base's `Array.map f arr`, runs once when both branches of a `parBO` read or clone through a `Share` a value that `Data.Ref.Linear.new`, the `fromList` of the boxed, unboxed or multiplicity-polymorphic vectors, or the multiplicity-polymorphic vector's `write` at `One` stores, or a value that such a call computes, as an `Int` summed from an `Array.map` is.
+  It could run twice: `Ref.new (Array.map (+ 1) arr)` added 2 to some elements, a clone could copy the array halfway through, and an `Array.map` that changes the element type crashed the program.
   The same held for a call of one of those constructors left unevaluated where both branches reach it, such as a component of a pair, and for a list whose cells make the call as they are produced.
-  The `union` of `Data.HashMap.RobinHood.Mutable.Linear.Borrow` no longer stores its insertions unevaluated, which let two branches that looked keys up in the union lose entries or answer a lookup wrongly.
+  The borrow-aware hash map's `union` no longer stores its insertions unevaluated, which let two branches that looked keys up in the union lose entries or answer a lookup wrongly.
 
 ### Clarified
 
 - `divideAndConquer` and `divideAndConquer'` require `divide` and `conquer` to raise no exception: they do not propagate one raised during the parallel computation, and block instead.
-- The callback of `Data.Vector.Mutable.Linear.Borrow.unsafeInplace` must only rearrange elements, never duplicate, drop or replace one; `unsafeFromMutable` of the same module requires every element to be initialised.
+- The callback of `unsafeInplace` must only rearrange elements, never duplicate, drop or replace one; the boxed vector's `unsafeFromMutable` requires every element to be initialised.
 - The owners evaluate what they store, but not a lazy field inside it, such as a component of a pair or the payload of a `Just`, and not a call forced outside a `BO` action, as by a bang on an argument.
-  Such a call of `insert`, `delete` or `alter` of `Data.HashMap.RobinHood.Mutable.Linear`, or of one of linear-base's in-place operations, such as `set`, `write` and `map` of `Data.Array.Mutable.Linear`, must be evaluated before it is stored where several branches of a `parBO` reach it, with a strict field, `StrictData` or the linear `$!` of `Prelude.Linear`, as in `Just PL.$! Array.map f arr` with `PL` and `Array` standing for `Prelude.Linear` and `Data.Array.Mutable.Linear`, and so must each such call that a record, a list or a vector holds.
+  Such a call of the owned hash map's `insert`, `delete` or `alter`, or of one of linear-base's in-place operations, such as `set`, `write` and `map` of `Data.Array.Mutable.Linear`, must be evaluated before it is stored where several branches of a `parBO` reach it, with a strict field, `StrictData` or the linear `$!` of `Prelude.Linear`, as in `Just PL.$! Array.map f arr`, and so must each such call that a record, a list or a vector holds.
   Two branches that force it at once can both run it: `Array.map (+ 1)` can add 2, a clone can copy an array halfway through an update, and a linear-base container can be left inconsistent.
 
 ### New
 
 - `Consumable` for the boxed `Vector` of `Data.Vector.Mutable.Linear.Borrow`, which gives a vector of non-`Movable` elements, such as `Ref`s, a way out.
-- `Clone` for `Ur`, `Data.Monoid.Sum`, `Data.Monoid.Product`, `Data.Semigroup.Min`, `Data.Semigroup.Max`, `Data.Semigroup.Arg` and `Data.Complex.Complex`.
-- `Clone` for linear-base's `Data.Array.Mutable.Linear.Array`, `Data.Vector.Mutable.Linear.Vector`, `Data.HashMap.Mutable.Linear.HashMap` and `Data.Set.Mutable.Linear.Set`, which copies the container and shares its GC-owned elements, requiring nothing of them; a vector or hash map keeps its capacity.
-- Deep `Clone` for the `GrowableVector` of `Data.Vector.Mutable.Growable.Linear.Borrow` and for the vectors of `Data.Vector.Unboxed.Mutable.Linear.Borrow` and `Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow`, requiring `Clone a` (and `Unbox a` for the unboxed ones).
+- `Clone` for `Ur`, `Data.Monoid.Sum`, `Data.Monoid.Product`, `Min`, `Max`, `Arg` and `Complex`.
+- `Clone` for linear-base's `Array`, `Vector`, `HashMap` and `Set`, which copies the container and shares its GC-owned elements, requiring nothing of them; a `Vector` or `HashMap` keeps its capacity.
+- Deep `Clone` for the boxed growable vector and the fixed and growable unboxed vectors, requiring `Clone a` (and `Unbox a` for the unboxed families).
   Growable copies retain length and capacity and clone only initialized elements.
-- `Clone` and `Copyable` for `Data.Functor.Identity.Identity`, `Data.Ord.Down`, `Data.Functor.Const.Const`, `Data.Monoid.Dual`, `Data.Semigroup.First`, `Data.Semigroup.Last`, `Data.Semigroup.WrappedMonoid`, `Data.Monoid.Any`, `Data.Monoid.All`, `Data.Monoid.Alt`, and tuples through arity six.
+- `Clone` and `Copyable` for `Identity`, `Down`, `Const`, `Dual`, semigroup `First` and `Last`, `WrappedMonoid`, `Any`, `All`, `Alt`, and tuples through arity six.
   Newtype wrappers delegate to the contained value's instance; an unboxed representation does not imply a shallow copy is safe.
-- `Clone` for the owned hash map of `Data.HashMap.RobinHood.Mutable.Linear`, which copies its slot array; the borrow-aware hash map of `Data.HashMap.RobinHood.Mutable.Linear.Borrow` clones through it.
+- `Clone` for the owned hash map of `Data.HashMap.RobinHood.Mutable.Linear`, which copies its slot array; the borrow-aware hash map clones through it.
 - `DistributesAlias` for `NonEmpty`.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
@@ -99,19 +99,19 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Performance
 
-- `Data.Vector.Mutable.Linear.Borrow.modifyBoxedVector` is slower by one pass over the vector.
-- A `push` of `Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow` that grows the vector allocates less; the other operations of the growable vectors are unchanged.
+- `modifyBoxedVector` is slower by one pass over the vector.
+- A `push` that grows an unboxed growable vector allocates less; the other operations of the growable vectors are unchanged.
 - `parBO` is slower and allocates more, for its exception handling: a fork-join whose branches do little is noticeably slower, and the divide-and-conquer FFT and quicksort built on `parBO` slightly so.
   Its finished threads also stay in memory longer.
 - `reclaim`, the runs of the `runBO` family, `modifyBO` and `modifyBO_` included, and the scopes that discharge an `After` (`sharing'`, `reborrowing'`, `reborrowings'`, `srunBO`) are slightly slower, and each run allocates slightly more; `sharing`, `reborrowing` and the `_` variants are unchanged.
 - Owner-level operations on a `Ref` are slower when the program runs on several capabilities, and unchanged on one.
-- `clone` of a `Data.Vector.Mutable.Linear.Borrow.Vector` of references allocates more, since it copies each reference when the clone is taken; `clone` of one of values such as `Int` allocates as before.
-- `clone` of a `Data.Array.Mutable.Linear.Array`, and so of a `Ref` or a `Data.Vector.Mutable.Linear.Borrow.Vector` of arrays, is slightly slower, more so on GHC 9.10.
+- `clone` of a boxed vector of references allocates more, since it copies each reference when the clone is taken; `clone` of a vector of values such as `Int` allocates as before.
+- `clone` of a linear-base `Array`, and so of a `Ref` or boxed `Vector` of arrays, is slightly slower, more so on GHC 9.10.
   Code that clones one borrow repeatedly, as a loop does, is slower, since every clone now gets an array of its own (see "Fixed").
 - Stealing work from the deque of `Control.Concurrent.Queue.ChaseLev` is slower, more so on x86-64, though the work-stealing quicksort and FFT show no measurable slowdown.
-- Allocations that take a `Linearly` token, such as `Data.Ref.Linear.new` and the constructors of the vectors, are slightly slower.
+- Allocations that take a `Linearly` token, such as `Ref.new` and the constructors of the vectors, are slightly slower.
 - `foldBorrow` over a list or `NonEmpty` allocates more.
-- Storing a value in a `Ref` or a vector is slightly slower, since it evaluates the value, and the `fromList` of every vector module is slower; at `One`, the `fromList` of `Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity`, for the multiplicity-polymorphic vector, allocates more per element.
+- Storing a value in a `Ref` or a vector is slightly slower, since it evaluates the value, and `fromList` of the vectors is slower; at `One`, the multiplicity-polymorphic vector's `fromList` allocates more per element.
 - A loop of `modifyBO_` calls that hand the owner back is slower and allocates more, and, unless the owner is forced, it builds up a chain of delayed updates.
 
 ### Known issues

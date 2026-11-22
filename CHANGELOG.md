@@ -117,10 +117,6 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - Storing a value in a `Ref` or a vector is slightly slower, since it evaluates the value, and `fromList` of the vectors is slower; at `One`, the multiplicity-polymorphic vector's `fromList` allocates more per element.
 - A loop of `modifyBO_` calls that hand the owner back is slower and allocates more, and, unless the owner is forced, it builds up a chain of delayed updates.
 
-### Known issues
-
-- The pure operations of `Ref`, the runs of `runBO` and `modifyBO`, and a call that an owner stores can run twice when two threads force the same call in a module compiled with `-feager-blackholing`; a program on one capability is not affected.
-
 ## 0.1.0.0 - 2026-09-19
 
 ### Breaking changes

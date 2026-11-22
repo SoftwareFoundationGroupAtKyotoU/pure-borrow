@@ -603,7 +603,7 @@ test_storedCall =
         unionCase False
     , testCase "HashMap.union left unevaluated in a pair, looked up in both branches" do
         unionCase True
-    , knownRace "storing a Share evaluates the lazy field that it points to, where nothing guards the call: the known issue in the CHANGELOG" $
+    , knownRace "storing a Share evaluates the lazy field that it points to, where nothing guards the call: the obligation that the CHANGELOG states under Clarified" $
         testCase "a Share of a lazy field, stored in a Ref by one branch while the other clones the field" do
           runStored storedShareCase >>= assertRanOnce
     ]

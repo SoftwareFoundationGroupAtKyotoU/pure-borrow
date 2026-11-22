@@ -29,8 +29,8 @@ This has to hold through 'reborrowing'' and 'sharing'' too, which are the public
 The @+slow@ build restores the token-allocating implementations, so every obligation here is inverted there rather than dropped; see "PureBorrow.Inspection.Flags".
 -}
 module PureBorrow.Inspection.Sublifetime (
-  tests,
-  barrierTests,
+  test_sublifetime,
+  test_barriers,
   srunBOAt,
   endTokenAt,
   srunBO_At,
@@ -292,11 +292,11 @@ uses = expectFailBecause "the probe must call the barrier"
 
 {- | The barriers each delimiter restores through must survive as calls; see "PureBorrow.Inspection.Barriers".
 
-An expected failure passes whatever made the obligation fail, including a probe that inspection-testing cannot inspect; the obligations of 'tests' on the same probes pass only when it can, so they turn red first.
+An expected failure passes whatever made the obligation fail, including a probe that inspection-testing cannot inspect; the obligations of 'test_sublifetime' on the same probes pass only when it can, so they turn red first.
 The erased delimiters' barriers are inverted once more under @+slow@, whose delimiters restore through 'reclaim' instead; the plural one is shared by both builds.
 -}
-barrierTests :: TestTree
-barrierTests =
+test_barriers :: TestTree
+test_barriers =
   testGroup
     "delimiters restore through their barriers"
     [ uses
@@ -352,8 +352,8 @@ barrierTests =
           ]
     ]
 
-tests :: TestTree
-tests =
+test_sublifetime :: TestTree
+test_sublifetime =
   testGroup "sublifetime delimiting" $
     NonLinear.map
       ( expectFailIfBecause

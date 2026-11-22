@@ -9,7 +9,7 @@
 Every header read and write goes through the state-threaded primitives of "Data.Ref.Linear.Internal", which must inline away completely, and so must the pure, 'GHC.noinline'-wrapped read they replaced.
 -}
 module PureBorrow.Inspection.GrowableAccess (
-  tests,
+  test_growableAccess,
   boxedCopyAt,
   boxedSet,
   boxedPush,
@@ -94,8 +94,8 @@ genericPush ::
 {-# NOINLINE genericPush #-}
 genericPush = GenericGrowable.push
 
-tests :: TestTree
-tests =
+test_growableAccess :: TestTree
+test_growableAccess =
   testGroup
     "growable header access"
     [ $( inspectTest

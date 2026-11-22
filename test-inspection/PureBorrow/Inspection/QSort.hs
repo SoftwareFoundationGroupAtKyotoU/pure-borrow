@@ -4,7 +4,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module PureBorrow.Inspection.QSort (
-  tests,
+  test_qsort,
   unboxedQsort,
 ) where
 
@@ -32,8 +32,8 @@ unboxedQsort ::
 {-# NOINLINE unboxedQsort #-}
 unboxedQsort = qsort
 
-tests :: TestTree
-tests =
+test_qsort :: TestTree
+test_qsort =
   testGroup
     "qsort"
     [ $( inspectTest

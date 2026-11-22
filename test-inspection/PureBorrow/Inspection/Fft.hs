@@ -4,7 +4,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module PureBorrow.Inspection.Fft (
-  tests,
+  test_fft,
   unboxedFftCombineLoop,
 ) where
 
@@ -38,8 +38,8 @@ unboxedFftCombineLoop ::
 {-# NOINLINE unboxedFftCombineLoop #-}
 unboxedFftCombineLoop = combineLoop
 
-tests :: TestTree
-tests =
+test_fft :: TestTree
+test_fft =
   testGroup
     "FFT"
     [ $( inspectTest

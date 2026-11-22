@@ -4,7 +4,7 @@
 {-# OPTIONS_GHC -O2 #-}
 
 module PureBorrow.Inspection.GenericGrowableUnrestricted (
-  tests,
+  test_genericGrowableUnrestricted,
   boxedPush,
   unboxedPush,
 ) where
@@ -33,8 +33,8 @@ unboxedPush ::
 {-# NOINLINE unboxedPush #-}
 unboxedPush = Growable.push
 
-tests :: TestTree
-tests =
+test_genericGrowableUnrestricted :: TestTree
+test_genericGrowableUnrestricted =
   testGroup
     "generic growable unrestricted vector"
     [ $( inspectTest

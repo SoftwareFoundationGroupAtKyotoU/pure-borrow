@@ -23,7 +23,7 @@ An expected failure passes whatever made the obligation fail, including a probe 
 
 The probe is exported, as the probes of "PureBorrow.Inspection.Sublifetime" are: GHC 9.14 drops a binding that only a Template Haskell name quote mentions, and inspection-testing then reports that it is not a local name.
 -}
-module PureBorrow.Inspection.Barriers (tests, runBOReclaimAt) where
+module PureBorrow.Inspection.Barriers (test_barriers, runBOReclaimAt) where
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
@@ -55,8 +55,8 @@ unmentioned = ()
 uses :: TestTree -> TestTree
 uses = expectFailBecause "the probe must call the barrier"
 
-tests :: TestTree
-tests =
+test_barriers :: TestTree
+test_barriers =
   testGroup
     "barriers survive as calls"
     [ $( inspectTest

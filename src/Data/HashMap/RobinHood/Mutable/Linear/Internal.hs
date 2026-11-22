@@ -506,8 +506,8 @@ lookupForInsert k hm = case probeKeyForAlter k hm of
 
 {- | \(O(1)\) amortized. Insert using a plan returned by 'lookupForInsert'.
 
-The table must be the same table, with no intervening mutation. Violating
-this precondition can corrupt the Robin Hood invariants.
+The table must be the same table, with no intervening mutation.
+Violating this precondition can corrupt the table, and read or write outside its slot array.
 -}
 unsafeInsertPrepared :: InsertPlan k -> v -> HashMap k v %1 -> HashMap k v
 {-# INLINE unsafeInsertPrepared #-}

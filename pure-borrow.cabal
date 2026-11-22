@@ -142,6 +142,7 @@ library
     Data.HashMap.RobinHood.Mutable.Linear
     Data.HashMap.RobinHood.Mutable.Linear.Borrow
     Data.HashMap.RobinHood.Mutable.Linear.Borrow.Internal
+    Data.HashMap.RobinHood.Mutable.Linear.Borrow.Unsafe
     Data.HashMap.RobinHood.Mutable.Linear.Internal
     Data.Record.Linear.Borrow.Experimental.PatternMatch
     Data.Record.Linear.Borrow.Experimental.Split

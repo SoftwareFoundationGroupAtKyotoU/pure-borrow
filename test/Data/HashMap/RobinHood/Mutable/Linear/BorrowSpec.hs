@@ -17,6 +17,7 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.HashMap.RobinHood.Mutable.Linear.Borrow qualified as HM
+import Data.HashMap.RobinHood.Mutable.Linear.Borrow.Unsafe qualified as HMU
 import Data.HashMap.RobinHood.Mutable.LinearSpec.Steered (Steered (..))
 import Data.HashMap.Strict qualified as HMS
 import Data.Hashable (Hashable (..))
@@ -127,10 +128,10 @@ test_preparedInsertion = testCase "suspended lookups resume as insertions" do
     go i table
       | i NonLinear.> 256 = Control.pure table
       | otherwise = Control.do
-          (Ur plan, table) <- HM.lookupForInsert (NonLinear.show i) table
+          (Ur plan, table) <- HMU.lookupForInsert (NonLinear.show i) table
           table <- case plan of
             Left _ -> Control.pure table
-            Right plan -> HM.unsafeInsertPrepared plan i table
+            Right plan -> HMU.unsafeInsertPrepared plan i table
           go (i + 1) table
 
 test_alter :: TestTree

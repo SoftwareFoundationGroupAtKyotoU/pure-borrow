@@ -35,11 +35,6 @@ module Data.HashMap.RobinHood.Mutable.Linear.Borrow (
   alter,
   alterF,
 
-  -- * Suspended insertion
-  InsertPlan,
-  lookupForInsert,
-  unsafeInsertPrepared,
-
   -- * Query
   size,
   lookup,
@@ -67,7 +62,6 @@ import Data.Hashable (Hashable)
 import Data.Ref.Linear qualified as Ref
 import Data.Ref.Linear.Borrow qualified as Ref
 import Prelude.Linear hiding (insert, lookup, take)
-import Prelude qualified as NonLinear
 
 -- * Construction
 
@@ -157,41 +151,6 @@ alterF f key dic = Control.do
       )
       (coerceBor dic)
   Control.pure $ recoerceBor dic
-
--- * Suspended insertion
-
-{- | \(O(1)\) amortized. Look a key up, and on a miss suspend the probe.
-
-Resume the returned plan with 'unsafeInsertPrepared' to insert without a
-second traversal.
--}
-lookupForInsert ::
-  forall k v bk α.
-  (Hashable k) =>
-  k ->
-  Borrow bk α (HashMap k v) %1 ->
-  BO α (Ur (Either v (InsertPlan k)), Borrow bk α (HashMap k v))
-{-# INLINE lookupForInsert #-}
-lookupForInsert key = askRaw go
-  where
-    go :: Raw.HashMap k v %1 -> (Ur (Either v (InsertPlan k)), Raw.HashMap k v)
-    go hm = case Raw.lookupForInsert key hm of
-      (Ur result, hm) -> (Ur (NonLinear.fmap InsertPlan result), hm)
-
-{- | \(O(1)\) amortized. Resume an unsuccessful 'lookupForInsert' as an insertion.
-
-The table must not have been mutated since the plan was produced.
--}
-unsafeInsertPrepared ::
-  InsertPlan k ->
-  v ->
-  Mut α (HashMap k v) %1 ->
-  BO α (Mut α (HashMap k v))
-{-# INLINE unsafeInsertPrepared #-}
-unsafeInsertPrepared (InsertPlan plan) !v =
-  Control.fmap recoerceBor
-    . Ref.modify (Raw.unsafeInsertPrepared plan v)
-    . coerceBor
 
 -- * Query
 

@@ -96,7 +96,8 @@ basic = linearly \lin -> runBO lin Control.do
 - `runBO :: Linearly %1 -> (forall α. BO α (After α a)) %1 -> a` runs a fresh lifetime and then the `After α` post-processing; `runBO_` returns the direct result, and `runBOLend` reclaims a returned `Lend`.
 - `After α a` is a finaliser evaluated once `α` has ended; `pureAfter` builds one, and inside it `reclaim :: End α => Lend α a %1 -> a` is available.
 - Inside `pureAfter`, reclaim lenders and work with owned values.
-  A `Mut` or `Share` of the ended lifetime that the block captures still typechecks, but it can no longer be read: every read is a `BO` action in a lifetime that the ended one outlives, and only `copy` remains.
+  A borrow of the ended lifetime cannot leave through the block: `After α (Share α a)` is a valid type, but the function that delimits `α`, such as `runBO`, rejects a result that mentions `α`.
+  Nor can the block read through a borrow it captured: every read is a `BO` action in a lifetime that the ended one outlives, so only `copy` remains.
   Copy anything you need out of a borrow into `Ur` before `pureAfter`.
 - `linearly` needs a `Movable` result, so finish by converting owned resources to unrestricted values (`VL.toList` needs `Movable` elements) or freeing them.
 - `modifyBO`, `modifyBO_`, `modifyLinearOnlyBO`, and `modifyLinearOnlyBO_` wrap the whole skeleton for "mutate this owned value in place".

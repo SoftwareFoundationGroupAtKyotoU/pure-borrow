@@ -68,12 +68,3 @@ Omit `--skill '*'` to choose skills interactively, pass other `-a <agent>` names
 The skills activate automatically when an agent works on Linear Haskell or pure-borrow code, or when you mention them.
 In Claude Code, plugin skills are namespaced, e.g. `/pure-borrow:pure-borrow`.
 The `pure-borrow` skill tells the agent to load `linear-haskell` first, so keep both installed.
-
-## Maintenance
-
-- `SKILL.md` frontmatter uses only the Agent Skills fields (`name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`), and `name` must equal the skill's directory name.
-- `plugin.json` has a closed schema: tool-specific settings (such as Claude Code's `dependencies`) belong in the marketplace files, never in `plugin.json`, and nothing inside a plugin may point outside its directory; that is why each plugin carries its own copy of `LICENSE`.
-- The entries in `.agents/plugins/marketplace.json` repeat the plugin metadata on purpose: Codex releases before Agent Plugins support (0.146) build their manifest from them, while newer ones read `plugin.json`.
-- Once a plugin has been released, bump `version` in `agent-plugins/*/plugin.json` and in all three marketplace files together whenever its skill changes; Claude Code and Codex only refresh an installed plugin when its version changes.
-  Before its first release there is no installed copy to refresh, so the version stays as it is.
-- Keep the skills in sync with the library: when an API changes, update the affected signatures and examples, and recompile the examples on every supported GHC.

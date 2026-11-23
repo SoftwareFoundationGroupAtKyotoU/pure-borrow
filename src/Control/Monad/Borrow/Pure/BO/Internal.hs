@@ -919,7 +919,8 @@ A nonlinear field must have a type that does not mention @a@, and 'split' keeps 
 
 That Template Haskell derives @Generic1@ for a field of type @t'Ur' c@ but not for a nonlinear field, so a type with a nonlinear field needs the instance written by hand, with the field represented as @MP1 \'Many (K1 i c)@ directly under its @S1@.
 An instance that the Template Haskell did not make must represent every nonlinear field under @MP1 \'Many@, and must do nothing but take the constructor apart in @from1@ and put it back in @to1@.
-Never derive or write an instance of @Generic1@ for a type whose own operations rely on a value in a nonlinear field, or in a field of type @t'Ur' c@, belonging to one structure only, as a handle to state that the structure owns does.
+The result of 'split' holds the same value in a nonlinear field, or in a field of type @t'Ur' c@, as the structure it splits.
+So never derive or write an instance of @Generic1@ for a type that keeps in such a field something that only one structure may own, such as a handle to state that the type's own operations free or update: the result of 'split' would own it as well.
 -}
 class DistributesAlias f where
   split_ :: Alias ak (f x) %1 -> f (Alias ak x)

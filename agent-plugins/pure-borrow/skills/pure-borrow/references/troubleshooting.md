@@ -94,6 +94,12 @@ The scheduler used by `divideAndConquer` does not propagate worker exceptions re
 A custom `Unsatisfiable` error: the element type contains mutable state (`Vector`, `Ref`, `HashMap`, …) and must not be `Copyable`.
 Work through a borrow of the element (`VL.get` returns one), or `clone` it inside `BO` if you really need an independent copy.
 
+## `Overlapping instances for Control.Monad.Borrow.Pure.BO.Internal.GDistributeAlias`
+
+`split` cannot tell yet whether a field of type `b` is an `Ur`, which it keeps, or another type, which it refuses, because `b` is still a variable, in a polymorphic signature or in a type family that does not reduce.
+In a function, add `DistributesAlias (T b)` to its signature; in a derived instance, declare the field as `Ur b`, kept at every `b`, or derive where the type reduces, as in `deriving anyclass instance DistributesAlias (T Int)`.
+GHC's hint about `IncoherentInstances` does not apply.
+
 ## `too many keys collide` from a Robin Hood hash map
 
 A table of `Data.HashMap.RobinHood.Mutable.Linear` or `Data.HashMap.RobinHood.Mutable.Linear.Borrow` holds at most 128 keys with the same hash, and fewer when other keys collide with them; an insertion past that raises this error instead of losing an entry.

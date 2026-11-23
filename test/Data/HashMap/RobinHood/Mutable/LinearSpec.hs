@@ -8,13 +8,14 @@ module Data.HashMap.RobinHood.Mutable.LinearSpec (
   module Data.HashMap.RobinHood.Mutable.LinearSpec,
 ) where
 
-import Control.Exception (ErrorCall (..), evaluate, try)
+import Control.Exception (ErrorCall (..), SomeException, displayException, evaluate, try)
 import Control.Functor.Linear qualified as Lin
 import Control.Monad (forM)
 import Control.Monad.Borrow.Pure (Linearly, linearly)
 import Data.Bifunctor.Linear qualified as BiL
 import Data.Foldable (forM_)
 import Data.HashMap.RobinHood.Mutable.Linear.Internal qualified as LHM
+import Data.HashMap.RobinHood.Mutable.Linear.TypingCases (badRekey)
 import Data.HashMap.RobinHood.Mutable.LinearSpec.Cases
 import Data.HashMap.RobinHood.Mutable.LinearSpec.Steered
 import Data.HashMap.Strict qualified as HMS
@@ -347,6 +348,16 @@ testInstructions instrs = do
                         P.expect Nothing
                           .$ ("value after deletion " <> show k, newVal)
                  in go sem' hm (act *> checks) rest
+
+test_keyRole :: TestTree
+test_keyRole = testCase "upcast to another key type is a type error" do
+  result <- try @SomeException (evaluate badRekey)
+  case result of
+    Left exception ->
+      assertBool
+        ("unexpected deferred type error: " <> displayException exception)
+        (all (`isInfixOf` displayException exception) ["Couldn't match type", "arising from a use of"])
+    Right _ -> assertFailure "expected a deferred type error"
 
 showSize :: Int -> String
 showSize 0 = "0"

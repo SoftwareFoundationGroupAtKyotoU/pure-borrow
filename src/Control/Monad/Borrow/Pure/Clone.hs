@@ -83,7 +83,7 @@ A container that owns its contents must not clone them with 'dup2' at all.
 = Contents that are not evaluated yet #lazy#
 
 'clone' evaluates what it copies.
-A value behind a shared borrow that is still an unevaluated call, in any field stored lazily, is therefore evaluated by the clone, and two 'Control.Monad.Borrow.Pure.parBO' branches that clone or read it at once can both run the call.
+A value behind a shared borrow that is still an unevaluated call, in any linear field stored lazily, is therefore evaluated by the clone, and two 'Control.Monad.Borrow.Pure.parBO' branches that clone or read it at once can both run the call.
 That is harmless for a call that only allocates, reads, or makes a single write.
 It is not for one that reads what it writes, as linear-base's @Data.Array.Mutable.Linear.map@ or a chain of reads and writes does, nor for one that writes one place twice.
 The second run then reads what the first one wrote, and a clone can copy what the second run has written so far: @Array.map (+ 1)@ adds 2 to some elements, a clone can copy an array halfway through the update or hold a value that the call wrote only on the way, and a @map@ that changes the element type crashes the program.

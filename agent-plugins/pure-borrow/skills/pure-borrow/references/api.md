@@ -114,6 +114,7 @@ split       :: DistributesAlias f => Alias ak (f x) %1 -> f (Alias ak x)
 ```
 
 `split` works for `Maybe`, lists, `Identity` and other single-parameter functors, and for your own types via `deriveGenericAnd1` plus `deriving anyclass instance DistributesAlias F`.
+It keeps as it is a field of type `Ur c` for a `c` that does not mention the parameter, and a nonlinear field whose type does not mention it; the latter needs a hand-written instance of linear-generics' `Generic1`, shown in [data-types.md](data-types.md).
 Use `splitPair`/`splitEither` for tuples and `Either`.
 
 ## Parallelism

@@ -447,7 +447,7 @@ To alleviate this problem, we also provide 'copyMut' that wraps copied value ins
 'copyMut' :: 'Mut' α a %1 -> 'Ur' a
 @
 
-Precisely, if the type @a@ does not contain any mutable or foreign resources, it can be safely 'Copyable' out of borrows.
+Precisely, if the type @a@ holds no mutable or foreign resource linearly, and no 'Mut' or 'Lend', it can be safely 'Copyable' out of borrows.
 Some examples are (but not limited to):
 
     * Primitive types, such as 'Int', 'Bool', etc.
@@ -481,6 +481,8 @@ You can do case-splitting on 'Borrow's - for example:
 
 For other datatypes, you can use 'split' to split general parametric types into borrows.
 It is morally an instance method of the 'DistributesAlias' class, and you can derive it using @anyclass@ derivation together with the 'Generics.Linear.TH.deriveGenericAnd1' macro.
+A field of type t'Ur' @c@, where @c@ does not mention the parameter, is kept as it is.
+So is a nonlinear field whose type does not mention the parameter, but the macro cannot derive for such a type; 'DistributesAlias' says what it needs.
 
 We also provide experimental splitting on record types in "Data.Record.Linear.Borrow.Experimental.PatternMatch" and "Data.Record.Linear.Borrow.Experimental.Split".
 -}

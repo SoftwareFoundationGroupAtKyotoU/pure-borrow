@@ -11,10 +11,10 @@ module Control.Monad.Borrow.Pure.BO.TypingCases (
 
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Affine (aff)
-import Control.Monad.Borrow.Pure.BO (nowStatic, runBO_)
+import Control.Monad.Borrow.Pure.BO (Mut, nowStatic, runBO_, split)
 import Control.Monad.Borrow.Pure.Lifetime (Static)
 import Control.Monad.Borrow.Pure.Lifetime.Token (Linearly, Now, linearly, withLinearly)
-import Prelude.Linear (consume, lseq)
+import Prelude.Linear (Ur, consume, lseq)
 
 -- This must not typecheck: a 'Now' token for 'Static' exists only inside
 -- 'Control.Monad.Borrow.Pure.BO', where it is bound linearly.
@@ -34,3 +34,7 @@ badEscapeStaticLinearly =
     now <- nowStatic
     case withLinearly now of
       (minted, now) -> Control.pure (consume (aff now) `lseq` minted)
+
+-- This must not typecheck: an unrestricted 'Mut' gives 'withLinearly' a 'Linearly' outside any linear context.
+badSplitUr :: Mut α (Ur Int) %1 -> Ur (Mut α Int)
+badSplitUr = split

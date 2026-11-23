@@ -10,6 +10,7 @@
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UnboxedTuples #-}
@@ -183,6 +184,9 @@ At any time, you can 'consume' 'SplitRecord' when the remaining fields are no lo
 -}
 type SplitRecord :: Type -> BorrowKind -> Lifetime -> [(Symbol, (Multiplicity, Type))] -> Type
 newtype SplitRecord a bk α s = SplitRecord (Borrow bk α a)
+
+-- Nominal throughout: coercing the field list or the record could hand back a field already split out.
+type role SplitRecord nominal nominal nominal nominal
 
 instance Consumable (SplitRecord a bk α fs) where
   consume (SplitRecord a) = consume a

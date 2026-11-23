@@ -40,12 +40,16 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Each removed entry has a renamed counterpart, with three exceptions: `new` is its `empty`; for `insertMany`, fold its `insert` over the list; and `InsertPlan`, `lookupForInsert` and `unsafeInsertPrepared` are in `Data.HashMap.RobinHood.Mutable.Linear.Borrow.Unsafe`.
 - `InsertPlan`, `lookupForInsert` and `unsafeInsertPrepared` of `Data.HashMap.RobinHood.Mutable.Linear.Borrow` have moved to `Data.HashMap.RobinHood.Mutable.Linear.Borrow.Unsafe`, a module for library authors, since a plan used with a table other than the one it was made for, or after that table changed, can read and write memory outside the table.
   In application code, use the borrow-aware hash map's `alter` or `alterF`, which insert at a missing key with a single search, or its `lookup` followed by its `insert` where the value found is needed, which searches twice on a miss.
+- The key of the hash map of `Data.HashMap.RobinHood.Mutable.Linear` has a nominal role, as the borrow-aware hash map's key has, since `upcast` to a newtype key with another `Hashable` instance made lookups miss keys the table holds.
+- `SplitRecord` of `Data.Record.Linear.Borrow.Experimental.Split` has nominal roles, since its list of the fields not yet split out had a phantom role and its record a representational one, which let `upcast` put back a field already split out, or read the remaining fields through a newtype over the record, and give a second live `Mut` of a field.
 - The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)`, `Clone (Array a)` for linear-base's `Array`, `Clone` for a boxed growable or unboxed vector, or a `(<:)` instance for `Maybe`; delete the orphan.
   Call sites of an old shallow vector-cloning orphan now need `Clone a`, since those vectors own their elements.
   An orphan as general as the new instance, such as `Clone (Array a)`, is rejected with "Duplicate instance declarations"; a narrower one, such as `Clone (Array Int)`, compiles, and each use of it is rejected with "Overlapping instances".
 
 ### Changed
 
+- `Copyable` derived via `Generically`, and `genericCopy`, share a nonlinear field as it is, without evaluating it, and ask nothing of its type, as the derived `Clone` does, so a field of type `Text` or `Int -> Int` declared with `->` in GADT syntax no longer prevents deriving it.
+  An error or computation left in such a field surfaces only where the copy's field is forced.
 - `parBO` rethrows a branch's exception, unchanged, once the other branch has stopped, instead of blocking forever or dying with `BlockedIndefinitelyOnMVar`; `Par`, `mapConcurrentlyOf`, `naiveDivideAndConquer` and `Data.Vector.Mutable.Linear.Borrow.qsort` inherit this.
   Stopping reaches only the other branch: whatever it had started with a nested `parBO` runs to completion, so `mapConcurrentlyOf` over a list stops none of the other elements when the first one throws, and all of them when the last one does.
   A branch in a loop that does not allocate cannot be stopped until the loop ends; compile the module that contains such a loop with `-fno-omit-yields` if the rethrow must be prompt.
@@ -62,6 +66,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - At a key that both tables hold, the borrow-aware hash map's `extend` keeps the value of the table it inserts, as its `insert` does, and its `union` keeps the second table's value.
   Both used to keep the value of whichever table had fewer entries.
 - The `toList` of both Robin Hood hash maps, and the `foldMapWithKey` of `Data.HashMap.RobinHood.Mutable.Linear`, visit the entries in another order than in 0.1.0.0; the order stays unspecified.
+- The two errors that refuse to derive `DistributesAlias` over a field show its type or representation and say which fields are accepted.
+  A field that applies `Ur` to the type parameter gets a third error, which says why, in place of a missing instance of `DistributesAlias Ur`.
 
 ### Fixed
 
@@ -104,6 +110,9 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Newtype wrappers delegate to the contained value's instance; an unboxed representation does not imply a shallow copy is safe.
 - `Clone` for the hash map of `Data.HashMap.RobinHood.Mutable.Linear`, which copies the table and shares its GC-owned keys and values.
 - `DistributesAlias` for `NonEmpty`.
+- `DistributesAlias` for a type with a linear field of type `Ur c`, where `c` does not mention the type parameter, from the `Generic1` instance that linear-generics' Template Haskell makes: `Control.Monad.Borrow.Pure.split` keeps such a field as it is, and never evaluates what it holds.
+- `DistributesAlias` for a type with a nonlinear field whose type does not mention the type parameter: `Control.Monad.Borrow.Pure.split` keeps such a field as it is.
+  The type needs a hand-written instance of linear-generics' `Generic1`, since its Template Haskell cannot derive one for a nonlinear field.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
 - `Control.Monad.Borrow.Pure.BO.Unsafe` exports `restoreWithEnd`, `reviveAliasWithEnd#`, `endHere` and `withEndL`, for a delimiter of your own that discharges an `After`.

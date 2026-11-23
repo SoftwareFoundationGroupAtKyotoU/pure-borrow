@@ -54,6 +54,7 @@ import Data.Semigroup qualified as Sem
 import Data.Set.Mutable.Linear (Set)
 import Data.Vector.Mutable.Linear (Vector)
 import Data.Word
+import GHC.Exts (Multiplicity (..))
 import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
 import Generics.Linear
 import Numeric.Natural (Natural)
@@ -64,11 +65,10 @@ import Unsafe.Linear qualified as Unsafe
 class Copyable a where
   {- | Copy the borrowed value.
 
-  Evaluating this method must complete the copy and return the result in
-  weak head normal form. It must not return a thunk whose evaluation depends
-  on the borrow remaining live. Composite instances must complete their
-  component copies as well, so copying a recursive value traverses its finite
-  structure before returning.
+  Evaluating this method must complete the copy and return the result in weak head normal form.
+  It must not return a thunk whose evaluation depends on the borrow remaining live.
+  Composite instances must complete the copies of their linear components as well, so copying a recursive value traverses its linear structure before returning.
+  A nonlinear component is GC-owned and may be shared as it is, without being evaluated, as the t'Generically' instance does.
   -}
   copy :: Borrow bk α a %1 -> a
 
@@ -215,9 +215,14 @@ instance (GCopyable f) => GCopyable (M1 i c f) where
   gcopy = \case
     UnsafeAlias (M1 !x) -> M1 $! gcopy (UnsafeAlias x)
 
-instance (GCopyable f) => GCopyable (MP1 m f) where
+-- Copies a linear field, and one whose multiplicity is a variable, as 0.1.0.0 did.
+instance {-# INCOHERENT #-} (GCopyable f) => GCopyable (MP1 m f) where
   gcopy = \case
     UnsafeAlias (MP1 !x) -> MP1 $! gcopy (UnsafeAlias x)
+
+-- A nonlinear field is GC-owned, so the copy shares it, as the derived Clone does.
+instance GCopyable (MP1 'Many f) where
+  gcopy (UnsafeAlias mp1) = mp1
 
 instance (GCopyable f, GCopyable g) => GCopyable (f :+: g) where
   gcopy = \case
@@ -231,6 +236,10 @@ instance GCopyable U1 where
 instance GCopyable V1 where
   gcopy = \case {} . unsafeUnalias
 
+{- | Copies each linear field with its type's 'Copyable' instance, and shares each nonlinear field as it is, without evaluating it.
+
+A field whose multiplicity is a variable is copied as a linear field is.
+-}
 instance (GenericCopyable a) => Copyable (Generically a) where
   copy borrow =
     Generically $!

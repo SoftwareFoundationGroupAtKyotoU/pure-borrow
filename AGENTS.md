@@ -185,6 +185,10 @@ Any binding whose body reaches an `unsafePerformIO` is `NOINLINE`.
 
 **Soundness.**
 The reviewer's job is to try to write a *well-typed user program* that violates an invariant, not to judge whether the code reads plausibly.
+A program counts only if its own side keeps every contract: a user-side violation of a contract is not an unsoundness of the API, whatever the program does after it.
+The reviewer must not confuse the two.
+Among the violations are a function that calls itself again on the same arguments without decreasing them, an instance that leaves out a class method, an instance whose context holds only by assuming that instance itself, as `instance C => C` does, a lawless instance such as a `Generic` instance that is not an isomorphism, and anything like these.
+The reviewer sets such a case aside in one line and does not report it as a finding.
 Can a lifetime escape its scope; can the new signature be instantiated at `Static` to launder a borrow; does a new `INCOHERENT` instance admit a witness the outlives relation should not have?
 Every new `unsafe*` use must come with a stated invariant and an argument for why it holds — an unstated one is a finding.
 Check that the "this must not typecheck" cases still fail to typecheck, and that a new API surface came with its own cases in `TypingCases` or `test/typing-fail/`.
@@ -202,6 +206,7 @@ Tell reviewers to default to "not established" when they are uncertain rather th
 Every finding is then either fixed or rebutted in writing, in the commit body or as a source comment where the reasoning belongs.
 Never drop one silently, and never commit while a soundness or ownership finding is unresolved — for those two lenses, when the reviewer and the author disagree, the conservative reading wins until someone produces the argument that settles it.
 A performance finding may be accepted as a known cost, provided the cost is recorded.
+A reported case that rests on a user-side violation of a contract, as *Soundness* lists them, is not a finding of any lens: set it aside, neither fixing it nor asking the maintainer to decide on it.
 
 ## Architecture
 

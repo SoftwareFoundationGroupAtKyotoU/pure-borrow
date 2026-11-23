@@ -18,7 +18,7 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure
 import Control.Monad.Borrow.Pure.Affine qualified as Affine
 import Control.Monad.Borrow.Pure.BO qualified as BO
-import Control.Monad.Borrow.Pure.BO.TypingCases (badEscapeStaticLinearly, badTopLevelStaticNow)
+import Control.Monad.Borrow.Pure.BO.TypingCases (badEscapeStaticLinearly, badSplitUr, badTopLevelStaticNow)
 import Control.Monad.Borrow.Pure.Experimental.Borrows qualified as Borrows
 import Control.Monad.Borrow.Pure.Experimental.Reborrowable qualified as Reborrowable
 import Control.Syntax.DataFlow qualified as DataFlow
@@ -606,6 +606,7 @@ test_nowStatic =
         staticScopeUpcast @?= 42
     , expectDeferred "is not a top-level value" "Couldn't match expected type" badTopLevelStaticNow
     , expectDeferred "cannot mint an unrestricted Linearly" "Movable Linearly" badEscapeStaticLinearly
+    , expectDeferred "cannot put a Mut under Ur by splitting" "A borrow cannot be distributed over Ur" badSplitUr
     ]
   where
     expectDeferred :: NonLinear.String -> NonLinear.String -> a -> TestTree

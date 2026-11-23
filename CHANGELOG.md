@@ -63,6 +63,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Both used to keep the value of whichever table had fewer entries.
 - The `toList` of both Robin Hood hash maps, and the `foldMapWithKey` of `Data.HashMap.RobinHood.Mutable.Linear`, visit the entries in another order than in 0.1.0.0; the order stays unspecified.
 - The two errors that refuse to derive `DistributesAlias` over a field show its type or representation and say which fields are accepted.
+  A field that applies `Ur` to the type parameter gets a third error, which says why, in place of a missing instance of `DistributesAlias Ur`.
 
 ### Fixed
 
@@ -105,6 +106,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Newtype wrappers delegate to the contained value's instance; an unboxed representation does not imply a shallow copy is safe.
 - `Clone` for the hash map of `Data.HashMap.RobinHood.Mutable.Linear`, which copies the table and shares its GC-owned keys and values.
 - `DistributesAlias` for `NonEmpty`.
+- `DistributesAlias` for a type with a linear field of type `Ur c`, where `c` does not mention the type parameter, from the `Generic1` instance that linear-generics' Template Haskell makes: `Control.Monad.Borrow.Pure.split` keeps such a field as it is, and never evaluates what it holds.
 - `DistributesAlias` for a type with a nonlinear field whose type does not mention the type parameter: `Control.Monad.Borrow.Pure.split` keeps such a field as it is.
   The type needs a hand-written instance of linear-generics' `Generic1`, since its Template Haskell cannot derive one for a nonlinear field.
 - `foldBorrowVia` and `traverseBorrowOf_` in `Control.Monad.Borrow.Pure.Experimental.Loop`, to fold over the borrows a splitter makes and to run an action on each element a `Fold` visits.

@@ -282,6 +282,7 @@ test-suite pure-borrow-inspection
     PureBorrow.Inspection.MultiStoreScan
     PureBorrow.Inspection.QSort
     PureBorrow.Inspection.SplitNonlinearField
+    PureBorrow.Inspection.SplitUrField
     PureBorrow.Inspection.Sublifetime
     PureBorrow.Inspection.Worklist.Resume
 

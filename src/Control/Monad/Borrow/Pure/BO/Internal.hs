@@ -910,13 +910,16 @@ joinLend = coerceLin
 {- | A functor over which an alias of a structure distributes to an alias of each element, as 'split' does.
 
 An instance is derived, not written: @deriving anyclass instance 'DistributesAlias' T@, from an instance of the @Generic1@ of linear-generics.
-Each linear field of @T a@ must then have the type @a@ itself, or @g a@ for a @g@ that has an instance of this class.
+Each linear field of @T a@ must then have the type @a@ itself, @g a@ for a @g@ that has an instance of this class, or @t'Ur' c@ for a @c@ that does not mention @a@, which 'split' keeps as it is.
+A field whose type only contains @t'Ur' c@, such as @Maybe (Ur c)@ or a newtype around @t'Ur' c@, is refused like any other field whose type does not mention @a@.
 A field that applies two such types, as @Maybe [a]@ does, is refused for a @Generic1@ instance made by the Template Haskell of linear-generics.
+A field that applies t'Ur' to a type that mentions @a@, as @t'Ur' a@ and @t'Ur' (Maybe a)@ do, is refused, since a borrow stored in it would be unrestricted.
 A nonlinear field must have a type that does not mention @a@, and 'split' keeps it as it is.
+'split' never evaluates a nonlinear field, nor what a field of type @t'Ur' c@ holds.
 
-That Template Haskell cannot derive @Generic1@ for a type with a nonlinear field, so such a type needs the instance written by hand, with the field represented as @MP1 \'Many (K1 i c)@ directly under its @S1@.
+That Template Haskell derives @Generic1@ for a field of type @t'Ur' c@ but not for a nonlinear field, so a type with a nonlinear field needs the instance written by hand, with the field represented as @MP1 \'Many (K1 i c)@ directly under its @S1@.
 An instance that the Template Haskell did not make must represent every nonlinear field under @MP1 \'Many@, and must do nothing but take the constructor apart in @from1@ and put it back in @to1@.
-A type must have no instance of @Generic1@ at all when its own operations rely on a value in a nonlinear field belonging to one structure only, as a handle to state that the structure owns does.
+Never derive or write an instance of @Generic1@ for a type whose own operations rely on a value in a nonlinear field, or in a field of type @t'Ur' c@, belonging to one structure only, as a handle to state that the structure owns does.
 -}
 class DistributesAlias f where
   split_ :: Alias ak (f x) %1 -> f (Alias ak x)
@@ -975,6 +978,20 @@ instance (Unsatisfiable ('Text "Use splitPair instead!")) => DistributesAlias ((
   {-# INLINE split_ #-}
   split_ = unsatisfiable
 
+-- See Note [Splitting over nonlinear fields].
+instance
+  ( Unsatisfiable
+      ( Text "A borrow cannot be distributed over Ur, since a Mut or a Lend stored in an Ur would be unrestricted."
+          :$$: Text "To read what an Ur holds, copy the borrow: copy needs nothing of the type under Ur."
+          :$$: Text "In a derived instance, a field of type Ur c is kept as it is only when c does not mention the last type parameter:"
+          :$$: Text "give the type under Ur a parameter of its own, as in  data T u a = T (Ur u) a."
+      )
+  ) =>
+  DistributesAlias Ur
+  where
+  {-# INLINE split_ #-}
+  split_ = unsatisfiable
+
 -- | What deriving 'DistributesAlias' asks of a type: an instance of the @Generic1@ of linear-generics whose fields 'split' can deal with.
 type GenericDistributesAlias f = (Generic1 f, GDistributeAlias (Rep1 f))
 
@@ -1014,9 +1031,18 @@ Its type cannot mention the parameter under another name, because a representati
 The field is not forced: 'split' only passes it along, and its owner may never look at it.
 That the instance typechecks with the alias bound linearly is no part of this argument, since an instance that put a 'Mut' in a nonlinear field would typecheck just the same.
 
+A linear field of type 'Ur' @c@ is kept as it is too, for the same reason: what an 'Ur' holds is unrestricted whoever holds the box, so the field carries what a nonlinear field of type @c@ would.
+The library already hands what such a box holds out of a borrow: 'copy' at 'Ur' returns a box with the same contents, evaluated, and the @(+#)@ of "Data.Record.Linear.Borrow.Experimental.Split" returns the very box, unevaluated, from a 'Mut' or a 'Share' of a split record.
+Unlike a nonlinear field, the box itself may be a thunk over linear resources.
+'split' evaluates it where it evaluates every field of a product or of a constructor of a sum, as it does an element, and otherwise the lender and the split result share it unevaluated, and the split result may carry it past the lifetime, as the result of @(+#)@ already can.
+What the box holds is never evaluated.
+A field that applies 'Ur' to the parameter, or to a type that mentions it, is represented through ':.:' rather than 'K1', since a 'Mut' or a 'Lend' stored in it would be unrestricted.
+The instance @DistributesAlias Ur@ refuses @Ur a@, and @Ur (Maybe a)@ is refused, as @Maybe [a]@ is, for want of an instance of @DistributesAlias (Par1 :.: Ur)@.
+
 All of this takes the 'Generic1' instance at its word.
 An instance whose 'from1' or 'to1' does more than take the constructor apart and put it back, by moving a field, reading through it or sharing it, makes 'split' do that to a structure that is only borrowed.
-And a type that keeps in a nonlinear field a handle to state that the whole structure owns, relying on the structure being linear, must have no 'Generic1' instance at all: 'from1' and 'to1' alone already make a second owner of the handle, without any borrow.
+And a type that keeps in a nonlinear field, or in a field of type 'Ur' @c@, a handle to state that the whole structure owns, relying on the structure being linear, must have no 'Generic1' instance at all: 'from1' and 'to1' alone already make a second owner of the handle, without any borrow.
+The Template Haskell of linear-generics derives such an instance even where the constructor is not exported, so the author of such a type rules the instance out with one whose context is 'Unsatisfiable'.
 -}
 
 class GDistributeAlias f where
@@ -1096,15 +1122,20 @@ instance GDistributeAlias Par1 where
   gdistributeAlias (UnsafeAlias (Par1 !a)) = Par1 (UnsafeAlias a)
 
 -- See Note [Splitting over nonlinear fields].
+instance {-# OVERLAPPING #-} GDistributeAlias (K1 i (Ur c)) where
+  {-# INLINE gdistributeAlias #-}
+  gdistributeAlias (UnsafeAlias (K1 u)) = K1 u
+
+-- See Note [Splitting over nonlinear fields].
 instance
   ( Unsatisfiable
-      ( Text "A borrow cannot be distributed over a field of type"
+      ( Text "A borrow cannot be distributed over a linear field of type"
           :$$: (Text "    " :<>: ShowType c)
-          :$$: Text "that the Generic1 instance represents as linear."
-          :$$: Text "The type does not mention the last type parameter, and a linear field is only borrowed,"
-          :$$: Text "so its value cannot be handed out as owned."
-          :$$: Text "A nonlinear field of such a type is kept as it is, but only a hand-written instance"
-          :$$: Text "of linear-generics' Generic1 can represent one, as MP1 'Many (K1 i c)."
+          :$$: Text "The type does not mention the last type parameter, so split would hand out as owned a value that is only borrowed."
+          :$$: Text "If the field holds a GC-owned value, declare it as"
+          :$$: (Text "    Ur (" :<>: ShowType c :<>: Text ")")
+          :$$: Text "and split keeps it as it is."
+          :$$: Text "A nonlinear field is kept as well, but needs a hand-written instance of linear-generics' Generic1."
       )
   ) =>
   GDistributeAlias (K1 i c)

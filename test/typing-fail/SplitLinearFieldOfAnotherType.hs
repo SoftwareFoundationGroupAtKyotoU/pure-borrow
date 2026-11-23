@@ -19,6 +19,6 @@ deriveGenericAnd1 ''Counted
 -- This fixture must not typecheck: 'Control.Monad.Borrow.Pure.split' would
 -- hand out the linearly owned 'Data.Ref.Linear.Ref' of a borrowed structure
 -- as an owned value, while the lender still gets it back.
--- EXPECT: A borrow cannot be distributed over a field of type
--- EXPECT: that the Generic1 instance represents as linear.
+-- EXPECT: A borrow cannot be distributed over a linear field of type
+-- EXPECT: If the field holds a GC-owned value, declare it as
 deriving anyclass instance DistributesAlias Counted

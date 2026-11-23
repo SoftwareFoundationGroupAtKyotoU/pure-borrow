@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
@@ -6,6 +7,7 @@
 {-# LANGUAGE LinearTypes #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
@@ -21,6 +23,7 @@ import Data.Ref.Linear qualified as Ref
 import Data.Ref.Linear.Borrow qualified as RefBorrow
 import GHC.Exts qualified as GHC
 import Generics.Linear
+import Generics.Linear.TH (deriveGenericAnd1)
 import Prelude.Linear
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))
@@ -101,8 +104,7 @@ instance Generic1 Scaled where
 
 deriving anyclass instance DistributesAlias Scaled
 
--- Write through the element of a split 'Mut', then compare the label of the
--- split result with the one that the lender gets back.
+-- Write through the element of a split 'Mut', then compare the label of the split result with the lender's.
 bumpThroughMut :: (String, String, Int)
 bumpThroughMut = linearly \lin -> runBO lin Control.do
   (labelled, lend) <- borrowLinearlyM (\l -> Labelled "label" (Ref.new 1 l))
@@ -130,8 +132,7 @@ readThroughShares = linearly \lin -> runBO lin Control.do
                 Labelled _ ref -> ref `lseq` (label, first, second)
             )
 
--- Split the 'Lend' before its lifetime ends, beside the live 'Mut', and
--- reclaim only the element at the end.
+-- Split the 'Lend' beside the live 'Mut', and reclaim only the element at the end.
 splitLendEarly :: (String, Int)
 splitLendEarly = linearly \lin -> runBO lin Control.do
   (labelled, lend) <- borrowLinearlyM (\l -> Labelled "label" (Ref.new 1 l))
@@ -175,8 +176,7 @@ splitAbsent = linearly \lin -> runBO lin Control.do
       Control.pure (consume ref)
       pureAfter (entryValue (reclaim lend) `lseq` "present")
 
--- The 'Lend' of a constructor without elements is used up by the split, and
--- nothing is left to reclaim.
+-- The 'Lend' of a constructor without elements is used up by the split.
 splitLendOfAbsent :: String
 splitLendOfAbsent = linearly \lin -> runBO lin Control.do
   (entry, lend) <- borrowLinearlyM (\l -> l `lseq` (Absent "none" :: Entry (Ref Int)))
@@ -185,8 +185,7 @@ splitLendOfAbsent = linearly \lin -> runBO lin Control.do
     Absent reason -> pureAfter reason
     Present _ lendRef -> pureAfter (Ref.free (reclaim lendRef) `lseq` "present")
 
--- The kept field is a function, which has no 'Movable', 'Dupable' or
--- 'Consumable' instance for the split to lean on.
+-- The kept field is a function, which has no instance for the split to lean on.
 applyKeptFunction :: Int
 applyKeptFunction = linearly \lin -> runBO lin Control.do
   (scaled, lend) <- borrowLinearlyM (\l -> Scaled (NonLinear.* 3) (Ref.new 5 l))
@@ -211,4 +210,126 @@ test_splitKeepsNonlinearFields =
     , testCase "a constructor with nonlinear fields only" (splitAbsent @?= "none")
     , testCase "a Lend of a constructor with nonlinear fields only" (splitLendOfAbsent @?= "none")
     , testCase "a field of a type without instances" (applyKeptFunction @?= 15)
+    ]
+
+-- A lazy linear field of type 'Ur' beside an element, with the instance of linear-generics' Template Haskell.
+data Boxed a = Boxed (Ur String) a
+
+deriveGenericAnd1 ''Boxed
+
+deriving anyclass instance DistributesAlias Boxed
+
+-- One constructor has an element beside a field of type 'Ur', the other only a field of type 'Ur'.
+data BoxedEntry a = BoxedPresent !(Ur Int) a | BoxedAbsent !(Ur String)
+
+deriveGenericAnd1 ''BoxedEntry
+
+deriving anyclass instance DistributesAlias BoxedEntry
+
+boxedEntryValue :: BoxedEntry (Ref Int) %1 -> Int
+boxedEntryValue (BoxedPresent (Ur _) ref) = Ref.free ref
+boxedEntryValue (BoxedAbsent (Ur _)) = 0
+
+-- Write through the element of a split 'Mut', then compare the box of the split result with the lender's.
+bumpThroughMutBoxed :: (String, String, Int)
+bumpThroughMutBoxed = linearly \lin -> runBO lin Control.do
+  (boxed, lend) <- borrowLinearlyM (\l -> Boxed (Ur "label") (Ref.new 1 l))
+  case split boxed of
+    Boxed (Ur label) ref -> Control.do
+      ref <- RefBorrow.modify (+ 41) ref
+      Control.pure (consume ref)
+      pureAfter
+        ( case reclaim lend of
+            Boxed (Ur label') ref' -> (label, label', Ref.free ref')
+        )
+
+-- Split the 'Lend' beside the live 'Mut', and reclaim only the element at the end.
+splitLendEarlyBoxed :: (String, Int)
+splitLendEarlyBoxed = linearly \lin -> runBO lin Control.do
+  (boxed, lend) <- borrowLinearlyM (\l -> Boxed (Ur "label") (Ref.new 1 l))
+  case split lend of
+    Boxed (Ur label) lendRef -> case split boxed of
+      Boxed (Ur _) ref -> Control.do
+        ref <- RefBorrow.modify (+ 1) ref
+        Control.pure (consume ref)
+        pureAfter (label, Ref.free (reclaim lendRef))
+
+-- The contents of the box are an error that nothing may force.
+contentsStayUnforced :: Int
+contentsStayUnforced = linearly \lin -> runBO lin Control.do
+  (boxed, lend) <-
+    borrowLinearlyM (\l -> Boxed (Ur (NonLinear.error "split forced the contents")) (Ref.new 5 l))
+  case split boxed of
+    Boxed (Ur _) ref -> Control.do
+      ref <- RefBorrow.modify (+ 1) ref
+      Control.pure (consume ref)
+      pureAfter
+        ( case reclaim lend of
+            Boxed u ref' -> u `lseq` Ref.free ref'
+        )
+
+-- A box that writes to a reference made outside it, so that a second run would show as a second 'x'.
+boxOverOwnerLendFirst :: (String, String, Int)
+boxOverOwnerLendFirst = linearly \lin -> runBO lin Control.do
+  (boxed, lend) <-
+    borrowLinearlyM
+      ( \l -> case dup2 l of
+          (l1, l2) -> case Ref.new "abel" l1 of
+            !r -> Boxed (move (Ref.free (Ref.atomicModify_ (\cs -> 'x' : cs) r))) (Ref.new 10 l2)
+      )
+  case split lend of
+    Boxed (Ur early) lendRef -> case split boxed of
+      Boxed (Ur viaMut) ref -> Control.do
+        ref <- RefBorrow.modify (+ 1) ref
+        Control.pure (consume ref)
+        pureAfter (early, viaMut, Ref.free (reclaim lendRef))
+
+-- The same box, split through one 'Share' twice and then reclaimed.
+boxOverOwnerSharedTwice :: (String, String, String)
+boxOverOwnerSharedTwice = linearly \lin -> runBO lin Control.do
+  (boxed, lend) <-
+    borrowLinearlyM
+      ( \l -> case dup2 l of
+          (l1, l2) -> case Ref.new "abel" l1 of
+            !r -> Boxed (move (Ref.free (Ref.atomicModify_ (\cs -> 'x' : cs) r))) (Ref.new (10 :: Int) l2)
+      )
+  case share boxed of
+    Ur shared -> case split shared of
+      Boxed (Ur first) _ -> case split shared of
+        Boxed (Ur second) _ ->
+          pureAfter
+            ( case reclaim lend of
+                Boxed (Ur atEnd) ref -> ref `lseq` (first, second, atEnd)
+            )
+
+splitBoxedPresent :: (Int, Int)
+splitBoxedPresent = linearly \lin -> runBO lin Control.do
+  (entry, lend) <- borrowLinearlyM (\l -> BoxedPresent (Ur 3) (Ref.new 10 l))
+  case split entry of
+    BoxedPresent (Ur tag) ref -> Control.do
+      ref <- RefBorrow.modify (+ tag) ref
+      Control.pure (consume ref)
+      pureAfter (tag, boxedEntryValue (reclaim lend))
+    BoxedAbsent (Ur _) -> pureAfter (-1, boxedEntryValue (reclaim lend))
+
+-- The 'Lend' of a constructor without elements is used up by the split.
+splitLendOfBoxedAbsent :: String
+splitLendOfBoxedAbsent = linearly \lin -> runBO lin Control.do
+  (entry, lend) <- borrowLinearlyM (\l -> l `lseq` (BoxedAbsent (Ur "none") :: BoxedEntry (Ref Int)))
+  Control.pure (consume entry)
+  case split lend of
+    BoxedAbsent (Ur reason) -> pureAfter reason
+    BoxedPresent (Ur _) lendRef -> pureAfter (Ref.free (reclaim lendRef) `lseq` "present")
+
+test_splitKeepsUrFields :: TestTree
+test_splitKeepsUrFields =
+  testGroup
+    "split keeps a linear field of type Ur"
+    [ testCase "a Mut is split around the field" (bumpThroughMutBoxed @?= ("label", "label", 42))
+    , testCase "a Lend is split while the Mut is live" (splitLendEarlyBoxed @?= ("label", 2))
+    , testCase "the contents of the field are not forced" (contentsStayUnforced @?= 6)
+    , testCase "a box over a linear owner, the Lend split first" (boxOverOwnerLendFirst @?= ("xabel", "xabel", 11))
+    , testCase "a box over a linear owner, a Share split twice" (boxOverOwnerSharedTwice @?= ("xabel", "xabel", "xabel"))
+    , testCase "a constructor with an element" (splitBoxedPresent @?= (3, 13))
+    , testCase "a Lend of a constructor with fields of type Ur only" (splitLendOfBoxedAbsent @?= "none")
     ]

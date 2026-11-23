@@ -481,7 +481,8 @@ You can do case-splitting on 'Borrow's - for example:
 
 For other datatypes, you can use 'split' to split general parametric types into borrows.
 It is morally an instance method of the 'DistributesAlias' class, and you can derive it using @anyclass@ derivation together with the 'Generics.Linear.TH.deriveGenericAnd1' macro.
-A nonlinear field whose type does not mention the parameter is kept as it is, but the macro cannot derive for such a type; 'DistributesAlias' says what it needs.
+A field of type t'Ur' @c@, where @c@ does not mention the parameter, is kept as it is.
+So is a nonlinear field whose type does not mention the parameter, but the macro cannot derive for such a type; 'DistributesAlias' says what it needs.
 
 We also provide experimental splitting on record types in "Data.Record.Linear.Borrow.Experimental.PatternMatch" and "Data.Record.Linear.Borrow.Experimental.Split".
 -}

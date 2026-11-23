@@ -1,6 +1,6 @@
 # Troubleshooting pure-borrow code
 
-The diagnostic examples originated with GHC 9.12.4 and pure-borrow 0.1; the remedies below target the 0.2 API.
+The diagnostic examples are from GHC 9.12.4.
 Wording varies between compilers.
 For general multiplicity errors, see the linear-haskell skill's troubleshooting reference first.
 
@@ -78,18 +78,16 @@ For a vector of `Ref`s, consume it or read the values through borrows; convertin
 
 ## Different results at `-O0` and `-O1`, or stale sizes
 
-Pure code must not depend on the optimisation level.
-In 0.1.0.0 this signalled a borrow read where its lifetime no longer protected it, most often a `Share` captured by a `pureAfter` block and read after `reclaim` and a later mutation of the owner.
-Growable `size`, `capacity`, and `getContents` are now `BO` actions, so their reads are ordered with mutations and cannot run after the lifetime has ended.
-Fixed-vector `size` remains pure because the view's length does not change.
-Treat a stale result on the fixed version as a bug to reproduce, rather than working around it with evaluation order.
-Copy what you need into `Ur` before `pureAfter`, and use only lenders and owned values inside it.
+Pure code must not depend on the optimisation level, and the library keeps every read of state that can change in order with the mutations around it by making it a `BO` action.
+Growable `size`, `capacity`, and `getContents` are such actions; fixed-vector `size` is pure because the view's length does not change.
+First check that the project builds against the version of pure-borrow this skill documents.
+If it does, treat the result as a bug to reproduce and report, rather than working around it with evaluation order.
 
 ## `thread blocked indefinitely in an MVar operation` around `parBO`
 
-In 0.2, `parBO` rethrows a branch's original exception after stopping its sibling.
-Check the installed version if the old blocked-parent behavior appears.
-The scheduler used by `divideAndConquer` still has a separate worker-exception limitation; inspect worker errors and input preconditions there.
+`parBO` rethrows a branch's original exception after stopping its sibling, so an exception in a branch does not leave the parent blocked.
+If the parent blocks all the same, check that the project builds against the version of pure-borrow this skill documents.
+The scheduler used by `divideAndConquer` does not propagate worker exceptions reliably; inspect worker errors and input preconditions there.
 
 ## `<Type> cannot be copied!`
 

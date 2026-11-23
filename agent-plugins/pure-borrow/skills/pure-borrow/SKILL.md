@@ -6,17 +6,24 @@ description: >-
   Always load the linear-haskell skill too.
 license: BSD-3-Clause
 compatibility: >-
-  pure-borrow 0.2 API (unreleased: use the main branch until 0.2.0.0 is on Hackage) on GHC 9.10.3 or 9.12.4+ (recommended) with linear-base >= 0.7.
+  pure-borrow 0.2 on GHC 9.10.3 or 9.12.4+ (recommended) with linear-base >= 0.7.
   Requires the linear-haskell skill.
 metadata:
   author: Hiromi Ishii
   requires-skill: linear-haskell
+  pure-borrow-version: "0.2"
 ---
 
 # Pure Borrow
 
 pure-borrow realises Rust-style borrowing in Linear Haskell, purely: compile-time ownership, the *aliased-xor-mutable* discipline, and deterministic parallelism with no runtime bookkeeping.
 It is the artifact of the PLDI 2026 paper *Pure Borrow: Linear Haskell Meets Rust-Style Borrowing* by Matsushita and Ishii.
+
+**Check the library version first.**
+This skill documents pure-borrow 0.2, the version that `pure-borrow-version` in its metadata records.
+Before relying on it, find what the project builds against: `cabal.project.freeze` or `dist-newstyle/cache/plan.json` gives the resolved version, and a `source-repository-package` stanza in `cabal.project` shows a build from the repository.
+Until 0.2.0.0 is on Hackage, the 0.2 API is the repository's `main` branch, so a plan that takes pure-borrow from Hackage does not have it.
+If the project builds against anything else, tell the user that this skill does not describe that version, and check every signature you use against that version's Haddock instead.
 
 **Load the `linear-haskell` skill first** (in Claude Code it is named `linear-haskell:linear-haskell`).
 Everything here assumes its rules on linear arrows, `Ur`, `Consumable`/`Dupable`/`Movable`, `let %1`, shadowing, and `QualifiedDo`.

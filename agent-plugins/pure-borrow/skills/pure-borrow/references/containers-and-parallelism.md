@@ -86,7 +86,7 @@ Prefer `update` over read-then-write: it traverses once and can report what it r
 - If a branch throws, `parBO` stops its sibling, waits until it stops, and rethrows the original exception; a loop without allocation can delay cancellation.
   Only that sibling is stopped: forks it started in a nested `parBO` can continue.
   An asynchronous exception to the waiting parent does not stop the branches, so a timeout bounds waiting rather than work.
-  The divide-and-conquer scheduler below still does not propagate worker exceptions reliably; this fix applies to `parBO`.
+  The divide-and-conquer scheduler below does not propagate worker exceptions reliably; what is said here holds for `parBO` alone.
 - `Par α` is an applicative whose `(<*>)`/`liftA2` run their arguments in parallel: `runPar (f Control.<$> Par a Control.<*> Par b)`.
 - `mapConcurrentlyOf :: Traversal s t a b -> (a %1 -> BO α b) -> s %1 -> BO α t` (and `forConcurrentlyOf`) processes every focus of a linear traversal in parallel, e.g. the element borrows returned by `VL.indicesMut`.
 - Open a `reborrowing_` scope around the split-and-fork so that the whole `Mut` comes back without manual reunification.

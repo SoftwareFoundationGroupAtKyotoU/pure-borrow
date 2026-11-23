@@ -735,17 +735,20 @@ Note [Growing to separate colliding keys]
 A bucket is a slot at which a probe may start: a table of capacity @capa@ has @capa@ of them, and 'fingerprintBucket' gives a key its own.
 The slot array has 'maxDibLimit' more slots at its end, which are no buckets.
 
-A table grows, to twice as many buckets, when it fills up, and also when an entry finds no slot within 'maxDibLimit' of its bucket.
-A table is full when three quarters of its buckets are occupied, by 'maxLoadFactor', which is 4/3 buckets per entry.
-Doubling it then gives 8/3, so a table that grows only when full stays between 4/3 and 8/3 buckets per entry.
-The second kind of growth exists to separate keys that collide, whatever the load, and with the hash mixed it practically never happens to keys of different hashes (Note [Mixing the hash]).
+A table grows, to twice as many buckets, for one of two reasons.
+The first is that it is full: three quarters of its buckets are occupied, by 'maxLoadFactor', which is 4/3 buckets per entry.
+Doubling it then gives 8/3, so a table that grows only when full stays between 4/3 and 8/3 buckets per entry, however large it gets.
+The second is that an entry finds no slot within 'maxDibLimit' of its bucket, because the entries crowding after that bucket would push it further away.
+Sharing a bucket does not cause that by itself: 128 keys of one hash fit, in their bucket and the 127 slots after it.
+This second kind of growth exists to separate keys that collide, whatever the load, and with the hash mixed it practically never happens to keys of different hashes (Note [Mixing the hash]).
 
 A rehash moves every entry into a table twice as large with 'insertFreshWithFingerprint'.
 When an entry finds no slot there either, 'growFresh' moves the entries placed so far, and then the one in hand, into a table twice as large again, so no entry is lost.
 
 No growth takes a table past 'maxBucketsPerEntry' buckets per entry; an insertion that would need one raises 'collidingKeysMessage' instead.
-From a table that only ever grew when full, that leaves four or five doublings to separate colliding keys: 64 is 24 times 8/3 and 48 times 4/3.
 That stops the growth for keys that no table can separate, as 129 keys of one hash are, and bounds the memory that keys made to collide can claim.
+From a table that only ever grew when full, it leaves four or five doublings of the second kind: 64 is 24 times 8/3 and 48 times 4/3.
+Growth of the first kind never comes near the limit, so it never raises.
 'probeForInsert' computes the limit from the number of entries and passes it down unchanged, so it bounds every growth of one insertion; the table that a rehash is filling holds only part of the entries and could not compute it.
 
 An insertion that raises leaves the table it was given half-updated: 'probeForInsert' may already have written into its slot array in place before it called 'grow'.

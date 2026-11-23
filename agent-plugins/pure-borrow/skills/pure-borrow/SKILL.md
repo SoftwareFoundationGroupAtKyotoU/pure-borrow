@@ -21,9 +21,9 @@ It is the artifact of the PLDI 2026 paper *Pure Borrow: Linear Haskell Meets Rus
 
 **Check the library version first.**
 This skill documents pure-borrow 0.2, the version that `pure-borrow-version` in its metadata records.
-Before relying on it, find what the project builds against: `cabal.project.freeze` or `dist-newstyle/cache/plan.json` gives the resolved version, and a `source-repository-package` stanza in `cabal.project` shows a build from the repository.
-Until 0.2.0.0 is on Hackage, the 0.2 API is the repository's `main` branch, so a plan that takes pure-borrow from Hackage does not have it.
-If the project builds against anything else, tell the user that this skill does not describe that version, and check every signature you use against that version's Haddock instead.
+Before relying on it, find the version the project builds against, in `cabal.project.freeze` or in `dist-newstyle/cache/plan.json` after a build.
+If it is not 0.2, tell the user that this skill does not describe that version, and check every signature you use against that version's Haddock instead.
+Until 0.2.0.0 is on Hackage, a project gets 0.2 from the repository's `main` branch, through a `source-repository-package` stanza in `cabal.project`.
 
 **Load the `linear-haskell` skill first** (in Claude Code it is named `linear-haskell:linear-haskell`).
 Everything here assumes its rules on linear arrows, `Ur`, `Consumable`/`Dupable`/`Movable`, `let %1`, shadowing, and `QualifiedDo`.

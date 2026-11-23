@@ -142,6 +142,7 @@ library
     Data.HashMap.RobinHood.Mutable.Linear
     Data.HashMap.RobinHood.Mutable.Linear.Borrow
     Data.HashMap.RobinHood.Mutable.Linear.Borrow.Internal
+    Data.HashMap.RobinHood.Mutable.Linear.Borrow.Unsafe
     Data.HashMap.RobinHood.Mutable.Linear.Internal
     Data.Record.Linear.Borrow.Experimental.PatternMatch
     Data.Record.Linear.Borrow.Experimental.Split
@@ -213,6 +214,7 @@ test-suite pure-borrow-test
     Data.HashMap.RobinHood.Mutable.Linear.BorrowSpec
     Data.HashMap.RobinHood.Mutable.LinearSpec
     Data.HashMap.RobinHood.Mutable.LinearSpec.Cases
+    Data.HashMap.RobinHood.Mutable.LinearSpec.Steered
     Data.Ref.LinearSpec
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted.TypingCases
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.UnrestrictedSpec

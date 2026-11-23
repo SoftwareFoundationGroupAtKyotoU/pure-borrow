@@ -11,6 +11,13 @@ Its mutations and queries are 'BO' actions on a borrow of the table.
 Keys and values are GC-owned, so a lookup returns @'Ur' ('Maybe' v)@ rather than a borrow of the stored value.
 
 This module is intended to be imported qualified.
+
+= Colliding keys #collisions#
+
+A table holds at most 128 keys with the same hash, and fewer when other keys collide with them.
+An insertion raises an error, rather than lose an entry, when the table cannot hold the keys it would then have.
+We anticipate that such collisions rarely occur.
+If you see the error, it may be a bug in this implementation or a failure of its design, so please report it to the developers, with a reproduction if possible.
 -}
 module Data.HashMap.RobinHood.Mutable.Linear.Borrow (
   HashMap,
@@ -25,11 +32,6 @@ module Data.HashMap.RobinHood.Mutable.Linear.Borrow (
   delete,
   alter,
   alterF,
-
-  -- * Suspended insertion
-  InsertPlan,
-  lookupForInsert,
-  unsafeInsertPrepared,
 
   -- * Query
   size,
@@ -58,7 +60,6 @@ import Data.Hashable (Hashable)
 import Data.Ref.Linear qualified as Ref
 import Data.Ref.Linear.Borrow qualified as Ref
 import Prelude.Linear hiding (insert, lookup, take)
-import Prelude qualified as NonLinear
 
 -- * Construction
 
@@ -69,7 +70,10 @@ empty size l =
   dup l & \(tableLinear, refLinear) ->
     HashMap (Ref.new (Raw.new size tableLinear) refLinear)
 
--- | \(O(n)\) amortized. Build a table from a list, later keys winning.
+{- | \(O(n)\) amortized. Build a table from a list, later keys winning.
+
+It raises an error on [too many colliding keys]("Data.HashMap.RobinHood.Mutable.Linear.Borrow#collisions").
+-}
 fromList :: (Hashable k) => [(k, v)] -> Linearly %1 -> HashMap k v
 {-# INLINE fromList #-}
 fromList dic l =
@@ -78,7 +82,10 @@ fromList dic l =
 
 -- * Mutation
 
--- | \(O(1)\) amortized. Insert an entry, returning the value it displaced.
+{- | \(O(1)\) amortized. Insert an entry, returning the value it displaced.
+
+It raises an error on [too many colliding keys]("Data.HashMap.RobinHood.Mutable.Linear.Borrow#collisions").
+-}
 insert ::
   (Hashable k) =>
   k ->
@@ -107,7 +114,10 @@ delete key dic = Control.do
       (coerceBor dic)
   Control.pure (Ur $ forceMay mval, recoerceBor dic)
 
--- | \(O(1)\) amortized. Insert, update or delete the entry at a key.
+{- | \(O(1)\) amortized. Insert, update or delete the entry at a key.
+
+It raises an error on [too many colliding keys]("Data.HashMap.RobinHood.Mutable.Linear.Borrow#collisions").
+-}
 alter ::
   (Hashable k) =>
   (Maybe v -> Maybe v) ->
@@ -120,7 +130,10 @@ alter f k =
     . Ref.modify (Raw.alter f k)
     . coerceBor
 
--- | \(O(1)\) amortized. 'alter' with the replacement produced in 'BO'.
+{- | \(O(1)\) amortized. 'alter' with the replacement produced in 'BO'.
+
+It raises an error on [too many colliding keys]("Data.HashMap.RobinHood.Mutable.Linear.Borrow#collisions").
+-}
 alterF ::
   (Hashable k) =>
   (Maybe v -> BO α (Ur (Maybe v))) ->
@@ -136,41 +149,6 @@ alterF f key dic = Control.do
       )
       (coerceBor dic)
   Control.pure $ recoerceBor dic
-
--- * Suspended insertion
-
-{- | \(O(1)\) amortized. Look a key up, and on a miss suspend the probe.
-
-Resume the returned plan with 'unsafeInsertPrepared' to insert without a
-second traversal.
--}
-lookupForInsert ::
-  forall k v bk α.
-  (Hashable k) =>
-  k ->
-  Borrow bk α (HashMap k v) %1 ->
-  BO α (Ur (Either v (InsertPlan k)), Borrow bk α (HashMap k v))
-{-# INLINE lookupForInsert #-}
-lookupForInsert key = askRaw go
-  where
-    go :: Raw.HashMap k v %1 -> (Ur (Either v (InsertPlan k)), Raw.HashMap k v)
-    go hm = case Raw.lookupForInsert key hm of
-      (Ur result, hm) -> (Ur (NonLinear.fmap InsertPlan result), hm)
-
-{- | \(O(1)\) amortized. Resume an unsuccessful 'lookupForInsert' as an insertion.
-
-The table must not have been mutated since the plan was produced.
--}
-unsafeInsertPrepared ::
-  InsertPlan k ->
-  v ->
-  Mut α (HashMap k v) %1 ->
-  BO α (Mut α (HashMap k v))
-{-# INLINE unsafeInsertPrepared #-}
-unsafeInsertPrepared (InsertPlan plan) !v =
-  Control.fmap recoerceBor
-    . Ref.modify (Raw.unsafeInsertPrepared plan v)
-    . coerceBor
 
 -- * Query
 
@@ -245,21 +223,26 @@ take_ :: forall k v α. Mut α (HashMap k v) %1 -> BO α (HashMap k v)
 {-# INLINE take_ #-}
 take_ dic = Control.fmap (uncurry $ flip lseq) $ take dic
 
-{- | \(O(n)\) amortized. Union of two tables.
+{- | \(O(n)\) amortized, for \(n\) the capacity of the table with fewer entries. Union of two tables.
 
-The smaller table is inserted into the larger, so a key present in both takes
-the value from the table that is inserted second.
+A key present in both takes the second table's value, as if the second table's entries were inserted into the first.
+linear-base's @Data.HashMap.Mutable.Linear.union@ has the same bias, while @Data.Map.union@ and @Data.HashMap.Strict.union@ keep the first map's value.
+It raises an error on [too many colliding keys]("Data.HashMap.RobinHood.Mutable.Linear.Borrow#collisions").
 -}
 union :: (Hashable k) => HashMap k v %1 -> HashMap k v %1 -> HashMap k v
 {-# INLINE union #-}
 union (HashMap ref1) (HashMap ref2) = DataFlow.do
   (l, ref1) <- withLinearly ref1
-  HashMap $! Ref.new (Raw.union (Ref.free ref1) (Ref.free ref2)) l
+  HashMap $! Ref.new (Raw.extend (Ref.free ref1) (Ref.free ref2)) l
 
--- | \(O(n)\) amortized. Insert every entry of a table into a borrowed one.
+{- | \(O(n)\) amortized, for \(n\) the capacity of the table with fewer entries. Insert every entry of a table into a borrowed one.
+
+A key present in both takes the inserted table's value, as with 'insert'.
+It raises an error on [too many colliding keys]("Data.HashMap.RobinHood.Mutable.Linear.Borrow#collisions").
+-}
 extend :: (Hashable k) => HashMap k v %1 -> Mut α (HashMap k v) %1 -> BO α (Mut α (HashMap k v))
 {-# INLINE extend #-}
 extend donor dic = Control.do
   let %1 !donor' = Ref.free (inner donor)
-  !dic <- Ref.modify (\ !s -> Raw.union s donor') $ coerceBor dic
+  !dic <- Ref.modify (\ !s -> Raw.extend s donor') $ coerceBor dic
   Control.pure $! recoerceBor dic

@@ -148,7 +148,13 @@ The two associations of a meet are converted by functions, 'assocRBO' and 'assoc
 With that, the 'EndToken' of a lifetime that had ended discharged a 'reclaim'' in one that was still running, and an owner came back while its 'Mut' was live.
 
 So the safe modules export no @(':~:')@ or @(':~~:')@ between types that differ in a lifetime: a nominal equality is taken apart by injectivity, whatever justified it.
-@test/typing-fail/AssocEqualityAnyLifetime.hs@ is the program that did it, and its two siblings pin the other two names.
+The program that did it:
+
+    anyEq :: forall (α :: Lifetime) (β :: Lifetime). α :~: β
+    anyEq =
+      trans
+        (inner (inner (outer (assocBOEq @β @β @α @()))))
+        (inner (outer (inner (outer (assocBOEq @β @α @α @())))))
 -}
 
 instance Data.Functor (BO α) where

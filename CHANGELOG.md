@@ -37,7 +37,9 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   A function polymorphic in `p` that calls it is rejected with "No instance for `KnownMultiplicity p`"; add the constraint to its signature.
 - `Data.HashMap.RobinHood.Mutable.Linear` exports only `HashMap`, `Hashable`, `fromList`, `lookup`, `member`, `size`, `capacity`, `foldMapWithKey` and `toList`, since its `insert`, `insertMany`, `delete`, `alter`, `alterF`, `unsafeInsertPrepared` and `union` updated a table they were given in place, so a call left unevaluated where both branches of a `parBO` reach it could run twice and leave the table inconsistent.
   Build a table that changes with `Data.HashMap.RobinHood.Mutable.Linear.Borrow` instead, whose `HashMap` is a different type and whose mutations and queries are `BO` actions on a borrow of it.
-  Each removed name has a namesake there, `InsertPlan`, `lookupForInsert` and `unsafeInsertPrepared` included, except `new`, which is its `empty`, and `insertMany`, for which fold its `insert` over the list.
+  Each removed entry has a renamed counterpart, with three exceptions: `new` is its `empty`; for `insertMany`, fold its `insert` over the list; and `InsertPlan`, `lookupForInsert` and `unsafeInsertPrepared` are in `Data.HashMap.RobinHood.Mutable.Linear.Borrow.Unsafe`.
+- `InsertPlan`, `lookupForInsert` and `unsafeInsertPrepared` of `Data.HashMap.RobinHood.Mutable.Linear.Borrow` have moved to `Data.HashMap.RobinHood.Mutable.Linear.Borrow.Unsafe`, a module for library authors, since a plan used with a table other than the one it was made for, or after that table changed, can read and write memory outside the table.
+  In application code, use the borrow-aware hash map's `alter` or `alterF`, which insert at a missing key with a single search, or its `lookup` followed by its `insert` where the value found is needed, which searches twice on a miss.
 - The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)`, `Clone (Array a)` for linear-base's `Array`, `Clone` for a boxed growable or unboxed vector, or a `(<:)` instance for `Maybe`; delete the orphan.
   Call sites of an old shallow vector-cloning orphan now need `Clone a`, since those vectors own their elements.
   An orphan as general as the new instance, such as `Clone (Array a)`, is rejected with "Duplicate instance declarations"; a narrower one, such as `Clone (Array Int)`, compiles, and each use of it is rejected with "Overlapping instances".
@@ -57,9 +59,15 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   The thread that evaluates an owner, usually the parent before a `parBO` forks, therefore computes its contents, and a `fromList` its elements one after another, where branches that read different contents used to compute them in parallel; the borrow-aware hash map's `fromList` and `union` likewise build their tables as the map is evaluated.
   A placeholder such as `undefined` raises when its owner is borrowed, even if nothing reads it, and in a worker when the `divide` of `divideAndConquer` or `divideAndConquer'` returns it inside an owner (see "Clarified").
   To keep an expensive value for the branch that needs it, build it there, or store a GC-owned one in a lazy box such as `Ur`, which is evaluated only to the box.
+- At a key that both tables hold, the borrow-aware hash map's `extend` keeps the value of the table it inserts, as its `insert` does, and its `union` keeps the second table's value.
+  Both used to keep the value of whichever table had fewer entries.
+- The `toList` of both Robin Hood hash maps, and the `foldMapWithKey` of `Data.HashMap.RobinHood.Mutable.Linear`, visit the entries in another order than in 0.1.0.0; the order stays unspecified.
 
 ### Fixed
 
+- The hash maps of `Data.HashMap.RobinHood.Mutable.Linear` and `Data.HashMap.RobinHood.Mutable.Linear.Borrow` no longer lose an entry, or store one twice, when many keys collide.
+  They did when a table grew and its keys had hashes alike in their low bits, such as `Int` keys that are multiples of 1024, and when about 128 keys had the same hash.
+  A table holds at most 128 keys with the same hash: an insertion past that raises an error, where it used to drop entries silently, and so can one into a table where many hashes are each shared by dozens of keys (see "Colliding keys" in the documentation of either module).
 - A pure read of an owner handed back by `runBO`, `runBOLend`, `modifyBO`, `modifyBO_`, `reclaim` or a scope that discharges an `After` sees the writes made during the scope; at `-O2` it could return what the owner held before the scope.
 - `reclaim` fails on a bottom `EndToken` given to `withEnd`, instead of handing back an owner whose borrows are still live.
 - Every allocation made with a `Linearly` token returns a fresh resource, even when the token is forced or the `runBO` that makes it has no free variables; at `-O2` two such allocations could return one reference.
@@ -113,6 +121,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   Code that clones one borrow repeatedly, as a loop does, is slower, since every clone now gets an array of its own (see "Fixed").
 - Stealing work from the deque of `Control.Concurrent.Queue.ChaseLev` is slower, more so on x86-64, though the work-stealing quicksort and FFT show no measurable slowdown.
 - Allocations that take a `Linearly` token, such as `Ref.new` and the constructors of the vectors, are slightly slower.
+- Both Robin Hood hash maps are noticeably slower, and allocate slightly more, on keys whose hashes are consecutive numbers, such as `Int` keys counted up from 1.
+  Such keys used to land in consecutive slots without ever colliding, and a table no longer places keys by the low bits of their hashes alone (see "Fixed"); keys whose hashes are already scattered are about as fast as before.
 - `foldBorrow` over a list or `NonEmpty` allocates more.
 - Storing a value in a `Ref` or a vector is slightly slower, since it evaluates the value, and `fromList` of the vectors is slower; at `One`, the multiplicity-polymorphic vector's `fromList` allocates more per element.
 - A loop of `modifyBO_` calls that hand the owner back is slower and allocates more, and, unless the owner is forced, it builds up a chain of delayed updates.

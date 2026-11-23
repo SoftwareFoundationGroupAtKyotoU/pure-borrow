@@ -31,13 +31,13 @@ import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (
  )
 import Control.Syntax.DataFlow qualified as DataFlow
 import Data.Array.Mutable.Linear qualified as LA
-import Data.Bits ((.&.))
+import Data.Bits (finiteBitSize, unsafeShiftR, xor, (.&.))
 import Data.Foldable qualified as NonLinear
 import Data.Functor.Linear qualified as Data
 import Data.Hashable (Hashable (..))
 import Data.Semigroup (Max (..))
 import Data.Unrestricted.Linear qualified as Ur
-import Data.Word (Word8)
+import Data.Word (Word32, Word64, Word8)
 import GHC.Base (Type, UnliftedType)
 import GHC.Exts qualified as GHC
 import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
@@ -95,14 +95,51 @@ newtype DIB = DIB Word8
     , Show
     )
 
--- | Cached hash value, for fast rejection and for rehashing without rehashing.
+-- | Cached mixed hash of a key, for fast rejection and for rehashing without hashing again.
 newtype Fingerprint = Fingerprint Int
   deriving newtype (NonLinear.Eq, NonLinear.Ord, Show)
 
--- | Compute the fingerprint of a key.
+-- | Compute the fingerprint of a key: its hash, mixed so that every bit of the hash reaches the bits that pick a bucket.
 fingerprint :: (Hashable k) => k -> Fingerprint
 {-# INLINE fingerprint #-}
-fingerprint = Fingerprint NonLinear.. hash
+-- See Note [Mixing the hash].
+fingerprint = Fingerprint NonLinear.. mixHash NonLinear.. hash
+
+-- | A bijection on the values of an 'Int' in which every bit of the argument affects every bit of the result.
+mixHash :: Int -> Int
+{-# INLINE mixHash #-}
+mixHash h
+  | finiteBitSize h NonLinear.== 64 = NonLinear.fromIntegral (mixWord64 (NonLinear.fromIntegral h))
+  | otherwise = NonLinear.fromIntegral (mixWord32 (NonLinear.fromIntegral h))
+
+-- | The 64-bit finalizer of MurmurHash3.
+mixWord64 :: Word64 -> Word64
+{-# INLINE mixWord64 #-}
+mixWord64 w = shift33 (shift33 (shift33 w NonLinear.* 0xff51afd7ed558ccd) NonLinear.* 0xc4ceb9fe1a85ec53)
+  where
+    shift33 :: Word64 -> Word64
+    shift33 x = x `xor` (x `unsafeShiftR` 33)
+
+-- | The 32-bit finalizer of MurmurHash3.
+mixWord32 :: Word32 -> Word32
+{-# INLINE mixWord32 #-}
+mixWord32 w = shift16 (shift13 (shift16 w NonLinear.* 0x85ebca6b) NonLinear.* 0xc2b2ae35)
+  where
+    shift16, shift13 :: Word32 -> Word32
+    shift16 x = x `xor` (x `unsafeShiftR` 16)
+    shift13 x = x `xor` (x `unsafeShiftR` 13)
+
+{-
+Note [Mixing the hash]
+~~~~~~~~~~~~~~~~~~~~~~
+A key's bucket is the low bits of its fingerprint, but @hashable@ hashes an 'Int' or a 'Word' to itself and a 'Double' to its bits.
+Unmixed, 'Int' keys that are multiples of a large power of two, or 'Double' keys that are whole numbers, would share their low bits and pile into one bucket of any table smaller than that power of two.
+So 'fingerprint' passes the hash through 'mixHash', the finalizer of MurmurHash3 for the width of an 'Int', a bijection whose every output bit depends on every input bit.
+Keys with different hashes then get unrelated buckets, while keys with equal hashes still get equal fingerprints, which is all that the fast rejection in 'probeKeyForAlter' relies on.
+The price is locality: sequential 'Int' keys no longer fill consecutive slots.
+
+One multiplication with the bucket taken from the top bits would be cheaper and would keep sequential keys from colliding, but it keeps the regular pattern of evenly spaced keys: for some spacings they line up, and the table doubles again and again to pull them apart.
+-}
 
 -- | Bucket index of a fingerprint. The capacity must be a power of two.
 fingerprintBucket :: Fingerprint -> Int -> Int
@@ -308,7 +345,8 @@ unsafeGetSlot i (Slots arr) =
 
 unsafeSetSlot :: Int -> Slot k v -> Slots k v %1 -> Slots k v
 {-# INLINE unsafeSetSlot #-}
-unsafeSetSlot i slot (Slots arr) = Slots (LA.unsafeSet i slot arr)
+-- Strict in the slot, so that the array never holds a thunk.
+unsafeSetSlot i !slot (Slots arr) = Slots (LA.unsafeSet i slot arr)
 
 -- | \(O(1)\) amortized. Insert an entry, returning the value it displaced.
 insert :: (Hashable k) => k -> v -> HashMap k v %1 -> (Ur (Maybe v), HashMap k v)
@@ -367,19 +405,53 @@ capacity :: HashMap k v %1 -> (Ur Int, HashMap k v)
 {-# INLINE capacity #-}
 capacity (HashMap sz capa maxDIB slots) = (Ur capa, HashMap sz capa maxDIB slots)
 
-{- | \(O(n)\) amortized. Union of two tables.
+{- | \(O(n)\) amortized, for \(n\) the capacity of the table with fewer entries. Insert every entry of the second table into the first.
 
-The smaller table is inserted into the larger, so a key present in both takes
-the value from the table that is inserted second.
+A key present in both takes the second table's value, as with 'insert'.
 -}
-union :: (Hashable k) => HashMap k v %1 -> HashMap k v %1 -> HashMap k v
-{-# INLINE union #-}
-union hm1 hm2 = case (size hm1, size hm2) of
-  ((Ur sz1, hm1), (Ur sz2, hm2)) -> DataFlow.do
-    (parent, child) <- if sz1 >= sz2 then (hm1, hm2) else (hm2, hm1)
-    appEndo
-      (foldMapWithKey (\ !k !v -> Endo $ uncurry lseq . insert k v) child)
-      parent
+extend :: (Hashable k) => HashMap k v %1 -> HashMap k v %1 -> HashMap k v
+extend target donor = case (size target, size donor) of
+  ((Ur targetSize, target), (Ur donorSize, donor)) ->
+    -- The smaller table's entries move into the larger one.
+    if donorSize NonLinear.<= targetSize
+      then moveEntriesWith insertReplacing donor target
+      else moveEntriesWith insertAbsent target donor
+
+-- | Insert every entry of the first table into the second with the given insertion, consuming the first.
+moveEntriesWith ::
+  forall k v.
+  (k -> v -> HashMap k v %1 -> HashMap k v) ->
+  HashMap k v %1 ->
+  HashMap k v %1 ->
+  HashMap k v
+{-# INLINE moveEntriesWith #-}
+moveEntriesWith place (HashMap size capa _ slots) = go 0 0 slots
+  where
+    physCapa = capa + fromIntegral maxDibLimit
+    go :: Int -> Int -> Slots k v %1 -> HashMap k v %1 -> HashMap k v
+    go !i !count !slots !dest
+      | count == size || i == physCapa = slots `lseq` dest
+      | otherwise =
+          unsafeGetSlot i slots & \case
+            (Ur (Occupied _ _ k v), slots') -> go (i + 1) (count + 1) slots' (place k v dest)
+            (Ur Empty, slots') -> go (i + 1) count slots' dest
+
+-- | Insert an entry, replacing the value at its key, if any.
+insertReplacing :: (Hashable k) => k -> v -> HashMap k v %1 -> HashMap k v
+{-# INLINE insertReplacing #-}
+insertReplacing k v hm = case probeKeyForAlter k hm of
+  (# NotFound st, hm #) -> probeForInsert k v st hm
+  (# Found Location {foundAt, slotFp, slotDIB}, hm #) ->
+    hm & \(HashMap size capa maxDIB slots) -> DataFlow.do
+      slots <- unsafeSetSlot foundAt (Occupied slotFp slotDIB k v) slots
+      HashMap size capa maxDIB slots
+
+-- | Insert an entry only where its key is absent, keeping the value already there otherwise.
+insertAbsent :: (Hashable k) => k -> v -> HashMap k v %1 -> HashMap k v
+{-# INLINE insertAbsent #-}
+insertAbsent k v hm = case probeKeyForAlter k hm of
+  (# NotFound st, hm #) -> probeForInsert k v st hm
+  (# Found _, hm #) -> hm
 
 -- | \(O(1)\) amortized. 'alter' with the replacement produced in a functor.
 alterF ::
@@ -434,8 +506,8 @@ lookupForInsert k hm = case probeKeyForAlter k hm of
 
 {- | \(O(1)\) amortized. Insert using a plan returned by 'lookupForInsert'.
 
-The table must be the same table, with no intervening mutation. Violating
-this precondition can corrupt the Robin Hood invariants.
+The table must be the same table, with no intervening mutation.
+Violating this precondition can corrupt the table, and read or write outside its slot array.
 -}
 unsafeInsertPrepared :: InsertPlan k -> v -> HashMap k v %1 -> HashMap k v
 {-# INLINE unsafeInsertPrepared #-}
@@ -525,7 +597,8 @@ probeForInsert !k !v ProbeSuspended {..} (HashMap size capa maxDIB slots)
                       go size capa (Max dibAtMiss NonLinear.<> maxDIB) existingFp (existingDib + 1) k' v' (offset + 1) slots
                     (Ur Empty, slots) -> error "probeForInsert: impossible Empty slot" slots
                 else
-                  if dibAtMiss NonLinear.== maxDibLimit NonLinear.- 1
+                  -- An entry must not move on past the DIB limit.
+                  if dibAtMiss NonLinear.>= maxDibLimit
                     then grow size capa searchFp k v slots
                     else go size capa maxDIB searchFp (dibAtMiss + 1) k v (offset + 1) slots
   where
@@ -533,9 +606,14 @@ probeForInsert !k !v ProbeSuspended {..} (HashMap size capa maxDIB slots)
     physCapa = capa + fromIntegral maxDibLimit
 
     grow :: Int -> Int -> Fingerprint -> k -> v -> Slots k v %1 -> HashMap k v
+    -- See Note [Growing to separate colliding keys].
     grow !size !capa !fp newK newV slots =
-      withLinearly slots & \(lin, slots) ->
-        rehashInto size physCapa fp newK newV 0 0 slots (new (capa * 2) lin)
+      let !limit = maxBucketsPerEntry * (size + 1)
+       in if capa * 2 NonLinear.> limit
+            then NonLinear.errorWithoutStackTrace collidingKeysMessage slots
+            else
+              withLinearly slots & \(lin, slots) ->
+                rehashInto limit size physCapa fp newK newV 0 0 slots (new (capa * 2) lin)
 
     go ::
       Int ->
@@ -570,23 +648,26 @@ probeForInsert !k !v ProbeSuspended {..} (HashMap size capa maxDIB slots)
                     -- hence the invariant is maintained.
                     go size capa (Max newDib NonLinear.<> curMaxDIB) existingFp (existingDib + 1) k' v' (i + 1) slots
                   else
-                    if newDib NonLinear.== maxDibLimit NonLinear.- 1
+                    -- An entry must not move on past the DIB limit, where no lookup would find it.
+                    if newDib NonLinear.>= maxDibLimit
                       then grow size capa newFp newK newV slots
                       else go size capa curMaxDIB newFp (newDib + 1) newK newV (i + 1) slots
 
 {- | Insert a key known to be absent, reusing its cached fingerprint.
 
 This is the rehashing path: it never has to hash a key again.
+The table grows as needed, up to the given capacity, to separate keys that collide in it.
 -}
-insertFreshWithFingerprint :: Fingerprint -> k -> v -> HashMap k v %1 -> HashMap k v
+insertFreshWithFingerprint :: Int -> Fingerprint -> k -> v -> HashMap k v %1 -> HashMap k v
 {-# INLINE insertFreshWithFingerprint #-}
-insertFreshWithFingerprint !fp !k !v (HashMap size capa maxDIB slots) =
+insertFreshWithFingerprint !limit !fp !k !v (HashMap size capa maxDIB slots) =
   let !start = fingerprintBucket fp capa
       !physCapa = capa + fromIntegral maxDibLimit
-   in goFreshF size capa physCapa maxDIB 0 fp k v start slots
+   in goFreshF limit size capa physCapa maxDIB 0 fp k v start slots
 
 -- | The probe loop of 'insertFreshWithFingerprint'.
 goFreshF ::
+  Int -> -- largest capacity the table may grow to
   Int -> -- size
   Int -> -- capa
   Int -> -- physCapa
@@ -598,12 +679,9 @@ goFreshF ::
   Int -> -- current index
   Slots k v %1 ->
   HashMap k v
-goFreshF !size !capa !physCapa !curMaxDIB !dib !fp !k !v !i !slots
+goFreshF !limit !size !capa !physCapa !curMaxDIB !dib !fp !k !v !i !slots
   | i == physCapa || dib NonLinear.> maxDibLimit =
-      -- Should not arise during a rehash into a table twice the size, but
-      -- growing again is the safe response.
-      withLinearly slots & \(lin, slots) ->
-        slots `lseq` insertFreshWithFingerprint fp k v (new (capa * 2) lin)
+      growFresh limit size capa physCapa fp k v slots
   | otherwise =
       unsafeGetSlot i slots & \case
         (Ur Empty, slots') -> DataFlow.do
@@ -614,12 +692,73 @@ goFreshF !size !capa !physCapa !curMaxDIB !dib !fp !k !v !i !slots
             then DataFlow.do
               -- Take from the rich and give to the poor.
               slots' <- unsafeSetSlot i (Occupied fp dib k v) slots'
-              goFreshF size capa physCapa (curMaxDIB NonLinear.<> Max dib) (existingDib + 1) existingFp k' v' (i + 1) slots'
+              goFreshF limit size capa physCapa (curMaxDIB NonLinear.<> Max dib) (existingDib + 1) existingFp k' v' (i + 1) slots'
             else
-              goFreshF size capa physCapa curMaxDIB (dib + 1) fp k v (i + 1) slots'
+              goFreshF limit size capa physCapa curMaxDIB (dib + 1) fp k v (i + 1) slots'
+
+{- | Grow a table being filled by a rehash, which has no room for an entry within the DIB limit.
+
+The @size@ entries of the slot array move into a table twice as large, and then the entry in hand, so none is lost.
+-}
+growFresh ::
+  Int -> -- largest capacity the table may grow to
+  Int -> -- size
+  Int -> -- capa
+  Int -> -- physCapa
+  Fingerprint -> -- fingerprint of the entry in hand
+  k ->
+  v ->
+  Slots k v %1 ->
+  HashMap k v
+-- See Note [Growing to separate colliding keys].
+growFresh !limit !size !capa !physCapa !fp !k !v slots =
+  if capa * 2 NonLinear.> limit
+    then NonLinear.errorWithoutStackTrace collidingKeysMessage slots
+    else
+      withLinearly slots & \(lin, slots) ->
+        rehashInto limit size physCapa fp k v 0 0 slots (new (capa * 2) lin)
+
+{- | How many buckets a table may grow to for each of its entries, the one being inserted included.
+
+A table grows past its load factor only to separate keys that collide in it, which keys with different hashes practically never need.
+-}
+maxBucketsPerEntry :: Int
+maxBucketsPerEntry = 64
+
+-- | The error of an insertion whose key collides with more keys than a table can hold together.
+collidingKeysMessage :: NonLinear.String
+collidingKeysMessage = "Data.HashMap.RobinHood: too many keys collide: more than 128 keys have the same hash, or many hashes are each shared by dozens of keys; this is expected to be rare, so please report it to the developers of pure-borrow, with a reproduction if possible (see \"Colliding keys\" in the module's documentation)"
+
+{-
+Note [Growing to separate colliding keys]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+A bucket is a slot at which a probe may start: a table of capacity @capa@ has @capa@ of them, and 'fingerprintBucket' gives a key its own.
+The slot array has 'maxDibLimit' more slots at its end, which are no buckets.
+
+A table grows, to twice as many buckets, for one of two reasons.
+The first is that it is full: three quarters of its buckets are occupied, by 'maxLoadFactor', which is 4/3 buckets per entry.
+Doubling it then gives 8/3, so a table that grows only when full stays between 4/3 and 8/3 buckets per entry, however large it gets.
+The second is that an entry finds no slot within 'maxDibLimit' of its bucket, because the entries crowding after that bucket would push it further away.
+Sharing a bucket does not cause that by itself: 128 keys of one hash fit, in their bucket and the 127 slots after it.
+This second kind of growth exists to separate keys that collide, whatever the load, and with the hash mixed it practically never happens to keys of different hashes (Note [Mixing the hash]).
+
+A rehash moves every entry into a table twice as large with 'insertFreshWithFingerprint'.
+When an entry finds no slot there either, 'growFresh' moves the entries placed so far, and then the one in hand, into a table twice as large again, so no entry is lost.
+
+No growth takes a table past 'maxBucketsPerEntry' buckets per entry; an insertion that would need one raises 'collidingKeysMessage' instead.
+That stops the growth for keys that no table can separate, as 129 keys of one hash are, and bounds the memory that keys made to collide can claim.
+From a table that only ever grew when full, it leaves four or five doublings of the second kind: 64 is 24 times 8/3 and 48 times 4/3.
+Growth of the first kind never comes near the limit, so it never raises.
+'probeForInsert' computes the limit from the number of entries and passes it down unchanged, so it bounds every growth of one insertion; the table that a rehash is filling holds only part of the entries and could not compute it.
+
+An insertion that raises leaves the table it was given half-updated: 'probeForInsert' may already have written into its slot array in place before it called 'grow'.
+Nothing observes that table afterwards, since no safe code can catch an exception and go on using a linearly owned table, or the 'Ref' that holds the table of the borrow-aware map.
+An operation that one day catches exceptions inside 'BO' must not hand such a table back.
+-}
 
 -- | Move every entry of the old slot array into a fresh table, then insert.
 rehashInto ::
+  Int -> -- largest capacity the fresh table may grow to
   Int -> -- size of the old table
   Int -> -- physCapa of the old table
   Fingerprint -> -- fingerprint of the key to insert
@@ -630,15 +769,15 @@ rehashInto ::
   Slots k v %1 ->
   HashMap k v %1 ->
   HashMap k v
-rehashInto !oldSize !oldPhysCapa !fp !k !v !i !count !oldSlots !newMap
+rehashInto !limit !oldSize !oldPhysCapa !fp !k !v !i !count !oldSlots !newMap
   | count == oldSize || i >= oldPhysCapa =
-      oldSlots `lseq` insertFreshWithFingerprint fp k v newMap
+      oldSlots `lseq` insertFreshWithFingerprint limit fp k v newMap
   | otherwise =
       unsafeGetSlot i oldSlots & \case
         (Ur (Occupied fp' _ k' v'), oldSlots') ->
-          rehashInto oldSize oldPhysCapa fp k v (i + 1) (count + 1) oldSlots' (insertFreshWithFingerprint fp' k' v' newMap)
+          rehashInto limit oldSize oldPhysCapa fp k v (i + 1) (count + 1) oldSlots' (insertFreshWithFingerprint limit fp' k' v' newMap)
         (Ur Empty, oldSlots') ->
-          rehashInto oldSize oldPhysCapa fp k v (i + 1) count oldSlots' newMap
+          rehashInto limit oldSize oldPhysCapa fp k v (i + 1) count oldSlots' newMap
 
 -- | \(O(1)\) amortized. The value stored at a key, if any.
 lookup :: (Hashable k) => k -> HashMap k v %1 -> (Ur (Maybe v), HashMap k v)
@@ -799,6 +938,9 @@ materialiseDiffList :: Endo [a] -> [a]
 {-# INLINE materialiseDiffList #-}
 materialiseDiffList diff = appEndo diff []
 
--- | \(O(n)\) amortized. Build a table from a list, later keys winning.
+{- | \(O(n)\) amortized. Build a table from a list, later keys winning.
+
+It raises an error on [too many colliding keys]("Data.HashMap.RobinHood.Mutable.Linear#collisions").
+-}
 fromList :: (Hashable k) => [(k, v)] -> Linearly %1 -> HashMap k v
 fromList kvs = insertMany kvs . new (NonLinear.length kvs)

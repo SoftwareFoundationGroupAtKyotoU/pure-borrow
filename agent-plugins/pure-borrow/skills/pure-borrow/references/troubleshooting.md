@@ -94,6 +94,11 @@ The scheduler used by `divideAndConquer` does not propagate worker exceptions re
 A custom `Unsatisfiable` error: the element type contains mutable state (`Vector`, `Ref`, `HashMap`, …) and must not be `Copyable`.
 Work through a borrow of the element (`VL.get` returns one), or `clone` it inside `BO` if you really need an independent copy.
 
+## `too many keys collide` from a Robin Hood hash map
+
+A table of `Data.HashMap.RobinHood.Mutable.Linear` or `Data.HashMap.RobinHood.Mutable.Linear.Borrow` holds at most 128 keys with the same hash, and fewer when other keys collide with them; an insertion past that raises this error instead of losing an entry.
+The library expects such collisions to be rare, so report the error to its developers, with a reproduction if possible.
+
 ## `Not in scope: 'DataFlow.fail'`
 
 GHC 9.10 rejects constructor patterns such as `(Ur n, v) <- …` in `DataFlow.do`.

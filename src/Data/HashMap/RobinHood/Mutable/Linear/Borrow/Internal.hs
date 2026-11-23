@@ -31,7 +31,7 @@ import Unsafe.Linear qualified as Unsafe
 newtype HashMap k v = HashMap (Ref (Raw.HashMap k v))
   deriving newtype (LinearOnly, Consumable, Dupable, Clone)
 
--- | An insertion that @lookupForInsert@ prepared against a borrowed table, for @unsafeInsertPrepared@ to complete.
+-- | A plan that 'Data.HashMap.RobinHood.Mutable.Linear.Borrow.Unsafe.lookupForInsert' made on a miss, good for one 'Data.HashMap.RobinHood.Mutable.Linear.Borrow.Unsafe.unsafeInsertPrepared' into the same table before anything else changes it.
 newtype InsertPlan k = InsertPlan (Raw.InsertPlan k)
 
 {- | A 'HashMap' cannot be 'Copyable', because it owns a mutable reference.

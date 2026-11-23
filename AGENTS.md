@@ -187,7 +187,7 @@ Any binding whose body reaches an `unsafePerformIO` is `NOINLINE`.
 The reviewer's job is to try to write a *well-typed user program* that violates an invariant, not to judge whether the code reads plausibly.
 A program counts only if its own side keeps every contract: a user-side violation of a contract is not an unsoundness of the API, whatever the program does after it.
 The reviewer must not confuse the two.
-Among the violations are a function that calls itself again on the same arguments without decreasing them, an instance that leaves out a class method, an instance or superclass context that holds only by assuming itself (as a class with a quantified superclass and `instance C => C` does), a lawless instance such as a `Generic` instance that is not an isomorphism, Template Haskell that reaches a constructor the library does not export, and anything like these.
+Among the violations are a function that calls itself again on the same arguments without decreasing them, an instance that leaves out a class method, an instance whose context holds only by assuming that instance itself, as `instance C => C` does, a lawless instance such as a `Generic` instance that is not an isomorphism, Template Haskell that reaches a constructor the library does not export, and anything like these.
 The reviewer sets such a case aside in one line and does not report it as a finding.
 Can a lifetime escape its scope; can the new signature be instantiated at `Static` to launder a borrow; does a new `INCOHERENT` instance admit a witness the outlives relation should not have?
 Every new `unsafe*` use must come with a stated invariant and an argument for why it holds — an unstated one is a finding.

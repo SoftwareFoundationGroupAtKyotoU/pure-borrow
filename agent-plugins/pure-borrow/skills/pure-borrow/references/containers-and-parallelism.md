@@ -107,12 +107,18 @@ data DivideConquer c α t a r = DivideConquer
 
 data Result c β t a r = Done !r | Continue !(t (Ur c, Mut β a))
 
+data Conquer c α t a r where
+  NoConquer :: Conquer c α t a ()
+  Conquer   :: (forall β. (α >= β) => c -> Mut β a %1 -> t r %1 -> BO β r) -> Conquer c α t a r
+
 divideAndConquer ::
   (Data.Traversable t, α >= β, RandomGen g) =>
   g -> Int {- workers -} -> DivideConquer c α t a () -> Mut α a %1 -> BO β (Mut α a)
 ```
 
-`divide` either finishes a piece or splits its borrow into a traversable of disjoint sub-borrows with per-piece data `c`; `conquer` combines results (or `NoConquer`).
+`divide` either finishes a piece or splits its borrow into a traversable of disjoint sub-borrows with per-piece data `c`.
+`conquer` combines the results of a piece's sub-pieces: `Conquer f` calls `f` with the piece's data, the piece's own borrow, which is whole again, and the sub-pieces' results.
+`NoConquer` is for an algorithm with nothing to combine, and fixes the result type at `()`.
 `qsortDC`/`fftDC` are complete examples; `sequentialDivideAndConquer` and `naiveDivideAndConquer` (fork per node via `parBO`) run the same description without the scheduler, which is useful for testing.
 
 ## Performance notes

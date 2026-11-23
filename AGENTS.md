@@ -282,7 +282,8 @@ They are documentation for *users* of the library, not guidance for working on t
 - A change to the public API is not done until the affected skill text, signatures, and examples are updated.
 - Recompile every code example you touch against the pinned GHC and against GHC 9.10.3, since the skills document version differences.
 - `SKILL.md` frontmatter takes only the Agent Skills fields, and `plugin.json` has a closed schema; tool-specific settings such as Claude Code's `dependencies` live in the marketplace files.
-- When a skill changes, bump `version` consistently in `agent-plugins/*/plugin.json` and in all three marketplace files.
+- When a skill of a released plugin changes, bump `version` consistently in `agent-plugins/*/plugin.json` and in all three marketplace files.
+  A plugin that has not been released yet keeps its version, however often its skill changes.
 
 ## Conventions & workflow
 

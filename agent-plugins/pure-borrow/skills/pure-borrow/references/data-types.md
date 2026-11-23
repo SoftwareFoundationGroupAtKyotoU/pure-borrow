@@ -93,7 +93,8 @@ linear-generics cannot derive `Generic` for a type whose constructor mixes nonli
 Hand-roll the instances instead:
 
 - linear-base classes (`Consumable`, `Dupable`) are ordinary pattern matches: drop or share the nonlinear fields, and handle the linear ones.
-- `DistributesAlias` exports no methods, so it can only be derived; such a type cannot have `split`.
+- `DistributesAlias` is the one class that cannot be hand-rolled: it exports no methods, so an instance can only be derived, and a type with mixed fields has no `Generic1` instance to derive it from.
+  A type with mixed fields therefore gets no `split`.
   Never try to route a borrow through a nonlinear field: two live `Mut`s to the same data would follow.
 - `Clone` and `Copyable` must look inside a borrow, which only the trusted `Control.Monad.Borrow.Pure.BO.Unsafe` module allows.
   Treat such an instance as a proof obligation and state why it is sound; clone each linear field with its own `Clone` instance, as below, rather than through `Dupable`:

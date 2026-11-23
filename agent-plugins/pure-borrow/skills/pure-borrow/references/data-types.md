@@ -143,7 +143,8 @@ deriving via Generically Tagged instance Consumable Tagged
 - Never write such an instance for an owner type that hides its constructor: see the owner-type rules in [extending.md](extending.md).
 
 Without any generic instance, hand-roll `Consumable` and `Dupable`, which are ordinary pattern matches: drop or share the nonlinear fields, and handle the linear ones.
-Do not hand-roll `Clone` or `Copyable`: they must look inside a borrow, which only the trusted `Control.Monad.Borrow.Pure.BO.Unsafe` module allows.
+Hand-roll `Clone` or `Copyable` from the instances of the fields: split the borrow through the safe API, with `splitPair` after `coerceShare` or `upcast` for a newtype over a tuple, or with `split` or the record splitters of `Data.Record.Linear.Borrow.Experimental` for a type with generic instances, then `clone` or `copy` each linear field and share each nonlinear one.
+Never look inside the borrow itself, which only the trusted `Control.Monad.Borrow.Pure.BO.Unsafe` module allows.
 
 ## Splitting borrows of your own types
 

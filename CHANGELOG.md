@@ -61,7 +61,7 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   To keep an expensive value for the branch that needs it, build it there, or store a GC-owned one in a lazy box such as `Ur`, which is evaluated only to the box.
 - At a key that both tables hold, the borrow-aware hash map's `extend` keeps the value of the table it inserts, as its `insert` does, and its `union` keeps the second table's value.
   Both used to keep the value of whichever table had fewer entries.
-- The `toList` of both Robin Hood hash maps, and the `foldMapWithKey` of `Data.HashMap.RobinHood.Mutable.Linear`, visit the entries in a different order, which stays unspecified.
+- The `toList` of both Robin Hood hash maps, and the `foldMapWithKey` of `Data.HashMap.RobinHood.Mutable.Linear`, visit the entries in another order than in 0.1.0.0; the order stays unspecified.
 
 ### Fixed
 

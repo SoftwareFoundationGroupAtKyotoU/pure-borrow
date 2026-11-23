@@ -69,6 +69,9 @@ test_lenderDiscardingIsRejected =
         "a scalar Lend is not Affine"
         badLendAffCase
     , expectDeferredTypeError
+        "a Ref holding a scalar Lend is not Affine"
+        badRefLendAffCase
+    , expectDeferredTypeError
         "a scalar Lend is not Consumable"
         badLendConsumeCase
     ]

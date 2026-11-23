@@ -9,8 +9,12 @@ module Data.Ref.LinearSpec (
 import Control.Exception (ErrorCall (..), evaluate, try)
 import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure (linearly, modifyBO)
-import Control.Monad.Borrow.Pure.Affine (aff, pop)
+import Control.Monad.Borrow.Pure.Affine (Affine, aff, pop)
+import Data.Complex (Complex ((:+)))
+import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Ref.Linear qualified as Ref
+import Data.Tuple (Solo (MkSolo))
+import Numeric.Natural (Natural)
 import Prelude.Linear
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit
@@ -68,4 +72,21 @@ test_new =
         case result of
           Left (ErrorCall message) -> message @?= "a stored placeholder"
           Right () -> assertFailure "the stored value was not evaluated"
+    ]
+
+dropInRef :: (Affine a) => a %1 -> ()
+dropInRef a = linearly \lin -> pop (aff (Ref.new a lin))
+
+test_affineInstances :: TestTree
+test_affineInstances =
+  testGroup
+    "Affine instances usable in Ref"
+    [ testCase "Double" $ dropInRef (1.5 :: Double) @?= ()
+    , testCase "Float" $ dropInRef (1.5 :: Float) @?= ()
+    , testCase "Integer" $ dropInRef (42 :: Integer) @?= ()
+    , testCase "Natural" $ dropInRef (42 :: Natural) @?= ()
+    , testCase "Ordering" $ dropInRef EQ @?= ()
+    , testCase "Complex Double" $ dropInRef (1 :+ 2 :: Complex Double) @?= ()
+    , testCase "NonEmpty" $ dropInRef (1 :| [2, 3 :: Int]) @?= ()
+    , testCase "Solo" $ dropInRef (MkSolo (42 :: Int)) @?= ()
     ]

@@ -94,6 +94,8 @@ That limits the splice, not the classes: write the instance of linear-generics' 
 
 ```haskell
 {-# LANGUAGE DataKinds, DerivingVia, TypeFamilies, UndecidableInstances #-}
+import Data.Ref.Linear (Ref)
+import Data.Text (Text)
 import GHC.Exts qualified as GHC
 import GHC.Generics qualified as GHC
 import Generics.Linear
@@ -108,10 +110,12 @@ instance Generic Tagged where
     FixupMetaData Tagged
       (D1 GHC.Any (C1 GHC.Any (S1 GHC.Any (MP1 'GHC.Many (Rec0 Text)) :*: S1 GHC.Any (Rec0 (Ref Int)))))
   -- from and to have a polymorphic multiplicity, so match in a helper that has a linear type.
+  {-# INLINE [1] from #-}
   from tagged = fromTagged tagged
     where
       fromTagged :: Tagged %1 -> Rep Tagged p
       fromTagged (Tagged label ref) = M1 (M1 (M1 (MP1 (K1 label)) :*: M1 (K1 ref)))
+  {-# INLINE [1] to #-}
   to rep = toTagged rep
     where
       toTagged :: Rep Tagged p %1 -> Tagged
@@ -123,12 +127,13 @@ deriving via Generically Tagged instance Consumable Tagged
 ```
 
 - `FixupMetaData`, from linear-base, fills the positions written `GHC.Any` with the metadata of GHC's `Generic` instance, which is derived for that alone.
-- A representation that puts a linear field under `MP1 'Many` does not compile, because `from` and `to` are linear, so a derived instance never shares a linear field by mistake.
+- `from` and `to` must do nothing but take the constructor apart and put it back.
+  GHC checks their multiplicities, so a linear field cannot go under `MP1 'Many` as it is; never make one fit by moving it or by any other operation, because the derived instances would apply that operation to a structure that is only borrowed.
+- Mark `from` and `to` `INLINE [1]`, so that the generic representation of a type with many fields does not survive at run time.
 - The derived instances ask nothing of a nonlinear field's type, since the field is GC-owned: `Clone` and `Dupable` share it, `Movable` keeps it, and `Consumable` drops it.
   `Copyable` is the exception and still requires a `Copyable` instance of that type.
-- `split` stays unavailable.
-  A `DistributesAlias` instance can only be derived, since the class exports no methods, and the deriving rejects every nonlinear field of a hand-written instance of linear-generics' `Generic1` with `Nonlinear fields cannot distribute borrows!`.
-  For a nonlinear field that holds the type parameter the rejection is essential: `split` would store a `Mut` in it, and two live `Mut`s to the same data would follow.
+- `split` keeps such a field too, given a hand-written instance of linear-generics' `Generic1`: see "Splitting borrows of your own types" below.
+- Never write such an instance for an owner type that hides its constructor: see the owner-type rules in [extending.md](extending.md).
 
 Two alternatives need no hand-written instance:
 
@@ -142,7 +147,9 @@ Two alternatives need no hand-written instance:
 `split :: DistributesAlias f => Alias ak (f x) %1 -> f (Alias ak x)` turns a borrow of a structure into a structure of borrows, for any kind of alias (`Mut`, `Share`, or `Lend`):
 
 ```haskell
-{-# LANGUAGE DeriveAnyClass, TemplateHaskell, TypeFamilies, DataKinds #-}
+{-# LANGUAGE DataKinds, DeriveAnyClass, DerivingStrategies, TemplateHaskell, TypeFamilies #-}
+import Data.Ref.Linear (Ref)
+import Data.Ref.Linear.Borrow qualified as RefB
 import Generics.Linear.TH (deriveGenericAnd1)
 
 data Pair a = Pair a a
@@ -159,10 +166,53 @@ bumpBoth mp = case split mp of
     Control.pure (ml `lseq` consume mr)
 ```
 
-- `DistributesAlias` is only derivable when the parameter occurs in linear fields; nonlinear fields and fields of other types are rejected with custom errors.
+- A `DistributesAlias` instance is always derived, since the class exports no methods.
+- Each linear field must be the last type parameter, or a type with a `DistributesAlias` instance applied to it once: with the instance that `deriveGenericAnd1` makes, `Maybe a` derives and `Maybe [a]` does not.
+  A linear field whose type does not mention that parameter is rejected with a custom error, and that includes `Ur Text`.
+- A nonlinear field must have a type that does not mention that parameter, and `split` keeps it as it is.
+  One that mentions the parameter is rejected with a custom error: `split` would store a `Mut` in it, and an unrestricted `Mut` breaks the linearity that every borrow relies on.
 - Use `splitPair` for tuples and `splitEither` for `Either` (the class refuses them with a hint).
 - `Data.Record.Linear.Borrow.Experimental.Split` and `…PatternMatch` split borrows of records field by field (experimental).
 - The two halves of a `Mut` can be used in parallel (`parBO`), because they are disjoint.
+
+A type with a nonlinear field needs its instance of linear-generics' `Generic1` written by hand, as its `Generic` instance is in "Types mixing nonlinear and linear fields" above, with the field as `MP1 'Many (K1 i c)` directly under its `S1`:
+
+```haskell
+{-# LANGUAGE DataKinds, DeriveAnyClass, DerivingStrategies, TypeFamilies #-}
+import Data.Ref.Linear (Ref)
+import Data.Ref.Linear.Borrow qualified as RefB
+import Data.Text (Text)
+import GHC.Exts qualified as GHC
+import Generics.Linear
+
+data Labelled a where
+  Labelled :: !Text -> a %1 -> Labelled a
+
+instance Generic1 Labelled where
+  type Rep1 Labelled =
+    D1 GHC.Any (C1 GHC.Any (S1 GHC.Any (MP1 'GHC.Many (Rec0 Text)) :*: S1 GHC.Any Par1))
+  {-# INLINE [1] from1 #-}
+  from1 labelled = fromLabelled labelled
+    where
+      fromLabelled :: Labelled a %1 -> Rep1 Labelled a
+      fromLabelled (Labelled label a) = M1 (M1 (M1 (MP1 (K1 label)) :*: M1 (Par1 a)))
+  {-# INLINE [1] to1 #-}
+  to1 rep = toLabelled rep
+    where
+      toLabelled :: Rep1 Labelled a %1 -> Labelled a
+      toLabelled (M1 (M1 (M1 (MP1 (K1 label)) :*: M1 (Par1 a)))) = Labelled label a
+
+deriving anyclass instance DistributesAlias Labelled
+
+bumpLabelled :: Mut α (Labelled (Ref Int)) %1 -> BO α (Ur Text)
+bumpLabelled ml = case split ml of
+  Labelled label mref -> Control.do
+    mref <- RefB.modify (+ 1) mref
+    Control.pure (mref `lseq` Ur label)
+```
+
+A linear field `g a` is represented as `Par1 :.: g` and built with `Comp1 (Par1 x)`.
+The metadata positions are left as `GHC.Any` here, which `split` never reads; linear-base's `FixupMetaData1` fills them as `FixupMetaData` does above.
 
 ## Allocating composite values
 

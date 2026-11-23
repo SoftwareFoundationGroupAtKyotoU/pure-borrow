@@ -22,7 +22,8 @@ A typical mutable container:
   never use `dup` on an element held through a `Share`: it consumes its argument, and its laws do not identify which result is the original;
 - **bans `Copyable` and `Movable`** with `Unsatisfiable`, since a copy or move would let unrestricted code alias its mutable state;
 - if it is element-owning, materialises into unrestricted form only with `Movable a`, calling `move` on every element (a bare, unused constraint is not enough); a non-element-owning container may freeze its storage in O(1);
-- is disposable: an element-owning container whose elements may be non-`Movable` needs a `Consumable` instance, or users can never get rid of it.
+- is disposable: an element-owning container whose elements may be non-`Movable` needs a `Consumable` instance, or users can never get rid of it;
+- has no instance of linear-generics' `Generic` or `Generic1`: `from` and `to` take an owner apart and rebuild it outside its own operations, which makes a second owner of whatever handle it keeps, and so do the `Clone` and `DistributesAlias` instances derived from them.
 
 ## Operations on borrows
 

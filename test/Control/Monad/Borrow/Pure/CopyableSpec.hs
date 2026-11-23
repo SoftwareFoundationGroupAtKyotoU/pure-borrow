@@ -1,6 +1,9 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LinearTypes #-}
 {-# LANGUAGE QualifiedDo #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -15,7 +18,9 @@ import Control.Monad.Borrow.Pure.Copyable
 import Control.Monad.Borrow.Pure.Lifetime (Static)
 import Data.Complex (Complex ((:+)))
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
+import GHC.Exts qualified as GHC
 import GHC.IO (unsafePerformIO)
+import Generics.Linear
 import Prelude.Linear
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit
@@ -154,4 +159,71 @@ test_copyStrictness =
         copyCount @?= 1
         writeIORef retired True
         trackedValue copied @?= 10
+    ]
+
+-- A nonlinear function beside a linear field under a hand-written 'MP1 'One'.
+data Mixed where
+  Mixed :: (Int -> Int) -> Tracked %1 -> Mixed
+
+instance Generic Mixed where
+  type
+    Rep Mixed =
+      D1 GHC.Any (C1 GHC.Any (S1 GHC.Any (MP1 'GHC.Many (K1 R (Int -> Int))) :*: S1 GHC.Any (MP1 'GHC.One (K1 R Tracked))))
+  from mixed = fromMixed mixed
+    where
+      fromMixed :: Mixed %1 -> Rep Mixed x
+      fromMixed (Mixed f t) = M1 (M1 (M1 (MP1 (K1 f)) :*: M1 (MP1 (K1 t))))
+  to rep = toMixed rep
+    where
+      toMixed :: Rep Mixed x %1 -> Mixed
+      toMixed (M1 (M1 (M1 (MP1 (K1 f)) :*: M1 (MP1 (K1 t))))) = Mixed f t
+
+deriving via Generically Mixed instance Copyable Mixed
+
+-- A field whose multiplicity is a variable, which the derived Copyable of 0.1.0.0 accepted.
+data Poly m where
+  Poly :: Tracked %m -> Poly m
+
+instance Generic (Poly m) where
+  type Rep (Poly m) = D1 GHC.Any (C1 GHC.Any (S1 GHC.Any (MP1 m (K1 R Tracked))))
+  from poly = fromPoly poly
+    where
+      fromPoly :: Poly m %1 -> Rep (Poly m) x
+      fromPoly (Poly t) = M1 (M1 (M1 (MP1 (K1 t))))
+  to rep = toPoly rep
+    where
+      toPoly :: Rep (Poly m) x %1 -> Poly m
+      toPoly (M1 (M1 (M1 (MP1 (K1 t))))) = Poly t
+
+deriving via Generically (Poly m) instance Copyable (Poly m)
+
+test_copyNonlinearFields :: TestTree
+test_copyNonlinearFields =
+  testGroup
+    "generic Copyable over nonlinear fields"
+    [ testCase "shares the nonlinear field and copies the linear one" do
+        copies <- newIORef 0
+        retired <- newIORef False
+        let !(Mixed f copied) =
+              copy (UnsafeAlias (Mixed (NonLinear.+ 1) (Tracked copies retired 10)) :: Share Static Mixed)
+        copyCount <- readIORef copies
+        copyCount @?= 1
+        writeIORef retired True
+        (f 41, trackedValue copied) @?= (42, 10)
+    , testCase "does not force the nonlinear field" do
+        copies <- newIORef 0
+        retired <- newIORef False
+        let !(Mixed _ copied) =
+              copy (UnsafeAlias (Mixed (NonLinear.error "copy forced the function") (Tracked copies retired 7)) :: Mut Static Mixed)
+        copyCount <- readIORef copies
+        copyCount @?= 1
+        trackedValue copied @?= 7
+    , testCase "copies a field whose multiplicity is a variable" do
+        copies <- newIORef 0
+        retired <- newIORef False
+        let !(Poly copied) =
+              copy (UnsafeAlias (Poly (Tracked copies retired 5)) :: Share Static (Poly 'GHC.One))
+        copyCount <- readIORef copies
+        copyCount @?= 1
+        trackedValue copied @?= 5
     ]

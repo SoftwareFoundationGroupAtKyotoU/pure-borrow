@@ -47,6 +47,8 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 
 ### Changed
 
+- `Copyable` derived via `Generically`, and `genericCopy`, share a nonlinear field as it is, without evaluating it, and ask nothing of its type, as the derived `Clone` does, so a field of type `Text` or `Int -> Int` declared with `->` in GADT syntax no longer prevents deriving it.
+  An error or computation left in such a field surfaces only where the copy's field is forced.
 - `parBO` rethrows a branch's exception, unchanged, once the other branch has stopped, instead of blocking forever or dying with `BlockedIndefinitelyOnMVar`; `Par`, `mapConcurrentlyOf`, `naiveDivideAndConquer` and `Data.Vector.Mutable.Linear.Borrow.qsort` inherit this.
   Stopping reaches only the other branch: whatever it had started with a nested `parBO` runs to completion, so `mapConcurrentlyOf` over a list stops none of the other elements when the first one throws, and all of them when the last one does.
   A branch in a loop that does not allocate cannot be stopped until the loop ends; compile the module that contains such a loop with `-fno-omit-yields` if the rethrow must be prompt.

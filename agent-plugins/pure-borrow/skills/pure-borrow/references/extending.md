@@ -23,7 +23,7 @@ A typical mutable container:
 - **bans `Copyable` and `Movable`** with `Unsatisfiable`, since a copy or move would let unrestricted code alias its mutable state;
 - if it is element-owning, materialises into unrestricted form only with `Movable a`, calling `move` on every element (a bare, unused constraint is not enough); a non-element-owning container may freeze its storage in O(1);
 - is disposable: an element-owning container whose elements may be non-`Movable` needs a `Consumable` instance, or users can never get rid of it;
-- has no instance of linear-generics' `Generic` or `Generic1`: `from` and `to` take an owner apart and rebuild it outside its own operations, which makes a second owner of whatever handle it keeps, and so do the `Clone` and `DistributesAlias` instances derived from them.
+- has no instance of linear-generics' `Generic` or `Generic1`: `from` and `to` take an owner apart and rebuild it outside its own operations, which makes a second owner of whatever handle it keeps, and so do the `Clone`, `Copyable`, `Dupable` and `DistributesAlias` instances derived from them.
   linear-generics' Template Haskell derives one even where the constructor is hidden, so rule both out with instances whose context is `Unsatisfiable`.
 
 ## Operations on borrows
@@ -33,7 +33,7 @@ A typical mutable container:
   A pure read through a borrow bypasses the token: GHC may serve it from an earlier evaluation, and nothing stops a captured `Share` from being read after its lifetime has ended, so make every read of state that can change a `BO` action.
 - A mutating operation on an element-owning container must hand back what it displaced (`set` returns the old element), because linear elements cannot be dropped.
 - Sub-borrow operations (`splitAt`, element borrows, `split`) must produce **disjoint** pieces: two live `Mut`s must never reach overlapping memory, a `Share` must never outlive the exclusivity it was carved from, and a borrow must never be placed in a nonlinear field.
-- `copy` implementations must finish copying (component copies included) before returning in WHNF.
+- `copy` implementations must finish copying (the copies of linear components included) before returning in WHNF.
 - A clone must finish its independent storage copy inside the returned `BO` action, before the borrow's lifetime ends.
   Allocate and fill through the state thread, or use a `Linearly` token obtained there with a copying function protected by both `NOINLINE` and `noinline`.
   Merely forcing a token-independent pure copy can let GHC merge repeated clones of the same borrow.

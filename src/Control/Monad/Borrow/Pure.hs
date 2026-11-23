@@ -447,7 +447,7 @@ To alleviate this problem, we also provide 'copyMut' that wraps copied value ins
 'copyMut' :: 'Mut' α a %1 -> 'Ur' a
 @
 
-Precisely, if the type @a@ does not contain any mutable or foreign resources, it can be safely 'Copyable' out of borrows.
+Precisely, if the type @a@ holds no mutable or foreign resource linearly, and no 'Mut' or 'Lend', it can be safely 'Copyable' out of borrows.
 Some examples are (but not limited to):
 
     * Primitive types, such as 'Int', 'Bool', etc.

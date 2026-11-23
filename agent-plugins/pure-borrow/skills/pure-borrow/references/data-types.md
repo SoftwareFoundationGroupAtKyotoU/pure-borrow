@@ -4,7 +4,7 @@
 
 | Class | Signature | Meaning |
 | --- | --- | --- |
-| `Copyable a` | `copy :: Borrow bk α a %1 -> a` | Pure copy out of a live borrow. Evaluating `copy` must finish the whole copy and return it in WHNF, so the result never depends on the borrow staying alive. |
+| `Copyable a` | `copy :: Borrow bk α a %1 -> a` | Pure copy out of a live borrow. Evaluating `copy` must finish copying every linear component and return the copy in WHNF, so the result never depends on the borrow staying alive; a nonlinear field may be shared as it is. |
 | `Clone a` | `clone :: Share α a %1 -> BO α a` | Effectful duplicate inside `BO`, so the copy stays linear. Works for mutable values too. |
 | `Movable a` | `move :: a %1 -> Ur a` | Move an **owned** value onto the GC heap. Required when a container's elements leave linear ownership. |
 | `Consumable a` | `consume :: a %1 -> ()` | Release an owned value. Borrows (`Mut`, `Share`) are always `Consumable`; a `Lend` never is. |
@@ -90,7 +90,7 @@ Remember that every field of a plain `data` declaration is linear: consuming an 
 ### Types mixing nonlinear and linear fields
 
 The simplest way to keep a GC-owned value beside linear ones is a linear field of type `Ur c`, as in `data Tagged = Tagged !(Ur Text) !(Ref Int)`, which linear-generics' Template Haskell accepts.
-`Ur a` has `Consumable`, `Dupable`, `Movable` and `Copyable` instances of its own, so every class above derives over such a field, `Copyable` without asking anything of `a`, and `split` keeps it as it is (see "Splitting borrows of your own types" below).
+`Ur a` has `Consumable`, `Dupable`, `Movable` and `Copyable` instances of its own, so every class above derives over such a field, and `split` keeps it as it is (see "Splitting borrows of your own types" below).
 `Ur a` also has `Clone`, which shares its GC-owned payload without requiring `Clone a`; do not add an orphan instance for it.
 The derived `Clone` and `Copyable` evaluate what the box holds, and a strict field `!(Ur Int)` holds a boxed `Int`, where a nonlinear `!Int` field is unboxed under optimisation.
 
@@ -136,14 +136,13 @@ deriving via Generically Tagged instance Consumable Tagged
 - `from` and `to` must do nothing but take the constructor apart and put it back.
   GHC checks their multiplicities, so a linear field cannot go under `MP1 'Many` as it is; never make one fit by moving it or by any other operation, because the derived instances would apply that operation to a structure that is only borrowed.
 - Mark `from` and `to` `INLINE [1]`, so that the generic representation of a type with many fields does not survive at run time.
-- The derived instances ask nothing of a nonlinear field's type, since the field is GC-owned: `Clone` and `Dupable` share it, `Movable` keeps it, and `Consumable` drops it.
-  `Copyable` is the exception and still requires a `Copyable` instance of that type.
+- The derived instances ask nothing of a nonlinear field's type, since the field is GC-owned: `Clone`, `Copyable` and `Dupable` share it, `Movable` keeps it, and `Consumable` drops it.
 - `split` keeps such a field too, given a hand-written instance of linear-generics' `Generic1`: see "Splitting borrows of your own types" below.
-- The derived `Clone` shares a nonlinear field without evaluating it, where it evaluates what an `Ur` field holds; the derived `Copyable` evaluates both.
+- The derived `Clone` and `Copyable` share a nonlinear field without evaluating it, where they evaluate what an `Ur` field holds.
 - Never write such an instance for an owner type that hides its constructor: see the owner-type rules in [extending.md](extending.md).
 
 Without any generic instance, hand-roll `Consumable` and `Dupable`, which are ordinary pattern matches: drop or share the nonlinear fields, and handle the linear ones.
-Hand-roll `Clone` or `Copyable` from the instances of the fields: split the borrow through the safe API, with `splitPair` after `coerceShare` or `upcast` for a newtype over a tuple, or with `split` or the record splitters of `Data.Record.Linear.Borrow.Experimental` for a type with generic instances, then `clone` or `copy` each linear field and share each nonlinear one.
+Hand-roll `Clone` or `Copyable` of a newtype over a tuple from the instances of its components: split the borrow with `splitPair` after `coerceShare` or `upcast`, then `clone` or `copy` each component.
 Never look inside the borrow itself, which only the trusted `Control.Monad.Borrow.Pure.BO.Unsafe` module allows.
 
 ## Splitting borrows of your own types

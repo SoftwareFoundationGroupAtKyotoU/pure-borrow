@@ -718,7 +718,7 @@ growFresh !limit !size !capa !physCapa !fp !k !v slots =
       withLinearly slots & \(lin, slots) ->
         rehashInto limit size physCapa fp k v 0 0 slots (new (capa * 2) lin)
 
-{- | How many buckets per entry a table may grow to.
+{- | How many buckets a table may grow to for each of its entries, the one being inserted included.
 
 A table grows past its load factor only to separate keys that collide in it, which keys with different hashes practically never need.
 -}
@@ -732,13 +732,18 @@ collidingKeysMessage = "Data.HashMap.RobinHood: too many keys collide: more than
 {-
 Note [Growing to separate colliding keys]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-A table grows when it fills up, and also when an entry finds no slot within 'maxDibLimit' of its bucket.
-The second kind of growth exists to separate keys that collide, and with the hash mixed it practically never happens to keys of different hashes (Note [Mixing the hash]).
+A bucket is a slot at which a probe may start: a table of capacity @capa@ has @capa@ of them, and 'fingerprintBucket' gives a key its own.
+The slot array has 'maxDibLimit' more slots at its end, which are no buckets.
+
+A table grows, to twice as many buckets, when it fills up, and also when an entry finds no slot within 'maxDibLimit' of its bucket.
+Growing when full keeps a table between 4/3 and 8/3 buckets per entry, by 'maxLoadFactor'.
+The second kind of growth exists to separate keys that collide, whatever the load, and with the hash mixed it practically never happens to keys of different hashes (Note [Mixing the hash]).
 
 A rehash moves every entry into a table twice as large with 'insertFreshWithFingerprint'.
 When an entry finds no slot there either, 'growFresh' moves the entries placed so far, and then the one in hand, into a table twice as large again, so no entry is lost.
 
 No growth takes a table past 'maxBucketsPerEntry' buckets per entry; an insertion that would need one raises 'collidingKeysMessage' instead.
+From a table that only ever grew when full, that leaves four or five doublings to separate colliding keys.
 That stops the growth for keys that no table can separate, as 129 keys of one hash are, and bounds the memory that keys made to collide can claim.
 'probeForInsert' computes the limit from the number of entries and passes it down unchanged, so it bounds every growth of one insertion; the table that a rehash is filling holds only part of the entries and could not compute it.
 

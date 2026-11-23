@@ -907,7 +907,17 @@ joinMut = coerceLin
 joinLend :: Lend α (Lend α a) %1 -> Lend α a
 joinLend = coerceLin
 
--- | Distribute an alias over a functor.
+{- | A functor over which an alias of a structure distributes to an alias of each element, as 'split' does.
+
+An instance is derived, not written: @deriving anyclass instance 'DistributesAlias' T@, from an instance of the @Generic1@ of linear-generics.
+Each linear field of @T a@ must then have the type @a@ itself, or @g a@ for a @g@ that has an instance of this class.
+A field that applies two such types, as @Maybe [a]@ does, is refused for a @Generic1@ instance made by the Template Haskell of linear-generics.
+A nonlinear field must have a type that does not mention @a@, and 'split' keeps it as it is.
+
+That Template Haskell cannot derive @Generic1@ for a type with a nonlinear field, so such a type needs the instance written by hand, with the field represented as @MP1 \'Many (K1 i c)@ directly under its @S1@.
+An instance that the Template Haskell did not make must represent every nonlinear field under @MP1 \'Many@, and must do nothing but take the constructor apart in @from1@ and put it back in @to1@.
+A type must have no instance of @Generic1@ at all when its own operations rely on a value in a nonlinear field belonging to one structure only, as a handle to state that the structure owns does.
+-}
 class DistributesAlias f where
   split_ :: Alias ak (f x) %1 -> f (Alias ak x)
   default split_ ::
@@ -915,6 +925,7 @@ class DistributesAlias f where
     Alias ak (f x) %1 -> f (Alias ak x)
   split_ = genericSplit
 
+-- | Turn an alias of a structure into a structure of aliases of its elements.
 split ::
   forall f x ak.
   (DistributesAlias f) =>
@@ -964,8 +975,10 @@ instance (Unsatisfiable ('Text "Use splitPair instead!")) => DistributesAlias ((
   {-# INLINE split_ #-}
   split_ = unsatisfiable
 
+-- | What deriving 'DistributesAlias' asks of a type: an instance of the @Generic1@ of linear-generics whose fields 'split' can deal with.
 type GenericDistributesAlias f = (Generic1 f, GDistributeAlias (Rep1 f))
 
+-- | 'split' for a type that meets 'GenericDistributesAlias', which is what a derived instance of 'DistributesAlias' uses.
 genericSplit ::
   forall f x ak.
   (GenericDistributesAlias f) =>
@@ -983,6 +996,28 @@ unsafeMapAlias f = coerceLin (\x -> let !y = f x in y)
 instance (GenericDistributesAlias f) => DistributesAlias (Generically1 f) where
   {-# INLINE split_ #-}
   split_ = Generically1 . genericSplit . unsafeMapAlias \(Generically1 f) -> f
+
+{-
+Note [Splitting over nonlinear fields]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+'split' rebuilds a structure around aliases of its elements, so each field of the representation needs an answer to what the result holds in its place.
+
+A linear field that is the parameter gets an alias of it, and one that applies a 'DistributesAlias' functor is split in turn.
+A linear field of another type has no answer: the structure is only borrowed, and keeping the field would hand out as owned a value that the lender still gets back.
+
+A nonlinear field whose type mentions the parameter has no answer either, since an alias stored in it would be unrestricted.
+For a 'Share' that is harmless, but a 'Mut' is 'LinearOnly' whatever it borrows: 'withLinearly' turns an unrestricted one into a 'Linearly' outside any linear context, and an unrestricted owner of mutable state follows.
+
+A nonlinear field of another type is kept as it is, with no alias made for it.
+Its value was unrestricted when the structure was built, so it is no owner of mutable state, no 'Mut' and no 'Lend', and the lender and the split result may both hold it.
+Its type cannot mention the parameter under another name, because a representation has kind @k -> Type@ and 'K1' ignores its last argument.
+The field is not forced: 'split' only passes it along, and its owner may never look at it.
+That the instance typechecks with the alias bound linearly is no part of this argument, since an instance that put a 'Mut' in a nonlinear field would typecheck just the same.
+
+All of this takes the 'Generic1' instance at its word.
+An instance whose 'from1' or 'to1' does more than take the constructor apart and put it back, by moving a field, reading through it or sharing it, makes 'split' do that to a structure that is only borrowed.
+And a type that keeps in a nonlinear field a handle to state that the whole structure owns, relying on the structure being linear, must have no 'Generic1' instance at all: 'from1' and 'to1' alone already make a second owner of the handle, without any borrow.
+-}
 
 class GDistributeAlias f where
   gdistributeAlias :: Alias ak (f x) %1 -> f (Alias ak x)
@@ -1011,12 +1046,25 @@ instance
     L1 !l -> L1 (gdistributeAlias (UnsafeAlias l))
     R1 !r -> R1 (gdistributeAlias (UnsafeAlias r))
 
+-- See Note [Splitting over nonlinear fields].
 instance
-  (Unsatisfiable (Text "Nonlinear fields cannot distribute borrows!")) =>
+  ( Unsatisfiable
+      ( Text "A borrow cannot be distributed over the nonlinear field represented as"
+          :$$: (Text "    " :<>: ShowType (MP1 GHC.Many f))
+          :$$: Text "A nonlinear field is kept as it is only if its type does not mention the last type parameter"
+          :$$: Text "and its representation is MP1 'Many (K1 i c), directly under its S1."
+          :$$: Text "One that mentions the parameter would hold an unrestricted borrow."
+      )
+  ) =>
   GDistributeAlias (MP1 GHC.Many f)
   where
   {-# INLINE gdistributeAlias #-}
   gdistributeAlias = unsatisfiable
+
+-- See Note [Splitting over nonlinear fields].
+instance {-# OVERLAPPING #-} GDistributeAlias (MP1 GHC.Many (K1 i c)) where
+  {-# INLINE gdistributeAlias #-}
+  gdistributeAlias (UnsafeAlias (MP1 (K1 c))) = MP1 (K1 c)
 
 instance (GDistributeAlias f) => GDistributeAlias (MP1 GHC.One f) where
   {-# INLINE gdistributeAlias #-}
@@ -1047,8 +1095,18 @@ instance GDistributeAlias Par1 where
   {-# INLINE gdistributeAlias #-}
   gdistributeAlias (UnsafeAlias (Par1 !a)) = Par1 (UnsafeAlias a)
 
+-- See Note [Splitting over nonlinear fields].
 instance
-  (Unsatisfiable (Text "A type containing non-parametric field with type `" :<>: ShowType c :<>: Text "', which cannot be safely splitted!")) =>
+  ( Unsatisfiable
+      ( Text "A borrow cannot be distributed over a field of type"
+          :$$: (Text "    " :<>: ShowType c)
+          :$$: Text "that the Generic1 instance represents as linear."
+          :$$: Text "The type does not mention the last type parameter, and a linear field is only borrowed,"
+          :$$: Text "so its value cannot be handed out as owned."
+          :$$: Text "A nonlinear field of such a type is kept as it is, but only a hand-written instance"
+          :$$: Text "of linear-generics' Generic1 can represent one, as MP1 'Many (K1 i c)."
+      )
+  ) =>
   GDistributeAlias (K1 i c)
   where
   {-# INLINE gdistributeAlias #-}

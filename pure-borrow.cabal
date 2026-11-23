@@ -188,6 +188,7 @@ test-suite pure-borrow-test
   other-modules:
     Control.Concurrent.DivideConquer.LinearSpec
     Control.Concurrent.Queue.ChaseLevSpec
+    Control.Monad.Borrow.Pure.BO.SplitSpec
     Control.Monad.Borrow.Pure.BO.TypingCases
     Control.Monad.Borrow.Pure.BOSpec
     Control.Monad.Borrow.Pure.Clone.TypingCases
@@ -280,6 +281,7 @@ test-suite pure-borrow-inspection
     PureBorrow.Inspection.GrowableAccess
     PureBorrow.Inspection.MultiStoreScan
     PureBorrow.Inspection.QSort
+    PureBorrow.Inspection.SplitNonlinearField
     PureBorrow.Inspection.Sublifetime
     PureBorrow.Inspection.Worklist.Resume
 
@@ -294,6 +296,7 @@ test-suite pure-borrow-inspection
     tasty-discover:tasty-discover >=5.0.1
 
   build-depends:
+    linear-generics,
     pure-borrow,
     pure-borrow:test-bench-common,
     tasty,

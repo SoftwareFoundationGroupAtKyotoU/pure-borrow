@@ -919,8 +919,6 @@ A nonlinear field must have a type that does not mention @a@, and 'split' keeps 
 
 That Template Haskell derives @Generic1@ for a field of type @t'Ur' c@ but not for a nonlinear field, so a type with a nonlinear field needs the instance written by hand, with the field represented as @MP1 \'Many (K1 i c)@ directly under its @S1@.
 An instance that the Template Haskell did not make must represent every nonlinear field under @MP1 \'Many@, and must do nothing but take the constructor apart in @from1@ and put it back in @to1@.
-The result of 'split' holds the same value in a nonlinear field, or in a field of type @t'Ur' c@, as the structure it splits.
-So never derive or write an instance of @Generic1@ for a type that keeps in such a field something that only one structure may own, such as a handle to state that the type's own operations free or update: the result of 'split' would own it as well.
 -}
 class DistributesAlias f where
   split_ :: Alias ak (f x) %1 -> f (Alias ak x)
@@ -1042,8 +1040,6 @@ The instance @DistributesAlias Ur@ refuses @Ur a@, and @Ur (Maybe a)@ is refused
 
 All of this takes the 'Generic1' instance at its word.
 An instance whose 'from1' or 'to1' does more than take the constructor apart and put it back, by moving a field, reading through it or sharing it, makes 'split' do that to a structure that is only borrowed.
-And a type that keeps in a nonlinear field, or in a field of type 'Ur' @c@, a handle to state that the whole structure owns, relying on the structure being linear, must have no 'Generic1' instance at all: 'from1' and 'to1' alone already make a second owner of the handle, without any borrow.
-The Template Haskell of linear-generics derives such an instance even where the constructor is not exported, so the author of such a type rules the instance out with one whose context is 'Unsatisfiable'.
 -}
 
 class GDistributeAlias f where

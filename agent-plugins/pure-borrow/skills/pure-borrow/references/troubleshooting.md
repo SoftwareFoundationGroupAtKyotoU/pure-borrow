@@ -78,8 +78,9 @@ For a vector of `Ref`s, consume it or read the values through borrows; convertin
 
 ## Different results at `-O0` and `-O1`, or stale sizes
 
-Pure code must not depend on the optimisation level, so this signals a borrow used where its lifetime no longer protects it, most often a `Share` captured by a `pureAfter` block and read after `reclaim` and a later mutation of the owner.
-Growable `size`, `capacity`, and `getContents` are now `BO` actions, so their reads are ordered with mutations.
+Pure code must not depend on the optimisation level.
+In 0.1.0.0 this signalled a borrow read where its lifetime no longer protected it, most often a `Share` captured by a `pureAfter` block and read after `reclaim` and a later mutation of the owner.
+Growable `size`, `capacity`, and `getContents` are now `BO` actions, so their reads are ordered with mutations and cannot run after the lifetime has ended.
 Fixed-vector `size` remains pure because the view's length does not change.
 Treat a stale result on the fixed version as a bug to reproduce, rather than working around it with evaluation order.
 Copy what you need into `Ur` before `pureAfter`, and use only lenders and owned values inside it.

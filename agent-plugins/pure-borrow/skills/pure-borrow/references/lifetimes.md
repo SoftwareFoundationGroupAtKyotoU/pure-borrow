@@ -76,7 +76,11 @@ A derivation needs the via type and the target to be representationally equal wh
 - `pureAfter :: (End α => a) %1 -> BO α (After α a)` packages such a finaliser as the result of a `BO α` computation.
 - `After α` is a control applicative and monad, so several lenders combine as `(,) Control.<$> reclaim' l1 Control.<*> reclaim' l2`.
 - The primed scope combinators (`reborrowing'`, `sharing'`) let the continuation return `After β r`, for resources borrowed *inside* the scope that must be reclaimed when the scope ends.
-- Inside `After`, use only lenders and owned values, never a borrow of the lifetime that is ending: a captured `Share` still typechecks there but can observe stale data.
+- Inside `After`, work with lenders and owned values: a borrow of the lifetime that has ended is of no use there.
+  Returning it is a type error, since the result of a scope cannot mention the scope's own lifetime.
+  A `Share` that the finaliser merely captures, or that leaves hidden in an existential type, typechecks, but its contents can no longer be read: every read is a `BO` action in a lifetime that the ended one outlives, and none can run any more.
+  `copy` still works on it, and safely, since a `Copyable` type has no mutable state.
+  A borrow of another lifetime that is still running is unaffected.
 
 ## Running a phase in a sublifetime
 

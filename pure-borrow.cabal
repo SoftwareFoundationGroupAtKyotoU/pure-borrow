@@ -213,6 +213,7 @@ test-suite pure-borrow-test
     Data.Coerce.Directed.TypingCases
     Data.Coerce.DirectedSpec
     Data.HashMap.RobinHood.Mutable.Linear.BorrowSpec
+    Data.HashMap.RobinHood.Mutable.Linear.TypingCases
     Data.HashMap.RobinHood.Mutable.LinearSpec
     Data.HashMap.RobinHood.Mutable.LinearSpec.Cases
     Data.HashMap.RobinHood.Mutable.LinearSpec.Steered

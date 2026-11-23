@@ -6,6 +6,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UnliftedDatatypes #-}
 {-# LANGUAGE UnliftedNewtypes #-}
@@ -233,6 +234,9 @@ data HashMap k v where
     -- | Slots, holding fingerprint, DIB and entry together.
     !(Slots k v) %1 ->
     HashMap k v
+
+-- Nominal in the key: the slots are placed by the hash of the key type.
+type role HashMap nominal representational
 
 {- | A suspended unsuccessful lookup that can be resumed as an insertion.
 

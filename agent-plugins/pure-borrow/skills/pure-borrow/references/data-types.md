@@ -89,30 +89,53 @@ Remember that every field of a plain `data` declaration is linear: consuming an 
 
 ### Types mixing nonlinear and linear fields
 
-linear-generics cannot derive `Generic` for a type whose constructor mixes nonlinear and linear fields (GADT syntax such as `Tagged :: !Text -> !(Ref Int) %1 -> Tagged`), so none of the `Generically` instances are available for it.
-Hand-roll the instances instead:
+linear-generics' Template Haskell cannot derive `Generic` for a type with a nonlinear field, such as `Tagged :: !Text -> !(Ref Int) %1 -> Tagged` in GADT syntax.
+That limits the splice, not the classes: write the instance of linear-generics' `Generic` by hand, with each nonlinear field under `MP1 'Many`, and the `Generically` instances derive as for any other type.
 
-- linear-base classes (`Consumable`, `Dupable`) are ordinary pattern matches: drop or share the nonlinear fields, and handle the linear ones.
-- `DistributesAlias` is the one class that cannot be hand-rolled: it exports no methods, so an instance can only be derived, and a type with mixed fields has no `Generic1` instance to derive it from.
-  A type with mixed fields therefore gets no `split`.
-  Never try to route a borrow through a nonlinear field: two live `Mut`s to the same data would follow.
-- `Clone` and `Copyable` must look inside a borrow, which only the trusted `Control.Monad.Borrow.Pure.BO.Unsafe` module allows.
-  Treat such an instance as a proof obligation and state why it is sound; clone each linear field with its own `Clone` instance, as below, rather than through `Dupable`:
+```haskell
+{-# LANGUAGE DataKinds, DerivingVia, TypeFamilies, UndecidableInstances #-}
+import GHC.Exts qualified as GHC
+import GHC.Generics qualified as GHC
+import Generics.Linear
+import Prelude.Linear.GenericUtil (FixupMetaData)
 
-  ```haskell
-  import Control.Monad.Borrow.Pure.BO.Unsafe (Alias (..))
+data Tagged where
+  Tagged :: !Text -> !(Ref Int) %1 -> Tagged
+  deriving stock (GHC.Generic)   -- GHC's own Generic, read only for the metadata
 
-  data Tagged where
-    Tagged :: !Text -> !(Ref Int) %1 -> Tagged
+instance Generic Tagged where
+  type Rep Tagged =
+    FixupMetaData Tagged
+      (D1 GHC.Any (C1 GHC.Any (S1 GHC.Any (MP1 'GHC.Many (Rec0 Text)) :*: S1 GHC.Any (Rec0 (Ref Int)))))
+  -- from and to have a polymorphic multiplicity, so match in a helper that has a linear type.
+  from tagged = fromTagged tagged
+    where
+      fromTagged :: Tagged %1 -> Rep Tagged p
+      fromTagged (Tagged label ref) = M1 (M1 (M1 (MP1 (K1 label)) :*: M1 (K1 ref)))
+  to rep = toTagged rep
+    where
+      toTagged :: Rep Tagged p %1 -> Tagged
+      toTagged (M1 (M1 (M1 (MP1 (K1 label)) :*: M1 (K1 ref)))) = Tagged label ref
 
-  -- Trusted: the label is immutable and GC-owned, so the clone may share it;
-  -- the Ref is cloned through a shared borrow of the same lifetime.
-  instance Clone Tagged where
-    clone (UnsafeAlias (Tagged label ref)) = Tagged label Control.<$> clone (UnsafeAlias ref)
-  ```
+deriving via Generically Tagged instance Clone Tagged   -- shares the label, clones the Ref
+deriving via Generically Tagged instance Consumable Tagged
+-- plus the Copyable/Movable bans above
+```
 
-To keep the linear-base classes and `Copyable` derivable instead, use plain syntax and wrap the unrestricted field in `Ur` (`data Tagged = Tagged !(Ur Text) !(Ref Int)`): `Ur a` has `Consumable`, `Dupable`, `Movable`, and `Copyable` instances of its own.
-`Ur a` also has `Clone`, which shares its GC-owned payload without requiring `Clone a`; do not add an orphan instance for it.
+- `FixupMetaData`, from linear-base, fills the positions written `GHC.Any` with the metadata of GHC's `Generic` instance, which is derived for that alone.
+- A representation that puts a linear field under `MP1 'Many` does not compile, because `from` and `to` are linear, so a derived instance never shares a linear field by mistake.
+- The derived instances ask nothing of a nonlinear field's type, since the field is GC-owned: `Clone` and `Dupable` share it, `Movable` keeps it, and `Consumable` drops it.
+  `Copyable` is the exception and still requires a `Copyable` instance of that type.
+- `split` stays unavailable.
+  A `DistributesAlias` instance can only be derived, since the class exports no methods, and the deriving rejects every nonlinear field of a hand-written instance of linear-generics' `Generic1` with `Nonlinear fields cannot distribute borrows!`.
+  For a nonlinear field that holds the type parameter the rejection is essential: `split` would store a `Mut` in it, and two live `Mut`s to the same data would follow.
+
+Two alternatives need no hand-written instance:
+
+- Use plain syntax and wrap the unrestricted field in `Ur` (`data Tagged = Tagged !(Ur Text) !(Ref Int)`), which `deriveGeneric` accepts: `Ur a` has `Consumable`, `Dupable`, `Movable`, and `Copyable` instances of its own.
+  `Ur a` also has `Clone`, which shares its GC-owned payload without requiring `Clone a`; do not add an orphan instance for it.
+- Hand-roll `Consumable` and `Dupable`, which are ordinary pattern matches: drop or share the nonlinear fields, and handle the linear ones.
+  Do not hand-roll `Clone` or `Copyable`: they must look inside a borrow, which only the trusted `Control.Monad.Borrow.Pure.BO.Unsafe` module allows.
 
 ## Splitting borrows of your own types
 

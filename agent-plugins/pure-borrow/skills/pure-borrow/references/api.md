@@ -1,6 +1,6 @@
 # Core API by task
 
-Signatures target pure-borrow 0.2.0 (`Control.Monad.Borrow.Pure`, plus `Control.Monad.Borrow.Pure.BO` for the lower-level ones marked *BO*).
+Signatures are those of the version this skill documents (`Control.Monad.Borrow.Pure`, plus `Control.Monad.Borrow.Pure.BO` for the lower-level ones marked *BO*).
 Always check the Haddock of the installed version when in doubt.
 
 ## Types

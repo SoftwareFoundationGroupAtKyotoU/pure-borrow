@@ -6,7 +6,7 @@ description: >-
   Always load the linear-haskell skill too.
 license: BSD-3-Clause
 compatibility: >-
-  pure-borrow 0.2.0 on GHC 9.10.3 or 9.12.4+ (recommended) with linear-base >= 0.7.
+  pure-borrow, at the version that `pure-borrow-version` below records, on GHC 9.10.3 or 9.12.4+ (recommended) with linear-base >= 0.7.
   Requires the linear-haskell skill.
 metadata:
   author: Hiromi Ishii
@@ -20,11 +20,11 @@ pure-borrow realises Rust-style borrowing in Linear Haskell, purely: compile-tim
 It is the artifact of the PLDI 2026 paper *Pure Borrow: Linear Haskell Meets Rust-Style Borrowing* by Matsushita and Ishii.
 
 **Check the library version first.**
-This skill documents pure-borrow 0.2.0, the version that `pure-borrow-version` in its metadata records: major version 0.2 and minor version 0, as the PVP counts them.
+This skill documents one version of pure-borrow, the `x.y.z` that `pure-borrow-version` in its metadata records: major version `x.y` and minor version `z`, as the PVP counts them.
 Before relying on it, find the version the project builds against, in `cabal.project.freeze` or in `dist-newstyle/cache/plan.json` after a build.
-Any 0.2.0.x matches, and a later minor version of 0.2 only adds to what is described here.
-If the major version is not 0.2, tell the user that this skill does not describe that version, and check every signature you use against that version's Haddock instead.
-Until 0.2.0.0 is on Hackage, a project gets it from the repository's `main` branch, through a `source-repository-package` stanza in `cabal.project`.
+Any `x.y.z.w` matches, and a later minor version of `x.y` only adds to what is described here.
+If the major version is not `x.y`, tell the user that this skill does not describe that version, and check every signature you use against that version's Haddock instead.
+If Hackage does not have `x.y.z` yet, a project gets it from the repository's `main` branch, through a `source-repository-package` stanza in `cabal.project`.
 
 **Load the `linear-haskell` skill first** (in Claude Code it is named `linear-haskell:linear-haskell`).
 Everything here assumes its rules on linear arrows, `Ur`, `Consumable`/`Dupable`/`Movable`, `let %1`, shadowing, and `QualifiedDo`.

@@ -287,7 +287,7 @@ What a maintainer of the plugins needs to know goes here, not in that README.
   Nothing inside a plugin may point outside its directory, which is why each plugin carries its own copy of `LICENSE`.
 - The entries in `.agents/plugins/marketplace.json` repeat the plugin metadata on purpose: Codex releases before 0.146 have no Agent Plugins support and build their manifest from those entries, while newer ones read `plugin.json`.
 - The plugins carry no `version`, neither in `plugin.json` nor in the marketplace files, and none is to be added: Claude Code then takes the commit as the version, as Codex and Cursor do for a Git marketplace in any case, so a user gets what is on the branch they track and a change to a skill needs no bump.
-  Which pure-borrow a skill documents is `pure-borrow-version` in its metadata instead, written with its minor component as in `0.2.0`; change it together with the version in `pure-borrow.cabal`.
+  Which pure-borrow a skill documents is `pure-borrow-version` in its metadata instead, written with its minor component as in `0.2.0`, and the only place in the skill that names the number; change it together with the version in `pure-borrow.cabal`.
 
 ## Conventions & workflow
 

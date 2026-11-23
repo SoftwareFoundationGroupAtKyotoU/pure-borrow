@@ -212,7 +212,7 @@ The public entry point is `Control.Monad.Borrow.Pure`.
 
 - **No suffix = safe public API.** User/application code should import only these (`Control.Monad.Borrow.Pure`, `Data.Vector.Mutable.Linear.Borrow`, `Data.Ref.Linear.Borrow`, `Control.Concurrent.DivideConquer.Linear`, `…/Lifetime.hs`, `…/Lifetime/Token.hs`, …).
 - **`.Internal` = real definitions, `{-# OPTIONS_HADDOCK hide #-}`.** Exposed (so other modules can import) but omitted from docs; contains the actual newtypes and the `Unsafe*` constructors.
-- **`.Unsafe` = trusted escape hatches** (`unsafeSystemIOToBO`, `unsafeCastBO`, `Alias(..)`, `LinearOnly(..)`, …).
+- **`.Unsafe` = trusted escape hatches** (`unsafeSystemIOToBO`, `Alias(..)`, `reviveAlias`, `LinearOnly(..)`, …; `unsafeCastBO` lives only in `.Internal`).
   Every use is a proof obligation that lifetime/linearity invariants hold.
   Only the data-structure and scheduler modules should import these.
 - **`Utils` / `Utils/**` = truly private** (`other-modules`, not exposed).
@@ -273,6 +273,21 @@ Simpler baselines: `sequentialDivideAndConquer'`, `naiveDivideAndConquer'` (fork
 `Vector a` owns each element *linearly* (so it can nest other mutable resources); it is `LinearOnly` and intentionally **not** `Copyable`.
 `splitAt` splitting a borrow into two disjoint sub-borrows is the key primitive for parallelism.
 Includes a demonstrative in-place parallel `qsort` (budgeted `parBO`; the heavier version is `qsortDC` above).
+
+### Agent plugins — `agent-plugins/`
+
+The user-facing `linear-haskell` and `pure-borrow` skills ship as [Agent Plugins](https://agent-plugins.org/specification), listed for Claude Code, Codex, and Cursor by `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`, and `.cursor-plugin/marketplace.json`.
+They are documentation for *users* of the library, not guidance for working on this repository, and `agent-plugins/README.md` tells those users what the plugins are and how to install them.
+What a maintainer of the plugins needs to know goes here, not in that README.
+
+- A change to the public API is not done until the affected skill text, signatures, and examples are updated.
+- Recompile every code example you touch against the pinned GHC and against GHC 9.10.3, since the skills document version differences.
+- `SKILL.md` frontmatter takes only the Agent Skills fields (`name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`), and `name` must equal the skill's directory name.
+- `plugin.json` has a closed schema; tool-specific settings such as Claude Code's `dependencies` live in the marketplace files.
+  Nothing inside a plugin may point outside its directory, which is why each plugin carries its own copy of `LICENSE`.
+- The entries in `.agents/plugins/marketplace.json` repeat the plugin metadata on purpose: Codex releases before 0.146 have no Agent Plugins support and build their manifest from those entries, while newer ones read `plugin.json`.
+- The plugins carry no `version`, neither in `plugin.json` nor in the marketplace files, and none is to be added: Claude Code then takes the commit as the version, as Codex and Cursor do for a Git marketplace in any case, so a user gets what is on the branch they track and a change to a skill needs no bump.
+  Which pure-borrow a skill documents is `pure-borrow-version` in its metadata instead, written with its minor component as in `0.2.0`, and the only place in the skill that names the number; change it together with the version in `pure-borrow.cabal`.
 
 ## Conventions & workflow
 

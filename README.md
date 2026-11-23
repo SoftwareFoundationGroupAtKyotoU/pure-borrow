@@ -15,6 +15,18 @@ Compiled programs just work as expected with GHC 9.10.2+, so this issue will onl
 If you want to use interpreters, 
 use GHC 9.12.3+.
 
+## Agent Skills
+
+This repository also ships agent plugins with two skills, `linear-haskell` and `pure-borrow`, for Claude Code, Codex, Cursor, and other agents that support [Agent Skills](https://agentskills.io).
+For example, in Claude Code:
+
+```text
+/plugin marketplace add SoftwareFoundationGroupAtKyotoU/pure-borrow
+/plugin install pure-borrow@pure-borrow
+```
+
+See [agent-plugins/README.md](https://github.com/SoftwareFoundationGroupAtKyotoU/pure-borrow/blob/main/agent-plugins/README.md) for the other agents.
+
 ## Publication(s)
 
 - Y. Matsushita and H. Ishii, *Pure Borrow: Linear Haskell Meets Rust-Style Borrowing*, 2026. 

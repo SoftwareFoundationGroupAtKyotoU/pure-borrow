@@ -120,6 +120,21 @@ twoVectors = linearly \lin -> DataFlow.do
 -- twoVectors == ([1, 2], [11, 20])
 ```
 
+Inside `BO` there is no token to duplicate: `borrowLinearlyM` allocates and borrows each owner, so the same function can also be written as:
+
+```haskell
+twoVectors :: ([Int], [Int])
+twoVectors = linearly \lin -> runBO lin Control.do
+  (mxs, lendXs) <- borrowLinearlyM (VL.fromList [1, 2])
+  (mys, lendYs) <- borrowLinearlyM (VL.fromList [10, 20])
+  (Ur x, mxs) <- VL.copyAtMut 0 mxs
+  mys <- VL.modify 0 (+ x) mys
+  Control.pure (consume mxs)
+  Control.pure (consume mys)
+  pureAfter (unur (VL.toList (reclaim lendXs)), unur (VL.toList (reclaim lendYs)))
+-- twoVectors == ([1, 2], [11, 20])
+```
+
 ## Writing reusable functions
 
 Take the borrow at one lifetime and run in any sublifetime of it, as the container operations do, so the helper works both in the ambient lifetime and inside scopes:

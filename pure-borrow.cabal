@@ -217,6 +217,8 @@ test-suite pure-borrow-test
     Data.HashMap.RobinHood.Mutable.LinearSpec
     Data.HashMap.RobinHood.Mutable.LinearSpec.Cases
     Data.HashMap.RobinHood.Mutable.LinearSpec.Steered
+    Data.Record.Linear.Borrow.Experimental.Split.TypingCases
+    Data.Record.Linear.Borrow.Experimental.SplitSpec
     Data.Ref.LinearSpec
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted.TypingCases
     Data.Vector.Generic.Mutable.Growable.Linear.Borrow.UnrestrictedSpec

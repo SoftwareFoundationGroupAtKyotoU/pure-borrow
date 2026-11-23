@@ -174,6 +174,7 @@ library
     Control.Concurrent.DivideConquer.Utils.QueuePool
     Control.Concurrent.DivideConquer.Utils.Semaphore
     Control.Monad.Borrow.Pure.Utils
+    Data.Record.Linear.Borrow.Experimental.Utils
 
   build-tool-depends: cabal-gild:cabal-gild >=1.6.0.0
   build-depends:
@@ -217,6 +218,8 @@ test-suite pure-borrow-test
     Data.HashMap.RobinHood.Mutable.LinearSpec
     Data.HashMap.RobinHood.Mutable.LinearSpec.Cases
     Data.HashMap.RobinHood.Mutable.LinearSpec.Steered
+    Data.Record.Linear.Borrow.Experimental.PatternMatch.TypingCases
+    Data.Record.Linear.Borrow.Experimental.PatternMatchSpec
     Data.Record.Linear.Borrow.Experimental.Split.TypingCases
     Data.Record.Linear.Borrow.Experimental.SplitSpec
     Data.Ref.LinearSpec
@@ -398,6 +401,7 @@ library test-bench-common
   build-depends:
     base >=4.7 && <5,
     deepseq,
+    linear-generics,
     pure-borrow,
     tasty-bench,
     vector,

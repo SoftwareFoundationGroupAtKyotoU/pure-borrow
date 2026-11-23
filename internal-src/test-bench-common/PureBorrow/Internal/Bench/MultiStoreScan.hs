@@ -9,6 +9,8 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE QualifiedDo #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module PureBorrow.Internal.Bench.MultiStoreScan (
@@ -65,6 +67,7 @@ import Data.Vector.Unboxed.Mutable.Linear.Borrow qualified as OwningUnboxedFixed
 import GHC.Exts qualified as GHC
 import GHC.Generics (Generic)
 import GHC.Int (Int64 (I64#))
+import Generics.Linear.TH (deriveGeneric)
 import Prelude.Linear (
   lseq,
   unur,
@@ -179,6 +182,20 @@ data FixedUnrestrictedStore = FixedUnrestrictedStore
   { fixedUnrestrictedRoots :: !FixedRoots
   , fixedUnrestrictedGrowableRoots :: !OwningGrowableRoots
   }
+
+deriveGeneric ''FixedRoots
+
+deriveGeneric ''GrowableRoots
+
+deriveGeneric ''MultiStore
+
+deriveGeneric ''OwningFixedRoots
+
+deriveGeneric ''OwningGrowableRoots
+
+deriveGeneric ''OwningMultiStore
+
+deriveGeneric ''FixedUnrestrictedStore
 
 multiStoreScanBoxedContentProjection ::
   Mut α (Growable.GrowableVector V.Vector (Int, Int)) %1 ->

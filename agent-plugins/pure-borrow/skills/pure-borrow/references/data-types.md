@@ -179,7 +179,7 @@ bumpBoth mp = case split mp of
 - A nonlinear field must have a type that does not mention that parameter, and `split` keeps it as it is.
   One that mentions the parameter is rejected with a custom error: `split` would store a `Mut` in it, and an unrestricted `Mut` breaks the linearity that every borrow relies on.
 - Use `splitPair` for tuples and `splitEither` for `Either` (the class refuses them with a hint).
-- `Data.Record.Linear.Borrow.Experimental.Split` and `…PatternMatch` split borrows of records field by field (experimental).
+- `Data.Record.Linear.Borrow.Experimental.Split` and `…PatternMatch` split borrows of records field by field (experimental), for a single-constructor record with an instance of linear-generics' `Generic`, by its declared fields.
 - The two halves of a `Mut` can be used in parallel (`parBO`), because they are disjoint.
 
 Wrap a GC-owned field in `Ur`, and the Template Haskell suffices:

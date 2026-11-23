@@ -42,6 +42,10 @@ Each breaking change closes a soundness hole: a program that typechecks against 
   In application code, use the borrow-aware hash map's `alter` or `alterF`, which insert at a missing key with a single search, or its `lookup` followed by its `insert` where the value found is needed, which searches twice on a miss.
 - The key of the hash map of `Data.HashMap.RobinHood.Mutable.Linear` has a nominal role, as the borrow-aware hash map's key has, since `upcast` to a newtype key with another `Hashable` instance made lookups miss keys the table holds.
 - `SplitRecord` of `Data.Record.Linear.Borrow.Experimental.Split` has nominal roles, since its list of the fields not yet split out had a phantom role and its record a representational one, which let `upcast` put back a field already split out, or read the remaining fields through a newtype over the record, and give a second live `Mut` of a field.
+- A label of `Data.Record.Linear.Borrow.Experimental.Split` or `Data.Record.Linear.Borrow.Experimental.PatternMatch` names only a field that the record declares, since a hand-written `HasField` instance let `(.@)` or either `(.#)` hand out two live borrows of one field.
+  Each label needs the record's linear-generics `Generic` instance, which `(.@)` and both `(.#)` did not ask for, and `RecordLabel'` of `Data.Record.Linear.Borrow.Experimental.PatternMatch` no longer exports its constructor `RecLab`.
+  Sum types and records with an existential field can no longer be split by a field.
+  Polymorphic code takes the `RecordLabel` as an argument.
 - `Affine (Ref a)` requires `Affine a`, so a `Lend` can no longer be discarded in safe code by storing it in a reference and dropping that.
   Drop a reference to contents that are `Consumable` but not `Affine`, such as the boxed `Vector` of `Data.Vector.Mutable.Linear.Borrow` or linear-base's `Array`, with `consume` instead of `pop (aff ref)`.
   A function or derived instance that drops a `Ref a` for every `a` needs `Affine a`, from `Control.Monad.Borrow.Pure.Affine`, in its context.

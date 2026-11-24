@@ -66,13 +66,13 @@ import Generics.Linear (Generically (..)) -- the constructor too, not only the t
 deriving via Generically (Two b) instance (a <: b) => Two a <: Two b
 ```
 
-Both types must apply the same type constructor, differ in at most eight trailing arguments (from the first differing argument to the last), and share one parametric `Generic` instance that only takes a value apart and puts it back, as `deriveGeneric` generates.
+Both types must apply the same type constructor and differ only in the last argument, with one parametric `Generic` instance that only takes a value apart and puts it back, as `deriveGeneric` generates; a type whose last two arguments differ derives via `Generically1`, below.
 Distinct type constructors and separate `Generic` instances on one type constructor are rejected.
 
 `Data.Coerce.Directed` (re-exported by `Control.Monad.Borrow.Pure.BO`) also provides `Subtype1` — the lifting of `(<:)` to unary type constructors, analogous to `Eq1` — and `upcast1 :: (Subtype1 f g, a <: b) => f a %1 -> g b`.
 The library supplies `Subtype1` for `BO α`, `Share α`, `Lend α`, `After α`, `FUN p c`, `[]`, `Maybe`, `NonEmpty`, `Identity`, `(,) c`, and `Either c`.
-`Mut` is invariant in the borrowed type, so `Subtype1 (Mut α) (Mut β)` is rejected; for a type whose parameter is under a `Mut`, derive `(<:)` via `Generically` instead.
-A functor gets both `Subtype1` and `(<:)` via `Generically1` once it has one parametric `Generic1` instance (from `deriveGenericAnd1`), covering one functor or up to eight trailing arguments before its last parameter:
+`Mut` is invariant in the borrowed type, so `Subtype1 (Mut α) (Mut β)` is rejected; for a type whose parameter is under a `Mut`, derive `(<:)` via `Generically` instead, which needs the lifetime to be its last argument.
+A functor gets both `Subtype1` and `(<:)` via `Generically1` once it has one parametric `Generic1` instance (from `deriveGenericAnd1`), for one functor, or for two applications of one type constructor that differ in the argument before the last, such as `View α` and `View β`:
 
 ```haskell
 import Data.Coerce.Directed (Subtype1)
@@ -91,7 +91,8 @@ deriving via Generically1 (View β) b instance (α >= β, a <: b) => View α a <
 
 In the module that defines a newtype, `deriving via AsCoercible Meters instance Int <: Meters`, with `AsCoercible (..)` imported from `Data.Coerce.Directed`, lets modules that cannot see its constructor upcast `Int` to `Meters`.
 A derivation needs the via type and the target to be representationally equal where it is written, which is why the constructor must be in scope.
-`genericUpcast` converts between two types whose `Generic` representations have the same shape and names, field by field, without a `(<:)` instance: it rebuilds the value through `from` and `to`, so it also takes two applications of a type whose first differing argument is ninth from the end or further.
+`genericUpcast` converts between two types whose `Generic` representations have the same shape and names, field by field, without a `(<:)` instance: it rebuilds the value through `from` and `to`, so it also takes two types that neither route relates.
+A type that no route covers, such as one whose last argument sits under a `Mut` while its lifetime comes before it, gets its `(<:)` instance by hand, with `UnsafeSubtype` from `Data.Coerce.Directed.Unsafe`: checking that each field is a subtype of the field it becomes is then yours.
 
 ## Ending lifetimes: `After` and `End`
 

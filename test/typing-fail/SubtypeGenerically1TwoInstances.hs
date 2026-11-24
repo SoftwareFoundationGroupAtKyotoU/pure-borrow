@@ -27,7 +27,7 @@ instance Generic1 (P Bool α β) where
   to1 (M1 (M1 (M1 (K1 y) :*: (M1 (K1 x) :*: M1 (Par1 z))))) = P x y z
 
 -- This fixture must not typecheck: two instances that list the fields in other orders would swap the lifetimes of two Muts.
--- EXPECT: Generic1 (P x1 x2 x3)
--- EXPECT: quantified constraint
+-- EXPECT: No instance for
+-- EXPECT: Generically1 (P Bool β α)
 swap :: P Int α β () %1 -> Generically1 (P Bool β α) ()
 swap = upcast1

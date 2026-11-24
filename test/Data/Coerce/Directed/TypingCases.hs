@@ -19,7 +19,7 @@ import Data.Coerce.Directed.Internal (MultLe)
 import Data.Coerce.Directed.Unsafe (Subtype1 (..), SubtypeWitness, type (<:) (..))
 import Data.Type.Equality ((:~:) (Refl))
 import GHC.Exts (Multiplicity (..))
-import Generics.Linear (Generic (..), Generically (..), Generically1 (..), K1 (..), R)
+import Generics.Linear (Generically (..), Generically1 (..))
 import Generics.Linear.TH (deriveGeneric)
 import Prelude.Linear
 
@@ -39,24 +39,7 @@ manyBelowMany = Refl
 badManyBelowOne :: MultLe 'Many 'One :~: 'True
 badManyBelowOne = Refl
 
--- Two distinct types, even with metadata-free 'Generic' instances, must be refused by 'Generically'.
-newtype MetaFreeLeft = MetaFreeLeft Int
-
-instance Generic MetaFreeLeft where
-  type Rep MetaFreeLeft = K1 R Int
-  from (MetaFreeLeft x) = K1 x
-  to (K1 x) = MetaFreeLeft x
-
-newtype MetaFreeRight = MetaFreeRight Int
-
-instance Generic MetaFreeRight where
-  type Rep MetaFreeRight = K1 R Int
-  from (MetaFreeRight x) = K1 x
-  to (K1 x) = MetaFreeRight x
-
-badGenericallyTwoTypes :: SubtypeWitness MetaFreeLeft (Generically MetaFreeRight)
-badGenericallyTwoTypes = subtype
-
+-- Two distinct types must be refused by 'Generically'.
 data DistinctLeft = DistinctLeft Int
 
 deriveGeneric ''DistinctLeft

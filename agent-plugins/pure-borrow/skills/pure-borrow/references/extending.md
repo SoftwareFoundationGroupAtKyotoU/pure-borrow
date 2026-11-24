@@ -51,7 +51,7 @@ A typical mutable container:
   Drop a linear `Linearly` with `consume` and a `Now` with `consume (aff now)`; `withEndL` uses up a linear `EndToken`.
   Convert one token into another with `newLifetime` or `endLifetime`, never by dropping it and building the other.
   A token built with a pattern is a constant: build one only inside a function that is `NOINLINE` and applied through `noinline`, which a function returning two tokens must be as well, since two equal-looking tokens can let GHC merge allocations.
-- The instances of `(<=)`, `End`, `(<:)`, and `Subtype1` decide lifetime soundness: never write one of `(<=)` or `End`, and give a type of your own `(<:)` only by deriving it via `Generically`, `Generically1` or `AsCoercible`, and `Subtype1` only by deriving it via `Generically1`, which the role of the witness checks.
+- The instances of `(<=)`, `End`, `(<:)`, and `Subtype1` decide lifetime soundness: never write one of `(<=)` or `End`, and give a type of your own `(<:)` by deriving it via `Generically`, `Generically1` or `AsCoercible` where one applies, and `Subtype1` only by deriving it via `Generically1`, which the role of the witness checks; a `(<:)` instance written by hand, with `UnsafeSubtype`, is a proof that each field is a subtype of the field it becomes.
 
 ## Effects and inlining
 

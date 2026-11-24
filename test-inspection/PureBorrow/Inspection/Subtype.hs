@@ -45,14 +45,15 @@ import Unsafe.Linear qualified as Unsafe
 
 -- Concrete and polymorphic upcast and upcast1 compile to casts, with no generic representation, dictionary, or call to from or to.
 
-data MutPair α a = MutPair (Mut α a) (Share α a)
+-- The lifetime is the last argument, since the element under a Mut keeps the type from Generically1.
+data MutPair a α = MutPair (Mut α a) (Share α a)
 
 deriveGeneric ''MutPair
 
 deriving via
-  GL.Generically (MutPair β b)
+  GL.Generically (MutPair a β)
   instance
-    (α >= β, a <: b, b <: a) => MutPair α a <: MutPair β b
+    (α >= β) => MutPair a α <: MutPair a β
 
 data ShareView α a = ShareView (Share α a) Int
 
@@ -68,11 +69,11 @@ deriving via
   instance
     (α >= β, a <: b) => ShareView α a <: ShareView β b
 
-upcastMutPair :: MutPair Static Int %1 -> MutPair (Al 0) Int
+upcastMutPair :: MutPair Int Static %1 -> MutPair Int (Al 0)
 {-# NOINLINE upcastMutPair #-}
 upcastMutPair = upcast
 
-refUpcastMutPair :: MutPair Static Int %1 -> MutPair (Al 0) Int
+refUpcastMutPair :: MutPair Int Static %1 -> MutPair Int (Al 0)
 {-# NOINLINE refUpcastMutPair #-}
 refUpcastMutPair = Unsafe.toLinear unsafeCoerce
 

@@ -121,17 +121,13 @@ Enable `ImpredicativeTypes`, pass continuations with `BlockArguments` (`reborrow
 `Mut α` cannot lift `a <: b` to `Mut α a <: Mut α b`, so `Subtype1 (Mut α) (Mut β)` and `upcast1` on `Mut` are rejected.
 For a type whose parameter is under a `Mut`, derive `(<:)` via `Generically` instead, as shown in [references/lifetimes.md](lifetimes.md).
 
-## `Cannot derive (<:) via Generically between ...` / `Cannot derive Subtype1 via Generically1 between ...`
+## `No instance for Generic (T x)` under a quantified constraint
 
-Deriving `(<:)` via `Generically` or `Subtype1` via `Generically1` requires both sides to apply the same type constructor, differ in at most eight trailing arguments, and share one parametric `Generic`/`Generic1` instance covering every differing argument.
-For one type constructor whose first differing argument is ninth from the end or further, convert with `genericUpcast`, which rebuilds the value through `from` and `to`.
-
-## `No instance for Generic (T x1 x2)` under a quantified constraint
-
-Deriving `(<:)` via `Generically`, or `Subtype1` via `Generically1`, needs one instance of linear-generics' `Generic` (or `Generic1`) that serves every choice of the arguments from the first one that differs to the last.
+Deriving `(<:)` via `Generically`, or `Subtype1` via `Generically1`, needs one instance of linear-generics' `Generic` (or `Generic1`) that serves every choice of the last argument.
 GHC reports a missing one with `No instance for` or `Could not deduce`, sometimes after `Could not deduce GSubtype (Rep (T a b))`, and says it arises from the head of a quantified constraint, or on GHC 9.14 via one.
 It happens when the type has none, since `deriving Generic` gives base's class and not linear-generics': derive it with `deriveGeneric` or `deriveGenericAnd1` from `Generics.Linear.TH`.
-It also happens when the instance is written for some of those arguments only, such as `instance Generic (Box α Int)` for `Box α Int <: Box β Int`; write the instance for every choice of them, as the Template Haskell does.
+It also happens when the instance is written for particular choices of the last argument only; write it for every choice of it, as the Template Haskell does.
+Two types that differ in more than their last argument have no such instance to look for, and fall back to `Coercible`, which reports the lifetimes as `Couldn't match type`: derive through `Generically1` if only the last two differ, as described in [references/lifetimes.md](lifetimes.md), or write the instance by hand.
 
 ## Parallel code runs sequentially
 

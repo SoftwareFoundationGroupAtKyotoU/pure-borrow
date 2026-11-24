@@ -18,7 +18,7 @@ import Data.Functor.Identity (Identity)
 import Data.Kind (Constraint, Type)
 import Data.List.NonEmpty (NonEmpty)
 import GHC.Exts (FUN, Multiplicity (..))
-import GHC.TypeError (Assert, ErrorMessage (..), TypeError, Unsatisfiable, unsatisfiable)
+import GHC.TypeError (Assert, ErrorMessage (..), TypeError)
 import Generics.Linear
 import Prelude.Linear
 import Unsafe.Coerce (unsafeCoerce)
@@ -65,7 +65,8 @@ type role SubtypeWitness nominal representational
 {- | @a <: b@: a value of @a@ can be used as a value of @b@, through zero-cost 'upcast'.
 Mainly used to coerce types containing lifetimes, such as @t'Control.Monad.Borrow.Pure.BO' α@ or @t'Control.Monad.Borrow.Pure.Mut' α@, properly.
 You can derive '(<:)' via t'AsCoercible' between representationally equal types, via t'Generics.Linear.Generically' between two applications of one type constructor, or via t'Generics.Linear.Generically1' together with 'Subtype1'.
-Deriving via t'Generics.Linear.Generically' needs one instance of linear-generics' 'Generic' that serves every choice of the arguments from the first one that differs to the last, at most eight trailing arguments, and that only takes a value apart and puts it back, as the Template Haskell of @linear-generics@ generates.
+Deriving via t'Generics.Linear.Generically' relates two applications of one type constructor that differ only in their last argument, through one instance of linear-generics' 'Generic' that serves every choice of it and only takes a value apart and puts it back, as the Template Haskell of @linear-generics@ generates.
+A type whose last two arguments differ derives through t'Generics.Linear.Generically1' and 'Subtype1' instead.
 -}
 class a <: b where
   subtype :: SubtypeWitness a b
@@ -75,7 +76,7 @@ upcast = Unsafe.toLinear unsafeCoerce
 
 {- | Lifting of '(<:)' to unary type constructors, analogous to @Eq1@: @'Subtype1' f g@ means that @f a@ is a subtype of @g b@ whenever @a@ is one of @b@.
 
-Derive an instance via t'Generics.Linear.Generically1', which needs one instance of linear-generics' 'Generic1' that serves every choice of the arguments from the first one that differs to the last, at most eight trailing arguments, and that only takes a value apart and puts it back, as the Template Haskell of @linear-generics@ generates.
+Derive an instance via t'Generics.Linear.Generically1', for one functor or for two applications of one type constructor that differ only in their last argument, such as @View α@ and @View β@, through one instance of linear-generics' 'Generic1' that serves every choice of it and only takes a value apart and puts it back, as the Template Haskell of @linear-generics@ generates.
 A 'Subtype1' instance does not give '(<:)', which is derived by a line of its own:
 
 > deriveGenericAnd1 ''View -- data View α a = View (Share α a) Int
@@ -121,19 +122,18 @@ deriving via
     (a <: b) => NonEmpty a <: NonEmpty b
 
 deriving via
-  Generically (a', b')
+  Generically1 ((,) a') b'
   instance
     (a <: a', b <: b') => (a, b) <: (a', b')
 
 deriving via
-  Generically (Either a' b')
+  Generically1 (Either a') b'
   instance
     (a <: a', b <: b') => Either a b <: Either a' b'
 
-deriving via
-  Generically (a', b', c')
-  instance
-    (a <: a', b <: b', c <: c') => (a, b, c) <: (a', b', c')
+-- Trusted: neither route varies three arguments, and each component is upcast in place.
+instance (a <: a', b <: b', c <: c') => (a, b, c) <: (a', b', c') where
+  subtype = UnsafeSubtype
 
 deriving via
   Generically (Identity b)
@@ -197,26 +197,34 @@ instance (GSubtype l l', GSubtype r r') => GSubtype (l :+: r) (l' :+: r') where
 
 {- | @a@ and @b@ have instances of linear-generics' 'Generic' whose representations have the same shape and the same names, with the types of the fields related by '(<:)'.
 
-'genericUpcast' converts through 'from' and 'to', pairing the fields by position, so it accepts two separate instances, and two applications of a type whose first differing argument is ninth from the end or further, which deriving via t'Generics.Linear.Generically' refuses.
+'genericUpcast' converts through 'from' and 'to', pairing the fields by position, so it accepts two separate instances, and two applications of a type that differ in more arguments than deriving via t'Generics.Linear.Generically' or t'Generics.Linear.Generically1' can vary.
 -}
 type GenericSubtype a b = (Generic a, Generic b, GSubtype (Rep a) (Rep b))
 
 {-
 Note [Subtyping through one Generic instance]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Allowing an unconstrained @(Generic a, Generic b, GSubtype (Rep a) (Rep b)) => a <: Generically b@ lets two separate 'Generic' instances compare structurally, which breaks ownership when two distinct types share a metadata-free representation or when two instantiations of one type constructor swap fields in separate instances (e.g. @Generic (P Int α β)@ vs @Generic (P Bool α β)@).
+An instance @(Generic a, Generic b, GSubtype (Rep a) (Rep b)) => a <: Generically b@ would compare the representations of two separate 'Generic' instances, which two lawful instances can make disagree on what a position holds.
+Two distinct types with metadata-free representations would be related although nothing relates their values, and two instantiations of one type constructor with separate instances, such as @Generic (P Int α β)@ and @Generic (P Bool α β)@ listing the fields in other orders, would let 'upcast' swap the lifetimes of two 'Mut's.
 
-Instead, each 'Generically' instance applies one type constructor @t@ to trailing arguments @a1 .. an@ and @b1 .. bn@ and requires @(forall x1 .. xn. Generic (t x1 .. xn))@.
-Because an instance whose context constrains any @xi@ cannot discharge the quantified constraint, @from@ at @t a1 .. an@ and @to@ at @t b1 .. bn@ must come from one parametric 'Generic' instance, so @to . from@ across the two instantiations is the identity on values and 'GSubtype' checks each field.
-No witness is ever forced: 'upcast' and 'upcast1' ignore their dictionaries, so every method other than a refusal returns 'UnsafeSubtype' without looking at its context.
+So the 'Generically' instance relates only @t a@ to @t b@, two applications of one type constructor that differ in their last argument, and requires @forall x. Generic (t x)@.
+The quantified constraint holds only through one instance whose context holds for every @x@, so @from@ at @t a@ and @to@ at @t b@ come from one parametric instance, @to . from@ across the two is the identity on values, and 'GSubtype' checks each field.
+The only other instance that matches it is the @INCOHERENT@ one through 'Coercible', which is more general, so it needs no overlap pragma of its own.
+
+The 'Generically1' route for 'Subtype1' has the instance for one functor @f@, under @Generic1 f@, and one head relating @t a@ to @t b@ under @forall x. Generic1 (t x)@.
+The head is for a lifetime that 'Generic1' cannot reach, such as the @α@ of @View α a@, since an instance of @Generic1 (View α)@ varies only the element.
+The two overlap where @a@ and @b@ are one type, and both are sound there, so the head carries @INCOHERENT@.
+A type whose last two arguments differ derives '(<:)' through 'Generically1', with 'Subtype1' of the type applied to all but its last argument, as the pairs and 'Either' of this module do.
+
+There are no heads for more arguments, and no refusal instances for what no head covers: heads of several arities overlap one another, and GHC's choice among them could decide whether a program is accepted.
+A type that differs in more arguments, or one whose last argument sits under a 'Mut' while its lifetime comes before it, as in @MutBox α a = MutBox (Mut α a) Int@, which 'Generically1' cannot take since 'Mut' has no 'Subtype1', gets its instance by hand, as the triples of this module do.
+
+No witness is ever forced: 'upcast' and 'upcast1' ignore their dictionaries, and every method other than the refusal for 'Mut' returns 'UnsafeSubtype' without looking at its context.
 A method that forced the witnesses of its components would loop on a recursive type such as a list, whose representation needs the list's own witness, and so on every type that holds one, such as 'NonEmpty'; it would also turn a dictionary stored in a constructor into a thunk.
-The heads of arities 1 to 8 overlap without one being more specific than another, so they carry @INCOHERENT@; every matching choice is sound on its own, so any choice GHC makes is sound and only acceptance can depend on arity.
-The trailing refusal instance on @(a :: Type) <: Generically b@ catches the rest, two distinct type constructors, a type with no arguments, or a first differing argument ninth from the end or further, with a message that points to 'genericUpcast' for the last.
+A deferred class constraint in the context of an instance that resolution picks is therefore never raised, unlike a deferred equality, and tests of such a refusal, as of a trusted instance used the wrong way round, are typing-fail fixtures.
 
-The 'Generically1' route for 'Subtype1' applies the same design: one non-incoherent head for a single functor @f@ with @Generic1 f@, eight @INCOHERENT@ heads for arities 1 to 8 with @(forall x1 .. xn. Generic1 (t x1 .. xn))@, and a trailing @INCOHERENT@ refusal instance.
-Eight covers tuples of up to eight components, and types with several lifetime and element parameters.
-
-Abstract and linear types with hidden constructors — 'Linearly', 'Now', 'EndToken', 'Alias', 'BO', 'Aff', 'SplitRecord', 'RecordLabel', 'RecordLabel'', 'UniqueSource', 'ChaseLevDeq', the vector and growable vector types, and the hash map and 'InsertPlan' types — carry 'Unsatisfiable' instances of 'Generic' (and 'Generic1' where their kind allows) so that no 'Generic' or 'Generic1' instance can be derived for them: its representation would expose the hidden constructor or leave out a phantom parameter, and the generic routes would rebuild the value outside its API.
+The abstract and linear types with hidden constructors carry 'Unsatisfiable' instances of 'Generic', and of 'Generic1' where their kind allows, so that no instance can be derived for them: its representation would expose the hidden constructor or leave out a phantom parameter, and the generic routes would rebuild the value outside its API.
+They are 'Linearly', 'Now', 'EndToken', 'Alias', 'BO', 'Aff', 'SplitRecord', both record labels, 'UniqueSource', 'ChaseLevDeq', every vector and growable vector, and both hash maps with their 'InsertPlan'.
 'Ref' needs no guard: it wraps an unlifted type, which no representation can hold.
 Each guard defines 'Rep' or 'Rep1' as 'V1', so that a more specific instance written beside it conflicts with its family instance.
 The family instances cost a type-family consistency check, some tens of milliseconds, in a module that imports two guarded modules of which neither imports the other.
@@ -224,85 +232,12 @@ The family instances cost a type-family consistency check, some tens of millisec
 
 -- See Note [Subtyping through one Generic instance].
 
--- | Subtype @t a1@ against @t b1@ using one parametric 'Generic' instance covering the differing trailing argument.
+-- | Subtype @t a@ against @t b@, which differ only in the last argument, through one 'Generic' instance that serves every choice of it.
 instance
-  {-# INCOHERENT #-}
-  (forall x1. Generic (t x1), GSubtype (Rep (t a1)) (Rep (t b1))) =>
-  t a1 <: Generically (t b1)
+  (forall x. Generic (t x), GSubtype (Rep (t a)) (Rep (t b))) =>
+  t a <: Generically (t b)
   where
   subtype = UnsafeSubtype
-
--- | Subtype with two trailing arguments covered by one parametric 'Generic' instance.
-instance
-  {-# INCOHERENT #-}
-  (forall x1 x2. Generic (t x1 x2), GSubtype (Rep (t a1 a2)) (Rep (t b1 b2))) =>
-  t a1 a2 <: Generically (t b1 b2)
-  where
-  subtype = UnsafeSubtype
-
--- | Subtype with three trailing arguments covered by one parametric 'Generic' instance.
-instance
-  {-# INCOHERENT #-}
-  (forall x1 x2 x3. Generic (t x1 x2 x3), GSubtype (Rep (t a1 a2 a3)) (Rep (t b1 b2 b3))) =>
-  t a1 a2 a3 <: Generically (t b1 b2 b3)
-  where
-  subtype = UnsafeSubtype
-
--- | Subtype with four trailing arguments covered by one parametric 'Generic' instance.
-instance
-  {-# INCOHERENT #-}
-  (forall x1 x2 x3 x4. Generic (t x1 x2 x3 x4), GSubtype (Rep (t a1 a2 a3 a4)) (Rep (t b1 b2 b3 b4))) =>
-  t a1 a2 a3 a4 <: Generically (t b1 b2 b3 b4)
-  where
-  subtype = UnsafeSubtype
-
--- | Subtype with five trailing arguments covered by one parametric 'Generic' instance.
-instance
-  {-# INCOHERENT #-}
-  (forall x1 x2 x3 x4 x5. Generic (t x1 x2 x3 x4 x5), GSubtype (Rep (t a1 a2 a3 a4 a5)) (Rep (t b1 b2 b3 b4 b5))) =>
-  t a1 a2 a3 a4 a5 <: Generically (t b1 b2 b3 b4 b5)
-  where
-  subtype = UnsafeSubtype
-
--- | Subtype with six trailing arguments covered by one parametric 'Generic' instance.
-instance
-  {-# INCOHERENT #-}
-  (forall x1 x2 x3 x4 x5 x6. Generic (t x1 x2 x3 x4 x5 x6), GSubtype (Rep (t a1 a2 a3 a4 a5 a6)) (Rep (t b1 b2 b3 b4 b5 b6))) =>
-  t a1 a2 a3 a4 a5 a6 <: Generically (t b1 b2 b3 b4 b5 b6)
-  where
-  subtype = UnsafeSubtype
-
--- | Subtype with seven trailing arguments covered by one parametric 'Generic' instance.
-instance
-  {-# INCOHERENT #-}
-  (forall x1 x2 x3 x4 x5 x6 x7. Generic (t x1 x2 x3 x4 x5 x6 x7), GSubtype (Rep (t a1 a2 a3 a4 a5 a6 a7)) (Rep (t b1 b2 b3 b4 b5 b6 b7))) =>
-  t a1 a2 a3 a4 a5 a6 a7 <: Generically (t b1 b2 b3 b4 b5 b6 b7)
-  where
-  subtype = UnsafeSubtype
-
--- | Subtype with eight trailing arguments covered by one parametric 'Generic' instance.
-instance
-  {-# INCOHERENT #-}
-  (forall x1 x2 x3 x4 x5 x6 x7 x8. Generic (t x1 x2 x3 x4 x5 x6 x7 x8), GSubtype (Rep (t a1 a2 a3 a4 a5 a6 a7 a8)) (Rep (t b1 b2 b3 b4 b5 b6 b7 b8))) =>
-  t a1 a2 a3 a4 a5 a6 a7 a8 <: Generically (t b1 b2 b3 b4 b5 b6 b7 b8)
-  where
-  subtype = UnsafeSubtype
-
-instance
-  {-# INCOHERENT #-}
-  ( Unsatisfiable
-      ( 'Text "Cannot derive (<:) via Generically between "
-          ':<>: 'ShowType a
-          ':<>: 'Text " and "
-          ':<>: 'ShowType b
-          ':$$: 'Text "Both types must share a type constructor and differ in at most eight trailing arguments,"
-          ':$$: 'Text "with one Generic instance covering every argument from the first differing one to the last."
-          ':$$: 'Text "For one type constructor whose first differing argument is ninth from the end or further, convert with genericUpcast instead."
-      )
-  ) =>
-  (a :: Type) <: Generically b
-  where
-  subtype = unsatisfiable
 
 genericUpcast :: (GenericSubtype a b) => a %1 -> b
 genericUpcast = to . gupcast . from
@@ -318,84 +253,15 @@ instance
   where
   subtype1 _ = UnsafeSubtype
 
--- | Derive 'Subtype1' with one differing trailing argument covered by one parametric 'Generic1' instance.
+-- See Note [Subtyping through one Generic instance].
+
+-- | Derive 'Subtype1' between @t a@ and @t b@, which differ only in their last argument, as @View α@ and @View β@ do, through one 'Generic1' instance that serves every choice of it.
 instance
   {-# INCOHERENT #-}
-  (forall x1. Generic1 (t x1), Subtype1 (Rep1 (t a1)) (Rep1 (t b1))) =>
-  Subtype1 (t a1 :: k -> Type) (Generically1 (t b1))
+  (forall x. Generic1 (t x), Subtype1 (Rep1 (t a)) (Rep1 (t b))) =>
+  Subtype1 (t a :: k -> Type) (Generically1 (t b))
   where
   subtype1 _ = UnsafeSubtype
-
--- | Derive 'Subtype1' with two differing trailing arguments covered by one parametric 'Generic1' instance.
-instance
-  {-# INCOHERENT #-}
-  (forall x1 x2. Generic1 (t x1 x2), Subtype1 (Rep1 (t a1 a2)) (Rep1 (t b1 b2))) =>
-  Subtype1 (t a1 a2 :: k -> Type) (Generically1 (t b1 b2))
-  where
-  subtype1 _ = UnsafeSubtype
-
--- | Derive 'Subtype1' with three differing trailing arguments covered by one parametric 'Generic1' instance.
-instance
-  {-# INCOHERENT #-}
-  (forall x1 x2 x3. Generic1 (t x1 x2 x3), Subtype1 (Rep1 (t a1 a2 a3)) (Rep1 (t b1 b2 b3))) =>
-  Subtype1 (t a1 a2 a3 :: k -> Type) (Generically1 (t b1 b2 b3))
-  where
-  subtype1 _ = UnsafeSubtype
-
--- | Derive 'Subtype1' with four differing trailing arguments covered by one parametric 'Generic1' instance.
-instance
-  {-# INCOHERENT #-}
-  (forall x1 x2 x3 x4. Generic1 (t x1 x2 x3 x4), Subtype1 (Rep1 (t a1 a2 a3 a4)) (Rep1 (t b1 b2 b3 b4))) =>
-  Subtype1 (t a1 a2 a3 a4 :: k -> Type) (Generically1 (t b1 b2 b3 b4))
-  where
-  subtype1 _ = UnsafeSubtype
-
--- | Derive 'Subtype1' with five differing trailing arguments covered by one parametric 'Generic1' instance.
-instance
-  {-# INCOHERENT #-}
-  (forall x1 x2 x3 x4 x5. Generic1 (t x1 x2 x3 x4 x5), Subtype1 (Rep1 (t a1 a2 a3 a4 a5)) (Rep1 (t b1 b2 b3 b4 b5))) =>
-  Subtype1 (t a1 a2 a3 a4 a5 :: k -> Type) (Generically1 (t b1 b2 b3 b4 b5))
-  where
-  subtype1 _ = UnsafeSubtype
-
--- | Derive 'Subtype1' with six differing trailing arguments covered by one parametric 'Generic1' instance.
-instance
-  {-# INCOHERENT #-}
-  (forall x1 x2 x3 x4 x5 x6. Generic1 (t x1 x2 x3 x4 x5 x6), Subtype1 (Rep1 (t a1 a2 a3 a4 a5 a6)) (Rep1 (t b1 b2 b3 b4 b5 b6))) =>
-  Subtype1 (t a1 a2 a3 a4 a5 a6 :: k -> Type) (Generically1 (t b1 b2 b3 b4 b5 b6))
-  where
-  subtype1 _ = UnsafeSubtype
-
--- | Derive 'Subtype1' with seven differing trailing arguments covered by one parametric 'Generic1' instance.
-instance
-  {-# INCOHERENT #-}
-  (forall x1 x2 x3 x4 x5 x6 x7. Generic1 (t x1 x2 x3 x4 x5 x6 x7), Subtype1 (Rep1 (t a1 a2 a3 a4 a5 a6 a7)) (Rep1 (t b1 b2 b3 b4 b5 b6 b7))) =>
-  Subtype1 (t a1 a2 a3 a4 a5 a6 a7 :: k -> Type) (Generically1 (t b1 b2 b3 b4 b5 b6 b7))
-  where
-  subtype1 _ = UnsafeSubtype
-
--- | Derive 'Subtype1' with eight differing trailing arguments covered by one parametric 'Generic1' instance.
-instance
-  {-# INCOHERENT #-}
-  (forall x1 x2 x3 x4 x5 x6 x7 x8. Generic1 (t x1 x2 x3 x4 x5 x6 x7 x8), Subtype1 (Rep1 (t a1 a2 a3 a4 a5 a6 a7 a8)) (Rep1 (t b1 b2 b3 b4 b5 b6 b7 b8))) =>
-  Subtype1 (t a1 a2 a3 a4 a5 a6 a7 a8 :: k -> Type) (Generically1 (t b1 b2 b3 b4 b5 b6 b7 b8))
-  where
-  subtype1 _ = UnsafeSubtype
-
-instance
-  {-# INCOHERENT #-}
-  ( Unsatisfiable
-      ( 'Text "Cannot derive Subtype1 via Generically1 between "
-          ':<>: 'ShowType f
-          ':<>: 'Text " and "
-          ':<>: 'ShowType g
-          ':$$: 'Text "Both functors must share a type constructor and differ in at most eight trailing arguments,"
-          ':$$: 'Text "with one Generic1 instance covering every argument from the first differing one to the last."
-      )
-  ) =>
-  Subtype1 (f :: k -> Type) (Generically1 (g :: k -> Type))
-  where
-  subtype1 = unsatisfiable
 
 instance Subtype1 Par1 Par1 where
   subtype1 _ = UnsafeSubtype

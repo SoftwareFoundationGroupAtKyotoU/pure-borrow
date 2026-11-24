@@ -127,19 +127,19 @@ data Eight a1 a2 a3 a4 a5 a6 a7 x = Eight a1 a2 a3 a4 a5 a6 a7 x
 
 deriveGeneric ''Eight
 
-deriving via GL.Generically (Eight b1 a2 a3 a4 a5 a6 a7 y) instance (a1 <: b1, x <: y) => Eight a1 a2 a3 a4 a5 a6 a7 x <: Eight b1 a2 a3 a4 a5 a6 a7 y
+deriving via GL.Generically (Eight a1 a2 a3 a4 a5 a6 a7 y) instance (x <: y) => Eight a1 a2 a3 a4 a5 a6 a7 x <: Eight a1 a2 a3 a4 a5 a6 a7 y
 
 data Eight1 a1 a2 a3 a4 a5 a6 a7 a8 x = Eight1 a1 a2 a3 a4 a5 a6 a7 a8 x
 
 deriveGenericAnd1 ''Eight1
 
-deriving via GL.Generically1 (Eight1 b1 a2 a3 a4 a5 a6 a7 a8) instance (a1 <: b1) => Subtype1 (Eight1 a1 a2 a3 a4 a5 a6 a7 a8) (Eight1 b1 a2 a3 a4 a5 a6 a7 a8)
+deriving via GL.Generically1 (Eight1 a1 a2 a3 a4 a5 a6 a7 b8) instance (a8 <: b8) => Subtype1 (Eight1 a1 a2 a3 a4 a5 a6 a7 a8) (Eight1 a1 a2 a3 a4 a5 a6 a7 b8)
 
-data MP α a = MP (Mut α a) (Share α a) | MPNil
+data MP a α = MP (Mut α a) (Share α a) | MPNil
 
 deriveGeneric ''MP
 
-deriving via GL.Generically (MP β b) instance (α >= β, a <: b, b <: a) => MP α a <: MP β b
+deriving via GL.Generically (MP a β) instance (α >= β) => MP a α <: MP a β
 
 data NT α a = NTLeaf (Share α a) | NTNode (NonEmpty (NT α a))
 
@@ -165,27 +165,27 @@ refFunContra1 :: (α >= β) => FUN 'One (Share β Int) Int %1 -> FUN 'Many (Shar
 {-# NOINLINE refFunContra1 #-}
 refFunContra1 = Unsafe.toLinear unsafeCoerce
 
-eight :: Eight (Int %1 -> Int) Int Int Int Int Int Int (Share Static Int) %1 -> Eight (Int -> Int) Int Int Int Int Int Int (Share (Al 0) Int)
+eight :: Eight Int Int Int Int Int Int Int (Share Static Int) %1 -> Eight Int Int Int Int Int Int Int (Share (Al 0) Int)
 {-# NOINLINE eight #-}
 eight = upcast
 
-refEight :: Eight (Int %1 -> Int) Int Int Int Int Int Int (Share Static Int) %1 -> Eight (Int -> Int) Int Int Int Int Int Int (Share (Al 0) Int)
+refEight :: Eight Int Int Int Int Int Int Int (Share Static Int) %1 -> Eight Int Int Int Int Int Int Int (Share (Al 0) Int)
 {-# NOINLINE refEight #-}
 refEight = Unsafe.toLinear unsafeCoerce
 
-eight1 :: Eight1 (Int %1 -> Int) Int Int Int Int Int Int Int (Share Static Int) %1 -> Eight1 (Int -> Int) Int Int Int Int Int Int Int (Share (Al 0) Int)
+eight1 :: Eight1 Int Int Int Int Int Int Int (Int %1 -> Int) (Share Static Int) %1 -> Eight1 Int Int Int Int Int Int Int (Int -> Int) (Share (Al 0) Int)
 {-# NOINLINE eight1 #-}
 eight1 = upcast1
 
-refEight1 :: Eight1 (Int %1 -> Int) Int Int Int Int Int Int Int (Share Static Int) %1 -> Eight1 (Int -> Int) Int Int Int Int Int Int Int (Share (Al 0) Int)
+refEight1 :: Eight1 Int Int Int Int Int Int Int (Int %1 -> Int) (Share Static Int) %1 -> Eight1 Int Int Int Int Int Int Int (Int -> Int) (Share (Al 0) Int)
 {-# NOINLINE refEight1 #-}
 refEight1 = Unsafe.toLinear unsafeCoerce
 
-mpPoly :: (α >= β) => MP α Int %1 -> MP β Int
+mpPoly :: (α >= β) => MP Int α %1 -> MP Int β
 {-# NOINLINE mpPoly #-}
 mpPoly = upcast
 
-refMpPoly :: (α >= β) => MP α Int %1 -> MP β Int
+refMpPoly :: (α >= β) => MP Int α %1 -> MP Int β
 {-# NOINLINE refMpPoly #-}
 refMpPoly = Unsafe.toLinear unsafeCoerce
 
@@ -233,8 +233,8 @@ test_subtypeRoutes =
     , $(inspectTest (('neShares1 ==- 'refNeShares1) {testName = Just "polymorphic upcast1 NonEmpty [Share] is a pure cast"}))
     , $(inspectTest (('funMult ==- 'refFunMult) {testName = Just "upcast FUN multiplicity is a pure cast"}))
     , $(inspectTest (('funContra1 ==- 'refFunContra1) {testName = Just "polymorphic upcast1 FUN contravariant argument is a pure cast"}))
-    , $(inspectTest (('eight ==- 'refEight) {testName = Just "upcast through the arity-8 Generically head is a pure cast"}))
-    , $(inspectTest (('eight1 ==- 'refEight1) {testName = Just "upcast1 through the arity-8 Generically1 head is a pure cast"}))
+    , $(inspectTest (('eight ==- 'refEight) {testName = Just "upcast of an eight-argument type through Generically is a pure cast"}))
+    , $(inspectTest (('eight1 ==- 'refEight1) {testName = Just "upcast1 of a nine-argument type through Generically1 is a pure cast"}))
     , $(inspectTest (('mpPoly ==- 'refMpPoly) {testName = Just "polymorphic upcast via Generically with Mut is a pure cast"}))
     , $(inspectTest (('ntPoly ==- 'refNtPoly) {testName = Just "polymorphic upcast of a NonEmpty-recursive type via Generically1 is a pure cast"}))
     , $(inspectTest (('witnessShare ==- 'refWitnessShare) {testName = Just "the witness of a trusted instance is a constant"}))

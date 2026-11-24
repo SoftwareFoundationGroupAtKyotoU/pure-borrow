@@ -21,8 +21,8 @@ instance Generic (TwoInst Bool a b) where
   to r = case to r of (y, x) -> TwoInst x y
 
 -- This fixture must not typecheck: two instances that list the fields in other orders would swap the lifetimes of two Muts.
--- EXPECT: Generic (TwoInst x1 x2 x3)
--- EXPECT: quantified constraint
+-- EXPECT: Couldn't match type
+-- EXPECT: arising from a use of
 swap ::
   TwoInst Int (Mut α (Ref Int)) (Mut β (Ref Int)) %1 ->
   Generically (TwoInst Bool (Mut β (Ref Int)) (Mut α (Ref Int)))

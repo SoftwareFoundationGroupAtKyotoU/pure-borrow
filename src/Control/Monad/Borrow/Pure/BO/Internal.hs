@@ -113,10 +113,41 @@ asksLinearlyM k = Control.do
 type ForBO :: Lifetime -> Type
 data ForBO α
 
+type role ForBO nominal
+
 {- | Computation returning @a@ that can be performed only during the lifetime @α@.
      Internally it is a linear ST monad.
 -}
 newtype BO α a = BO (State# (ForBO α) %1 -> (# State# (ForBO α), a #))
+
+type role BO nominal representational
+
+-- Guard against Template Haskell deriving a representation that exposes the hidden constructor or 'ForBO'.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (BO α a)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract borrow-monad computation, whose constructor is hidden."
+      )
+  ) =>
+  Generic (BO α a)
+  where
+  type Rep (BO α a) = V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType (BO α)
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract borrow-monad computation, whose constructor is hidden."
+      )
+  ) =>
+  Generic1 (BO α)
+  where
+  type Rep1 (BO α) = V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
 
 instance (Semigroup w) => Semigroup (BO α w) where
   (<>) = Control.liftA2 (<>)
@@ -628,6 +659,31 @@ restoreWithEnd a after = BO \s -> case reviveAliasWithEnd# @β a s of
 
 type role Alias nominal representational
 
+-- Guard against Template Haskell deriving a representation that drops the borrow kind or lifetime.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (Alias ak a)
+          ':<>: 'Text " carries a borrow kind and lifetime that cannot be exposed through Generic."
+      )
+  ) =>
+  Generic (Alias ak a)
+  where
+  type Rep (Alias ak a) = V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType (Alias ak)
+          ':<>: 'Text " carries a borrow kind and lifetime that cannot be exposed through Generic1."
+      )
+  ) =>
+  Generic1 (Alias ak)
+  where
+  type Rep1 (Alias ak) = V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
+
 -- | Alias kind.
 data AliasKind
   = -- | Borrower.
@@ -701,11 +757,27 @@ instance (k ~ 'Borrow 'Share α) => Movable (Alias k a) where
 instance (α >= β, a <: b) => BO α a <: BO β b where
   subtype = UnsafeSubtype
 
+instance (α >= β) => Subtype1 (BO α) (BO β) where
+  subtype1 _ = UnsafeSubtype
+
 instance (α >= β, a <: b, b <: a) => Mut α a <: Mut β b where
   subtype = UnsafeSubtype
 
+instance
+  ( Unsatisfiable
+      ( 'Text "Mut is invariant in the type it borrows, so it has no Subtype1 instance."
+          ':$$: 'Text "For a type whose parameter is under a Mut, derive (<:) through Generically instead."
+      )
+  ) =>
+  Subtype1 (Mut α) (Mut β)
+  where
+  subtype1 = unsatisfiable
+
 instance (α >= β, a <: b) => Share α a <: Share β b where
   subtype = UnsafeSubtype
+
+instance (α >= β) => Subtype1 (Share α) (Share β) where
+  subtype1 _ = UnsafeSubtype
 
 -- | Lender, which can retrieve the lifetime at the lifetime @α@.
 type Lend :: Lifetime -> Type -> Type
@@ -713,6 +785,9 @@ type Lend α = Alias ('Lend α)
 
 instance (α <= β, a <: b) => Lend α a <: Lend β b where
   subtype = UnsafeSubtype
+
+instance (α <= β) => Subtype1 (Lend α) (Lend β) where
+  subtype1 _ = UnsafeSubtype
 
 {- |
 Borrow a resource linearly and obtain the mutable borrow to it and 'Lend' witness to 'reclaim the resource to lend at the 'End' of the lifetime.

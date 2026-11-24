@@ -6,6 +6,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -37,6 +39,7 @@ import GHC.Exts qualified as GHC
 import GHC.IO (unsafePerformIO)
 import GHC.Stack (HasCallStack)
 import GHC.TypeError
+import Generics.Linear (Generic (..), Generic1 (..), V1)
 import Prelude.Linear hiding (getContents, head, last)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
@@ -54,6 +57,33 @@ data GrowableVector a where
 type role Header nominal
 
 type role GrowableVector nominal
+
+-- Guard against Template Haskell deriving a representation that exposes the hidden constructor.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (GrowableVector a)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract linear growable vector, whose constructor is hidden."
+      )
+  ) =>
+  Generic (GrowableVector a)
+  where
+  type Rep (GrowableVector a) = V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType GrowableVector
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract linear growable vector, whose constructor is hidden."
+      )
+  ) =>
+  Generic1 GrowableVector
+  where
+  type Rep1 GrowableVector = V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
 
 instance LinearOnly (GrowableVector a) where
   linearOnly = UnsafeLinearOnly

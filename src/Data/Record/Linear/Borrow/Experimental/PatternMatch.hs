@@ -60,8 +60,9 @@ import Data.Kind (Constraint)
 import Data.Record.Linear.Borrow.Experimental.Utils (HasDeclaredField (..))
 import GHC.Base (Type, proxy#)
 import GHC.OverloadedLabels (IsLabel (..))
-import GHC.TypeError (ErrorMessage (..), Unsatisfiable)
+import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
 import GHC.TypeLits (KnownSymbol, Symbol, symbolVal')
+import Generics.Linear qualified as GL
 import Prelude.Linear hiding (All)
 import Unsafe.Linear qualified as Unsafe
 
@@ -87,6 +88,33 @@ data RecordLabel' r fldVal where
 
 -- Nominal throughout: coercing the record or field tuple could bypass the declared-field check or project at another type.
 type role RecordLabel' nominal nominal
+
+-- Guard against Template Haskell deriving a representation that drops the record, field name, or field type.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (RecordLabel' r fldVal)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract declared-field record label, whose constructor is hidden."
+      )
+  ) =>
+  GL.Generic (RecordLabel' r fldVal)
+  where
+  type Rep (RecordLabel' r fldVal) = GL.V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType (RecordLabel' r)
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract declared-field record label, whose constructor is hidden."
+      )
+  ) =>
+  GL.Generic1 (RecordLabel' r)
+  where
+  type Rep1 (RecordLabel' r) = GL.V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
 
 {- $record-splitting
 == Overview

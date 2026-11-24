@@ -50,6 +50,8 @@ import Data.Unrestricted.Linear
 import GHC.Base (TYPE, UnliftedType, noinline, withDict)
 import GHC.Exts qualified as GHC
 import GHC.Stack (HasCallStack)
+import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
+import Generics.Linear (Generic (..), Generic1 (..), V1)
 import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Linear qualified as Unsafe
 
@@ -109,6 +111,33 @@ instance LinearOnly (Now α) where
   linearOnly = UnsafeLinearOnly
   {-# INLINE linearOnly #-}
 
+-- Guard against Template Haskell deriving a representation that drops the lifetime parameter.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (Now α)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract lifetime token, whose constructor is hidden."
+      )
+  ) =>
+  Generic (Now α)
+  where
+  type Rep (Now α) = V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType Now
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract lifetime token, whose constructor is hidden."
+      )
+  ) =>
+  Generic1 Now
+  where
+  type Rep1 Now = V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
+
 type role EndToken nominal
 
 -- | Witness that the lifetime @α@ has ended.
@@ -131,6 +160,33 @@ pattern UnsafeEnd <- UnsafeEndToken !_
 
 instance (α >= β) => EndToken α <: EndToken β where
   subtype = UnsafeSubtype
+
+-- Guard against Template Haskell deriving a representation that drops the lifetime parameter.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (EndToken α)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract lifetime token, whose constructor is hidden."
+      )
+  ) =>
+  Generic (EndToken α)
+  where
+  type Rep (EndToken α) = V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType EndToken
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract lifetime token, whose constructor is hidden."
+      )
+  ) =>
+  Generic1 EndToken
+  where
+  type Rep1 EndToken = V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
 
 -- | End a lifetime, returning the evidence that it has ended.
 endLifetime :: Now (Al i) %1 -> (Ur (EndToken (Al i)))
@@ -155,8 +211,13 @@ You can use 'Control.Applicative' and 'Control.Monad' instances to write 'After'
 -}
 newtype After α a = After ((End α) => a)
 
+type role After nominal representational
+
 instance (α <= β, a <: b) => After α a <: After β b where
   subtype = UnsafeSubtype
+
+instance (α <= β) => Subtype1 (After α) (After β) where
+  subtype1 _ = UnsafeSubtype
 
 unAfter :: (End α) => After α a %1 -> a
 {-# INLINE unAfter #-}
@@ -288,6 +349,20 @@ withLinearly# = case linearOnly @_ @a of
 instance LinearOnly Linearly where
   linearOnly = UnsafeLinearOnly
   {-# INLINE linearOnly #-}
+
+-- Guard against Template Haskell deriving a representation that hides the linearity token.
+instance
+  ( Unsatisfiable
+      ( 'ShowType Linearly
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract linearity token, whose constructor is hidden."
+      )
+  ) =>
+  Generic Linearly
+  where
+  type Rep Linearly = V1
+  from = unsatisfiable
+  to = unsatisfiable
 
 instance Consumable Linearly where
   consume (UnsafeLinearlyToken rep) = forceRep rep

@@ -3,6 +3,8 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE QualifiedDo #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_HADDOCK hide #-}
@@ -22,6 +24,7 @@ import Data.HashMap.RobinHood.Mutable.Linear.Internal qualified as Raw
 import Data.Ref.Linear (Ref)
 import Data.Ref.Linear.Internal qualified as Ref
 import GHC.TypeError
+import Generics.Linear (Generic (..), Generic1 (..), V1)
 import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
 
@@ -31,8 +34,62 @@ import Unsafe.Linear qualified as Unsafe
 newtype HashMap k v = HashMap (Ref (Raw.HashMap k v))
   deriving newtype (LinearOnly, Consumable, Dupable, Clone)
 
+-- Guard against Template Haskell deriving a representation that exposes the hidden constructor.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (HashMap k v)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract linear hash map, whose constructor is hidden."
+      )
+  ) =>
+  Generic (HashMap k v)
+  where
+  type Rep (HashMap k v) = V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType (HashMap k)
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract linear hash map, whose constructor is hidden."
+      )
+  ) =>
+  Generic1 (HashMap k)
+  where
+  type Rep1 (HashMap k) = V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
+
 -- | A plan that 'Data.HashMap.RobinHood.Mutable.Linear.Borrow.Unsafe.lookupForInsert' made on a miss, good for one 'Data.HashMap.RobinHood.Mutable.Linear.Borrow.Unsafe.unsafeInsertPrepared' into the same table before anything else changes it.
 newtype InsertPlan k = InsertPlan (Raw.InsertPlan k)
+
+-- Guard against Template Haskell deriving a representation that exposes the hidden constructor.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (InsertPlan k)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract hash-map insertion plan, whose constructor is hidden."
+      )
+  ) =>
+  Generic (InsertPlan k)
+  where
+  type Rep (InsertPlan k) = V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType InsertPlan
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract hash-map insertion plan, whose constructor is hidden."
+      )
+  ) =>
+  Generic1 InsertPlan
+  where
+  type Rep1 InsertPlan = V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
 
 {- | A 'HashMap' cannot be 'Copyable', because it owns a mutable reference.
 

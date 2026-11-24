@@ -3,6 +3,7 @@
 ## 0.2.0.0 - unreleased
 
 Each breaking change closes a soundness hole: a program that typechecks against 0.1.0.0 using only the safe modules and breaks an invariant of the library.
+The refused instances of linear-generics' `Generic` are the exception: they guard against Template Haskell reaching a constructor that the library hides.
 
 ### Breaking changes
 
@@ -49,6 +50,12 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `Affine (Ref a)` requires `Affine a`, so a `Lend` can no longer be discarded in safe code by storing it in a reference and dropping that.
   Drop a reference to contents that are `Consumable` but not `Affine`, such as the boxed `Vector` of `Data.Vector.Mutable.Linear.Borrow` or linear-base's `Array`, with `consume` instead of `pop (aff ref)`.
   A function or derived instance that drops a `Ref a` for every `a` needs `Affine a`, from `Control.Monad.Borrow.Pure.Affine`, in its context.
+- Deriving `(<:)` via `Generically` needs both types to apply one type constructor, and one linear-generics `Generic` instance that serves every choice of the arguments from the first one that differs to the last, at most eight trailing arguments, since two separate instances that list the fields in different orders let `upcast` swap the lifetimes of two `Mut`s, and instances without metadata related unrelated types.
+  Two distinct types, two separate `Generic` instances of one type constructor, a type whose first differing argument is ninth from the end or further, and code that upcasts to `Generically` under a `GenericSubtype` constraint are refused.
+  A type without such an instance is reported with `Generic (T x1 x2)` arising from the head of a quantified constraint; derive the instance with `deriveGeneric` from `Generics.Linear.TH`.
+  `genericUpcast` still converts between two applications of one type constructor whose first differing argument is ninth from the end or further, since it rebuilds the value through `from` and `to`.
+- `Linearly`, `Now`, `EndToken`, `Alias`, `BO`, `Aff`, `UniqueSource`, `ChaseLevDeq`, `SplitRecord` and the record labels of `Data.Record.Linear.Borrow.Experimental.Split` and `Data.Record.Linear.Borrow.Experimental.PatternMatch`, the vectors of `Data.Vector.Mutable.Linear.Borrow`, `Data.Vector.Mutable.Growable.Linear.Borrow`, `Data.Vector.Unboxed.Mutable.Linear.Borrow`, `Data.Vector.Unboxed.Mutable.Growable.Linear.Borrow`, `Data.Vector.Generic.Mutable.Linear.Borrow.Unrestricted`, `Data.Vector.Generic.Mutable.Growable.Linear.Borrow.Unrestricted` and `Data.Vector.Generic.Mutable.Linear.Borrow.Experimental.Multiplicity`, and the hash maps and `InsertPlan` of `Data.HashMap.RobinHood.Mutable.Linear` and `Data.HashMap.RobinHood.Mutable.Linear.Borrow` have `Unsatisfiable` instances of linear-generics' `Generic`, and of `Generic1` where the kind allows, so that Template Haskell cannot derive a representation through a constructor the library hides.
+  Deriving one is rejected with "Duplicate instance declarations".
 - The instances listed under "New" overlap with orphan instances that a user may have written for 0.1.0.0, such as `Clone (Ur Text)`, `Clone (Array a)` for linear-base's `Array`, `Clone` for a boxed growable or unboxed vector, or a `(<:)` instance for `Maybe`; delete the orphan.
   Call sites of an old shallow vector-cloning orphan now need `Clone a`, since those vectors own their elements.
   An orphan as general as the new instance, such as `Clone (Array a)`, is rejected with "Duplicate instance declarations"; a narrower one, such as `Clone (Array Int)`, compiles, and each use of it is rejected with "Overlapping instances".
@@ -124,6 +131,10 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `upcast` works componentwise on `Maybe` and `NonEmpty`, as it does on lists.
 - `Control.Monad.Borrow.Pure.BO.Unsafe` exports `restoreWithEnd`, `reviveAliasWithEnd#`, `endHere` and `withEndL`, for a delimiter of your own that discharges an `After`.
 - `Affine` for `Double`, `Float`, `Integer`, `Natural`, `Ordering`, `Complex Double`, `NonEmpty` and `Solo`.
+- `Subtype1` and `upcast1` in `Data.Coerce.Directed`, also exported from `Control.Monad.Borrow.Pure.BO`: `Subtype1 f g` means that `f a <: g b` whenever `a <: b`, as `Eq1` lifts `Eq`.
+  Derive an instance via `Generically1`, which needs one linear-generics `Generic1` instance that serves every choice of the arguments from the first one that differs to the last, at most eight trailing arguments; `(<:)` of a parametric type derives via `Generically1` as well.
+  The library has instances for `[]`, `Maybe`, `NonEmpty`, `Identity`, `(,) c`, `Either c`, `FUN p c`, `BO α`, `Share α`, `Lend α` and `After α`; `Mut α` has none, since a `Mut` is invariant in what it borrows.
+- `Identity a <: Identity b` given `a <: b`.
 
 ### Performance
 

@@ -24,7 +24,7 @@ A typical mutable container:
 - if it is element-owning, materialises into unrestricted form only with `Movable a`, calling `move` on every element (a bare, unused constraint is not enough); a non-element-owning container may freeze its storage in O(1);
 - is disposable: an element-owning container whose elements may be non-`Movable` needs a `Consumable` instance, or users can never get rid of it;
 - has no instance of linear-generics' `Generic` or `Generic1`: `from` and `to` take an owner apart and rebuild it outside its own operations, which makes a second owner of whatever handle it keeps, and so do the `Clone`, `Copyable`, `Dupable` and `DistributesAlias` instances derived from them.
-  linear-generics' Template Haskell derives one even where the constructor is hidden, so rule both out with instances whose context is `Unsatisfiable`.
+  linear-generics' Template Haskell derives one even where the constructor is hidden, so rule both out with instances whose context is `Unsatisfiable` (defining `Rep`/`Rep1` as `V1`), as the library's own abstract token, borrow, computation, affine, record-splitter, record-label, vector, hash map, unique-source, and deque types do.
 
 ## Operations on borrows
 
@@ -51,7 +51,7 @@ A typical mutable container:
   Drop a linear `Linearly` with `consume` and a `Now` with `consume (aff now)`; `withEndL` uses up a linear `EndToken`.
   Convert one token into another with `newLifetime` or `endLifetime`, never by dropping it and building the other.
   A token built with a pattern is a constant: build one only inside a function that is `NOINLINE` and applied through `noinline`, which a function returning two tokens must be as well, since two equal-looking tokens can let GHC merge allocations.
-- The instances of `(<=)`, `End`, and `(<:)` decide lifetime soundness: never write one of `(<=)` or `End`, and give a type of your own `(<:)` only by deriving it via `Generically` or `AsCoercible`, which the role of its witness checks.
+- The instances of `(<=)`, `End`, `(<:)`, and `Subtype1` decide lifetime soundness: never write one of `(<=)` or `End`, and give a type of your own `(<:)` only by deriving it via `Generically`, `Generically1` or `AsCoercible`, and `Subtype1` only by deriving it via `Generically1`, which the role of the witness checks.
 
 ## Effects and inlining
 

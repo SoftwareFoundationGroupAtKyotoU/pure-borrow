@@ -292,6 +292,8 @@ test-suite pure-borrow-inspection
     PureBorrow.Inspection.SplitNonlinearField
     PureBorrow.Inspection.SplitUrField
     PureBorrow.Inspection.Sublifetime
+    PureBorrow.Inspection.Subtype
+    PureBorrow.Inspection.SubtypeRoutes
     PureBorrow.Inspection.Worklist.Resume
 
   -- The -dsuppress-* set that makes a failing obligation readable belongs in

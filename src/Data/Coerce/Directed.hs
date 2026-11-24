@@ -11,6 +11,8 @@
 module Data.Coerce.Directed (
   type (<:) (),
   upcast,
+  Subtype1 (),
+  upcast1,
   AsCoercible (..),
   GenericSubtype,
   genericUpcast,

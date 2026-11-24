@@ -89,12 +89,14 @@ Note that the `sharing` continuation receives the `Share` unrestricted (plain `-
 ## Subtyping and lifetimes
 
 ```haskell
-upcast     :: (a <: b) => a %1 -> b      -- e.g. Mut α a <: Mut β a when α >= β
-subShare   :: (α >= β) => Share α a -> Share β a
-joinMut    :: Borrow bk α (Mut β a) %1 -> Borrow bk (α /\ β) a
-joinLend   :: Lend α (Lend α a) %1 -> Lend α a
+upcast      :: (a <: b) => a %1 -> b      -- e.g. Mut α a <: Mut β a when α >= β
+class Subtype1 (f :: k -> Type) (g :: k -> Type)  -- Data.Coerce.Directed, BO (abstract)
+upcast1     :: (Subtype1 f g, a <: b) => f a %1 -> g b  -- Data.Coerce.Directed, BO
+subShare    :: (α >= β) => Share α a -> Share β a
+joinMut     :: Borrow bk α (Mut β a) %1 -> Borrow bk (α /\ β) a
+joinLend    :: Lend α (Lend α a) %1 -> Lend α a
 coerceShare :: Coercible a b => Share α a %1 -> Share α b
-neverEnds  :: (HasCallStack, End Static) => a
+neverEnds   :: (HasCallStack, End Static) => a
 ```
 
 ## Copying and cloning

@@ -192,7 +192,7 @@ Read `forall β. … (β /\ α) …` as "for every sublifetime of `α`": the con
 The `_` variants discard a `Consumable` result, and the `'` variants let the continuation return an `After β r` finaliser.
 Inside `reborrowing_`, end with `consume Control.<$> op mvec` rather than returning the reborrowed `Mut`; the combinator hands the outer one back.
 These scopes are erased at compile time: no lifetime token or lender is allocated.
-See [references/lifetimes.md](references/lifetimes.md) for `srunBO`, `upcast`, `subShare`, and the outlives constraints (`α >= β`).
+See [references/lifetimes.md](references/lifetimes.md) for `srunBO`, `upcast`, `upcast1`, `subShare`, and the outlives constraints (`α >= β`).
 
 ## Parallelism
 

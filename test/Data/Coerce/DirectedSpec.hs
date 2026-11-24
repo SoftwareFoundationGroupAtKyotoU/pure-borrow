@@ -206,7 +206,7 @@ deriving via Generically1 (AfterList β) instance (α >= β) => Subtype1 (AfterL
 
 deriving via Generically1 (AfterList β) b instance (α >= β, a <: b) => AfterList α a <: AfterList β b
 
--- A self-recursive type whose Subtype1 goes through an arity head of Generically1.
+-- A self-recursive type whose Subtype1 goes through the head of Generically1.
 data RList α a = RNil | RCons (Share α a) (RList α a)
 
 deriveGenericAnd1 ''RList
@@ -491,7 +491,7 @@ test_recursiveWitnesses =
     , testCase "left-recursive AfterList (<:) terminates with UnsafeSubtype" do
         UnsafeSubtype <- Exception.evaluate (subtype @(AfterList Static Int) @(AfterList (Al 0) Int))
         NonLinear.pure ()
-    , testCase "RList Subtype1 through an arity head terminates with UnsafeSubtype" do
+    , testCase "RList Subtype1 through the head of Generically1 terminates with UnsafeSubtype" do
         UnsafeSubtype <- Exception.evaluate (subtype1 @(RList Static) @(RList (Al 0)) (subtype @Int @Int))
         NonLinear.pure ()
     ]

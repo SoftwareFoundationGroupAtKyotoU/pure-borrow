@@ -119,7 +119,7 @@ Enable `ImpredicativeTypes`, pass continuations with `BlockArguments` (`reborrow
 ## `Mut is invariant in the type it borrows, so it has no Subtype1 instance.`
 
 `Mut α` cannot lift `a <: b` to `Mut α a <: Mut α b`, so `Subtype1 (Mut α) (Mut β)` and `upcast1` on `Mut` are rejected.
-For a type whose parameter is under a `Mut`, derive `(<:)` via `Generically` instead, as shown in [references/lifetimes.md](lifetimes.md).
+For a type whose parameter is under a `Mut`, derive `(<:)` via `Generically` instead, which needs its lifetime to be the last argument, or write the instance by hand, as shown in [references/lifetimes.md](lifetimes.md).
 
 ## `No instance for Generic (T x)` under a quantified constraint
 

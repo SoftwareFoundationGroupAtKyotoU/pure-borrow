@@ -766,7 +766,7 @@ instance (α >= β, a <: b, b <: a) => Mut α a <: Mut β b where
 instance
   ( Unsatisfiable
       ( 'Text "Mut is invariant in the type it borrows, so it has no Subtype1 instance."
-          ':$$: 'Text "For a type whose parameter is under a Mut, derive (<:) through Generically instead."
+          ':$$: 'Text "For a type whose parameter is under a Mut, derive (<:) through Generically instead, with its lifetime as the last argument, or write the instance by hand."
       )
   ) =>
   Subtype1 (Mut α) (Mut β)

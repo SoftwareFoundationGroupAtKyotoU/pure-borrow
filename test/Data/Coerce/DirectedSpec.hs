@@ -7,6 +7,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Data.Coerce.DirectedSpec (
   module Data.Coerce.DirectedSpec,
@@ -133,8 +134,7 @@ deriving via
   instance
     (α <= β, a <: b) => Finalizer α a <: Finalizer β b
 
--- User type with a 'Mut' field: '(<:)' via 'Generically'.
--- The parameter sits under a Mut while the lifetime comes before it: no generic route reaches it, so the instance is written by hand.
+-- A Mut field whose lifetime comes before the parameter: no generic route reaches it, so the instance is written by hand.
 data MutBox α a = MutBox (Mut α a) Int
 
 instance (α >= β, a <: b, b <: a) => MutBox α a <: MutBox β b where

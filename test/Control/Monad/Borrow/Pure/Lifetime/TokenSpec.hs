@@ -11,12 +11,14 @@ module Control.Monad.Borrow.Pure.Lifetime.TokenSpec (
   module Control.Monad.Borrow.Pure.Lifetime.TokenSpec,
 ) where
 
-import Control.Exception (ErrorCall (..), SomeException, evaluate, try)
+import Control.Exception (ErrorCall (..), SomeException, displayException, evaluate, try)
 import Control.Monad.Borrow.Pure.Lifetime.Token (withLinearly)
+import Control.Monad.Borrow.Pure.Lifetime.Token.TypingCases qualified as TypingCases
 import Control.Monad.Borrow.Pure.Lifetime.Token.Unsafe (LinearOnly (..))
 import Control.Monad.Borrow.Pure.Lifetime.TokenSpec.ClosedRun qualified as ClosedRun
 import Control.Monad.Borrow.Pure.Lifetime.TokenSpec.Forced qualified as Forced
 import Control.Monad.Borrow.Pure.Lifetime.TokenSpec.Strict qualified as Strict
+import Data.List (intercalate, isInfixOf)
 import System.Timeout (timeout)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit
@@ -86,3 +88,31 @@ test_closedRuns =
     , testCase "a reference allocated between newLifetime and endLifetime is fresh on every call" do
         ClosedRun.callTwiceNewLifetime @?= (0, 0)
     ]
+
+test_tokenConversions :: TestTree
+test_tokenConversions =
+  testGroup
+    "no token converts into another or into another lifetime, with every token module imported"
+    [ expectDeferredTypeError "coerce refuses Any to Linearly" hiddenConstructor TypingCases.badCoerceAny
+    , expectDeferredTypeError "coerce refuses EndToken to Linearly" hiddenConstructor TypingCases.badCoerceEndToLinearly
+    , expectDeferredTypeError "coerce refuses Now to EndToken" hiddenConstructor TypingCases.badCoerceNowToEnd
+    , expectDeferredTypeError "upcast refuses Now to EndToken" hiddenConstructor TypingCases.badUpcastNowToEnd
+    , expectDeferredTypeError "coerce refuses relabelling a Now" relabelled TypingCases.badCoerceNowRelabel
+    , expectDeferredTypeError "upcast refuses relabelling a Now" relabelled TypingCases.badUpcastNowRelabel
+    , expectDeferredTypeError "coerce refuses relabelling an EndToken" relabelled TypingCases.badCoerceEndRelabel
+    ]
+  where
+    hiddenConstructor = ["Couldn't match representation of type", "is not in scope"]
+    relabelled = ["Couldn't match type", "arising from a use of"]
+    expectDeferredTypeError :: String -> [String] -> a -> TestTree
+    expectDeferredTypeError description expectedFragments value =
+      testCase description do
+        result <- try @SomeException (evaluate value)
+        case result of
+          Left exception ->
+            let rendered = displayException exception
+             in assertBool
+                  ("unexpected deferred type error: " <> rendered)
+                  (all (`isInfixOf` rendered) expectedFragments)
+          Right _ ->
+            assertFailure ("expected deferred type error containing " <> intercalate ", " expectedFragments)

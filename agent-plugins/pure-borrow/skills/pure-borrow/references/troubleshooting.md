@@ -116,6 +116,19 @@ Bind a variable and match it with `case`, or require GHC ≥ 9.12.
 `reborrowing`, `sharing`, `runBO`, `srunBO` and friends take rank-2 continuations.
 Enable `ImpredicativeTypes`, pass continuations with `BlockArguments` (`reborrowing_ mvec \mvec -> …`) rather than through `$`, and give local helpers explicit signatures.
 
+## `Mut is invariant in the type it borrows, so it has no Subtype1 instance.`
+
+`Mut α` cannot lift `a <: b` to `Mut α a <: Mut α b`, so `Subtype1 (Mut α) (Mut β)` and `upcast1` on `Mut` are rejected.
+For a type whose parameter is under a `Mut`, derive `(<:)` via `Generically` instead, which needs its lifetime to be the last argument, or write the instance by hand, as shown in [references/lifetimes.md](lifetimes.md).
+
+## `No instance for Generic (T x)` under a quantified constraint
+
+Deriving `(<:)` via `Generically`, or `Subtype1` via `Generically1`, needs one instance of linear-generics' `Generic` (or `Generic1`) that serves every choice of the last argument.
+GHC reports a missing one with `No instance for` or `Could not deduce`, sometimes after `Could not deduce GSubtype (Rep (T a b))`, and says it arises from the head of a quantified constraint, or on GHC 9.14 via one.
+It happens when the type has none, since `deriving Generic` gives base's class and not linear-generics': derive it with `deriveGeneric` or `deriveGenericAnd1` from `Generics.Linear.TH`.
+It also happens when the instance is written for particular choices of the last argument only; write it for every choice of it, as the Template Haskell does.
+Two types that differ in more than their last argument have no such instance to look for, and fall back to `Coercible`, which reports the lifetimes as `Couldn't match type`: derive through `Generically1` if only the last two differ, as described in [references/lifetimes.md](lifetimes.md), or write the instance by hand.
+
 ## Parallel code runs sequentially
 
 `parBO` forks Haskell threads; compile with `-threaded` and run with `+RTS -N` (or `-N<k>`) to use several cores.

@@ -8,6 +8,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnliftedNewtypes #-}
@@ -29,6 +30,7 @@ import Data.Tuple (Solo)
 import Data.Unrestricted.Linear
 import Data.Word
 import GHC.Base
+import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
 import Generics.Linear
 import Numeric.Natural (Natural)
 import Prelude.Linear qualified as PL
@@ -36,6 +38,33 @@ import Unsafe.Linear qualified as Unsafe
 
 data Aff a where
   UnsafeAff :: !a %One -> Aff a
+
+-- A Generic instance derived for this abstract type would allow constructing or unwrapping 'Aff' without 'Affine'.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (Aff a)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract affine wrapper, whose constructor is hidden."
+      )
+  ) =>
+  Generic (Aff a)
+  where
+  type Rep (Aff a) = V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType Aff
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract affine wrapper, whose constructor is hidden."
+      )
+  ) =>
+  Generic1 Aff
+  where
+  type Rep1 Aff = V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
 
 unaff :: Aff a %1 -> a
 unaff (UnsafeAff !a) = a

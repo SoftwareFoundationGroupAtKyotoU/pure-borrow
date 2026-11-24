@@ -6,6 +6,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -36,6 +38,7 @@ import GHC.Exts qualified as GHC
 import GHC.IO (unsafePerformIO)
 import GHC.Stack (HasCallStack)
 import GHC.TypeError
+import Generics.Linear (Generic (..), Generic1 (..), V1)
 import Prelude.Linear hiding (getContents, head, last)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
@@ -55,6 +58,33 @@ data GrowableVector v a where
 type role Header nominal nominal
 
 type role GrowableVector nominal nominal
+
+-- A Generic instance derived for this abstract type would expose the hidden constructor.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (GrowableVector v a)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract linear unrestricted growable vector, whose constructor is hidden."
+      )
+  ) =>
+  Generic (GrowableVector v a)
+  where
+  type Rep (GrowableVector v a) = V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType (GrowableVector v)
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract linear unrestricted growable vector, whose constructor is hidden."
+      )
+  ) =>
+  Generic1 (GrowableVector v)
+  where
+  type Rep1 (GrowableVector v) = V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
 
 instance LinearOnly (GrowableVector v a) where
   linearOnly = UnsafeLinearOnly

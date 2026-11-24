@@ -9,6 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
@@ -30,7 +31,9 @@ import Control.Monad.Borrow.Pure.Lifetime.Token (Linearly)
 import Data.Proxy (Proxy (Proxy))
 import Data.V.Linear.Internal hiding (consume)
 import Data.Vector qualified as V
+import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
 import GHC.TypeNats (KnownNat, natVal)
+import Generics.Linear (Generic (..), V1)
 import Prelude.Linear
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NL
@@ -39,6 +42,20 @@ data UniqueSource where
   -- | Seed, multiplier, constant.
   UniqueSource :: !Int %1 -> !Int %1 -> !Int %1 -> UniqueSource
   deriving (Show, NL.Eq, NL.Ord)
+
+-- A Generic instance derived for this abstract type would allow constructing duplicate unique sources without 'Linearly'.
+instance
+  ( Unsatisfiable
+      ( 'ShowType UniqueSource
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract linear unique-value source, whose constructor is hidden."
+      )
+  ) =>
+  Generic UniqueSource
+  where
+  type Rep UniqueSource = V1
+  from = unsatisfiable
+  to = unsatisfiable
 
 instance Consumable UniqueSource where
   consume (UniqueSource seed multiplier constant) =

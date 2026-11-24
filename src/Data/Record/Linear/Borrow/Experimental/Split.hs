@@ -52,7 +52,7 @@ import Data.Kind (Constraint)
 import Data.Record.Linear.Borrow.Experimental.Utils (HasDeclaredField (..))
 import GHC.Base (Multiplicity (..), Type)
 import GHC.OverloadedLabels (IsLabel (..))
-import GHC.TypeError (ErrorMessage (..), Unsatisfiable)
+import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
 import GHC.TypeLits (Symbol, TypeError)
 import Generics.Linear.TH
 import Prelude.Linear
@@ -74,6 +74,33 @@ newtype RecordLabel r field a = RecLab (r -> a)
 
 -- Nominal throughout: coercing the record, field name, or type could bypass the declared-field check or project at another type.
 type role RecordLabel nominal nominal nominal
+
+-- A Generic instance derived for this abstract type would drop the record, field name, or field type.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (RecordLabel r field a)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract declared-field record label, whose constructor is hidden."
+      )
+  ) =>
+  GL.Generic (RecordLabel r field a)
+  where
+  type Rep (RecordLabel r field a) = GL.V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType (RecordLabel r field)
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract declared-field record label, whose constructor is hidden."
+      )
+  ) =>
+  GL.Generic1 (RecordLabel r field)
+  where
+  type Rep1 (RecordLabel r field) = GL.V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
 
 -- See Note [Record labels project through Generic] in "Data.Record.Linear.Borrow.Experimental.Utils".
 instance (HasDeclaredField field r a, field ~ field') => IsLabel field (RecordLabel r field' a) where
@@ -200,6 +227,31 @@ newtype SplitRecord a bk α s = SplitRecord (Borrow bk α a)
 
 -- Nominal throughout: coercing the field list or the record could hand back a field already split out.
 type role SplitRecord nominal nominal nominal nominal
+
+-- A Generic instance derived for this abstract type would drop the borrow kind, lifetime, or remaining field list.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (SplitRecord a bk α s)
+          ':<>: 'Text " carries borrow and field-tracking parameters that cannot be exposed through Generic."
+      )
+  ) =>
+  GL.Generic (SplitRecord a bk α s)
+  where
+  type Rep (SplitRecord a bk α s) = GL.V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType (SplitRecord a bk α)
+          ':<>: 'Text " carries borrow and field-tracking parameters that cannot be exposed through Generic1."
+      )
+  ) =>
+  GL.Generic1 (SplitRecord a bk α)
+  where
+  type Rep1 (SplitRecord a bk α) = GL.V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
 
 instance Consumable (SplitRecord a bk α fs) where
   consume (SplitRecord a) = consume a

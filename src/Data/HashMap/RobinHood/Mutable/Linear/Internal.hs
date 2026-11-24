@@ -7,7 +7,9 @@
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE RoleAnnotations #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnliftedDatatypes #-}
 {-# LANGUAGE UnliftedNewtypes #-}
 {-# LANGUAGE NoFieldSelectors #-}
@@ -42,6 +44,7 @@ import Data.Word (Word32, Word64, Word8)
 import GHC.Base (Type, UnliftedType)
 import GHC.Exts qualified as GHC
 import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
+import Generics.Linear (Generic (..), Generic1 (..), V1)
 import Math.NumberTheory.Logarithms (intLog2')
 import Prelude.Linear hiding (insert, lookup)
 import Unsafe.Linear qualified as Unsafe
@@ -238,6 +241,33 @@ data HashMap k v where
 -- Nominal in the key: the slots are placed by the hash of the key type.
 type role HashMap nominal representational
 
+-- A Generic instance derived for this abstract type would expose the hidden constructor.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (HashMap k v)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract linear hash map, whose constructor is hidden."
+      )
+  ) =>
+  Generic (HashMap k v)
+  where
+  type Rep (HashMap k v) = V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType (HashMap k)
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract linear hash map, whose constructor is hidden."
+      )
+  ) =>
+  Generic1 (HashMap k)
+  where
+  type Rep1 (HashMap k) = V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
+
 {- | A suspended unsuccessful lookup that can be resumed as an insertion.
 
 The table must not be mutated between 'lookupForInsert' and
@@ -251,6 +281,33 @@ data InsertPlan k
       !NonLinear.Bool
       {-# UNPACK #-} !DIB
       !(Maybe DIB)
+
+-- A Generic instance derived for this abstract type would expose the hidden constructor.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (InsertPlan k)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract hash-map insertion plan, whose constructor is hidden."
+      )
+  ) =>
+  Generic (InsertPlan k)
+  where
+  type Rep (InsertPlan k) = V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType InsertPlan
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract hash-map insertion plan, whose constructor is hidden."
+      )
+  ) =>
+  Generic1 InsertPlan
+  where
+  type Rep1 InsertPlan = V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
 
 instance Consumable (HashMap k v) where
   consume (HashMap _ _ _ slots) = consume slots

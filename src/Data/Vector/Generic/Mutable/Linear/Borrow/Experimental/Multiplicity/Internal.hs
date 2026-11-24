@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -34,6 +35,7 @@ import GHC.Exts qualified as GHC
 import GHC.IO (evaluate, unsafePerformIO)
 import GHC.Stack (HasCallStack)
 import GHC.TypeError
+import Generics.Linear (Generic (..), Generic1 (..), V1)
 import Prelude.Linear hiding (head, last, splitAt)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
@@ -49,6 +51,33 @@ type OwningVector = Vector One
 type UrVector = Vector Many
 
 type role Vector nominal nominal nominal
+
+-- A Generic instance derived for this abstract type would expose the hidden constructor or drop the multiplicity parameter.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (Vector p v a)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract linear vector, whose constructor is hidden."
+      )
+  ) =>
+  Generic (Vector p v a)
+  where
+  type Rep (Vector p v a) = V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType (Vector p v)
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract linear vector, whose constructor is hidden."
+      )
+  ) =>
+  Generic1 (Vector p v)
+  where
+  type Rep1 (Vector p v) = V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
 
 -- | A linearly owned result for 'One', or a GC-owned result for 'Many'.
 type Bound :: Multiplicity -> Type -> Type

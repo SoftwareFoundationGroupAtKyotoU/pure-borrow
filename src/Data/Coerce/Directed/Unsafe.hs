@@ -11,11 +11,14 @@
 {- | The unsafe internals of subtyping, meant to be used only by library implementors.
 
 An instance of '(<:)' written with 'UnsafeSubtype' promises that 'upcast', which is @unsafeCoerce@, turns every value of the first type into a valid value of the second: the two have the same representation, and a borrow reached through the result neither lives longer nor allows more than the one it came from.
+An instance of 'Subtype1' written with 'UnsafeSubtype' makes the same promise for 'upcast1' whenever the parameter types satisfy @a '<:' b@.
 -}
 module Data.Coerce.Directed.Unsafe (
   type (<:) (..),
   SubtypeWitness (..),
   upcast,
+  Subtype1 (..),
+  upcast1,
   AsCoercible (..),
   GenericSubtype,
   genericUpcast,

@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE DuplicateRecordFields #-}
@@ -6,6 +7,8 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
 {- | A lock-free Chase-Lev work-stealing deque.
@@ -38,6 +41,8 @@ import Data.Primitive.Array (MutableArray)
 import Data.Primitive.Array qualified as Array
 import Data.Primitive.PrimVar (PrimVar, casInt, newPrimVar, readPrimVar, writePrimVar)
 import GHC.Exts (RealWorld)
+import GHC.TypeError (ErrorMessage (..), Unsatisfiable, unsatisfiable)
+import Generics.Linear qualified as GL
 import Math.NumberTheory.Logarithms (intLog2')
 
 data ChaseLevDeq a = CL
@@ -47,6 +52,33 @@ data ChaseLevDeq a = CL
   , closed :: {-# UNPACK #-} !(IORef Bool)
   , estimatedSize :: {-# UNPACK #-} !(PrimVar RealWorld Int)
   }
+
+-- A Generic instance derived for this abstract type would expose the hidden constructor and internal synchronization primitives.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (ChaseLevDeq a)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract concurrent deque, whose constructor is hidden."
+      )
+  ) =>
+  GL.Generic (ChaseLevDeq a)
+  where
+  type Rep (ChaseLevDeq a) = GL.V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType ChaseLevDeq
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract concurrent deque, whose constructor is hidden."
+      )
+  ) =>
+  GL.Generic1 ChaseLevDeq
+  where
+  type Rep1 ChaseLevDeq = GL.V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
 
 data Stat = Stat {top, bottom :: !Int}
 

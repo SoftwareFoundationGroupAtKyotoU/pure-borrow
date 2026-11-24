@@ -3,6 +3,8 @@
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -30,6 +32,7 @@ import GHC.Exts qualified as GHC
 import GHC.IO (evaluate, unsafePerformIO)
 import GHC.Stack (HasCallStack)
 import GHC.TypeError
+import Generics.Linear (Generic (..), Generic1 (..), V1)
 import Prelude.Linear hiding (head, last, splitAt)
 import Unsafe.Linear qualified as Unsafe
 import Prelude qualified as NonLinear
@@ -38,6 +41,33 @@ import Prelude qualified as NonLinear
 newtype Vector a = Vector {content :: UM.IOVector a}
 
 type role Vector nominal
+
+-- A Generic instance derived for this abstract type would expose the hidden constructor.
+instance
+  ( Unsatisfiable
+      ( 'ShowType (Vector a)
+          ':<>: 'Text " has no Generic instance:"
+          ':$$: 'Text "it is an abstract linear unboxed vector, whose constructor is hidden."
+      )
+  ) =>
+  Generic (Vector a)
+  where
+  type Rep (Vector a) = V1
+  from = unsatisfiable
+  to = unsatisfiable
+
+instance
+  ( Unsatisfiable
+      ( 'ShowType Vector
+          ':<>: 'Text " has no Generic1 instance:"
+          ':$$: 'Text "it is an abstract linear unboxed vector, whose constructor is hidden."
+      )
+  ) =>
+  Generic1 Vector
+  where
+  type Rep1 Vector = V1
+  from1 = unsatisfiable
+  to1 = unsatisfiable
 
 -- | Construct a fixed-size view over a raw mutable-vector slice.
 unsafeFromMutableSlice ::

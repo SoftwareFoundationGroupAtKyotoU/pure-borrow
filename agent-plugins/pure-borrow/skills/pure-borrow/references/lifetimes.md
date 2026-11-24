@@ -6,8 +6,8 @@
   Its values form a free bounded lower semilattice: atomic lifetimes created by `runBO` and the scope combinators, the meet `α /\ β` (the longest lifetime shorter than both), and `Static`, which never ends.
 - `α <= β` means `α` is a sublifetime of `β`; `β >= α` reads "`β` outlives `α`".
   GHC can derive `α <= α`, `α /\ β <= α`, `α /\ β <= β`, `α <= Static`, `α <= β /\ γ` from `α <= β` and `α <= γ`, and reassociations of `/\`.
-- `(<=)`, `End`, and `(<:)` are classes whose instances the library supplies; write none of your own, except `(<:)` for a type of your own, derived as in "Subtyping" below.
-  Use the library's supplied constraints and `upcast` instead of manufacturing lifetime or subtyping evidence.
+- `(<=)`, `End`, `(<:)`, and `Subtype1` are classes whose instances the library supplies; write none of your own, except `(<:)` and `Subtype1` for a type of your own, derived as in "Subtyping" below.
+  Use the library's supplied constraints and `upcast`/`upcast1` instead of manufacturing lifetime or subtyping evidence.
 - There is no type-checker plugin: the relation is implemented by layered `INCOHERENT` instances.
   Transitivity (`α <= β`, `β <= γ` ⊢ `α <= γ`) and monotonicity are **not** derived.
   If a constraint that "obviously" holds is rejected, restate the signature in terms of `/\` so that one of the rules above applies directly, or make the helper polymorphic in the lifetimes (below).
@@ -58,7 +58,7 @@ Some modules (for example the hash map) use one lifetime for both; call them in 
 `subShare :: (α >= β) => Share α a -> Share β a` is the inference-friendly special case for shared borrows.
 Type applications often help `upcast` pick the target lifetime.
 
-A type of your own gets the relation componentwise by deriving it via `Generically`, once it has the `Generic` instance of linear-generics (`$(deriveGeneric ''Two)`):
+A type of your own gets the relation componentwise by deriving it via `Generically`, once it has the `Generic` instance of linear-generics (`deriveGeneric ''Two`):
 
 ```haskell
 import Generics.Linear (Generically (..)) -- the constructor too, not only the type
@@ -66,9 +66,33 @@ import Generics.Linear (Generically (..)) -- the constructor too, not only the t
 deriving via Generically (Two b) instance (a <: b) => Two a <: Two b
 ```
 
+Both types must apply the same type constructor and differ only in the last argument, with one parametric `Generic` instance that only takes a value apart and puts it back, as `deriveGeneric` generates; a type whose last two arguments differ derives via `Generically1`, below.
+Distinct type constructors and separate `Generic` instances on one type constructor are rejected.
+
+`Data.Coerce.Directed` (re-exported by `Control.Monad.Borrow.Pure.BO`) also provides `Subtype1` — the lifting of `(<:)` to unary type constructors, analogous to `Eq1` — and `upcast1 :: (Subtype1 f g, a <: b) => f a %1 -> g b`.
+The library supplies `Subtype1` for `BO α`, `Share α`, `Lend α`, `After α`, `FUN p c`, `[]`, `Maybe`, `NonEmpty`, `Identity`, `(,) c`, and `Either c`.
+`Mut` is invariant in the borrowed type, so `Subtype1 (Mut α) (Mut β)` is rejected; for a type whose parameter is under a `Mut`, derive `(<:)` via `Generically` instead, which needs the lifetime to be its last argument.
+A functor gets both `Subtype1` and `(<:)` via `Generically1` once it has one parametric `Generic1` instance (from `deriveGenericAnd1`), for one functor, or for two applications of one type constructor that differ in the argument before the last, such as `View α` and `View β`:
+
+```haskell
+import Data.Coerce.Directed (Subtype1)
+import Generics.Linear (Generically1 (..))
+import Generics.Linear.TH (deriveGenericAnd1)
+
+data View α a = View (Share α a) Int
+
+deriveGenericAnd1 ''View
+
+deriving via Generically1 (View β) instance (α >= β) => Subtype1 (View α) (View β)
+deriving via Generically1 (View β) b instance (α >= β, a <: b) => View α a <: View β b
+```
+
+`Subtype1` is for a type constructor applied to its parameter inside another `Generically1` derivation and for `upcast1`; it does not imply `(<:)` without the `Generically1 (View β) b` (or `Generically`) instance.
+
 In the module that defines a newtype, `deriving via AsCoercible Meters instance Int <: Meters`, with `AsCoercible (..)` imported from `Data.Coerce.Directed`, lets modules that cannot see its constructor upcast `Int` to `Meters`.
 A derivation needs the via type and the target to be representationally equal where it is written, which is why the constructor must be in scope.
-`genericUpcast` converts between two instantiations of one data type, such as `Two a` and `Two b`, without any instance.
+`genericUpcast` converts between two types whose `Generic` representations have the same shape and names, field by field, without a `(<:)` instance: it rebuilds the value through `from` and `to`, so it also takes two types that neither route relates.
+A type that no route covers, such as one whose last argument sits under a `Mut` while its lifetime comes before it, gets its `(<:)` instance by hand, with `UnsafeSubtype` from `Data.Coerce.Directed.Unsafe`: checking that each field is a subtype of the field it becomes is then yours.
 
 ## Ending lifetimes: `After` and `End`
 
@@ -112,5 +136,6 @@ The lower-level token API (`Now`, `newLifetime`, `endLifetime`, `scope_`, `sexec
 | "`β` would escape its scope" / "Couldn't match type `β0` with …" in a scope | A borrow at the scope's private lifetime is being returned | Return only unrestricted data, the restored outer borrow, or an `After β` finaliser |
 | `No instance for 'β <=!! α'` / `Could not deduce 'γ <=!! α'` | Lifetimes of the borrow and of the `BO` do not line up, or transitivity would be needed | Add `α >= β` to the signature, not the `<=!!` that GHC suggests: make the helper polymorphic with `(α >= β) =>`, `upcast`/`subShare` explicitly, or restate with `/\` |
 | `No instance for 'End α'` | `reclaim` used outside `After` | Move it into `pureAfter`, or use `reclaim'` |
+| `Couldn't match type 'α' with 'β' arising from a use of 'upcast'` at a type of your own | The type has no `(<:)` instance, so `upcast` falls back to `Coercible`, under which a lifetime is nominal | Derive `(<:)` via `Generically` or `Generically1`, as in "Subtyping" above; a `Subtype1` instance alone does not give it |
 | `Overlapping instances for γ <= α0`, or an ambiguity error that suggests `AllowAmbiguousTypes` | GHC cannot determine a lifetime: an intermediate one, one in a local binding with no signature, or one that occurs only in constraints | Name it with a type application, as in `step @α @γ (step @α @α s)`, or add a signature; drop constraints on a lifetime that does not occur in the type |
 | Errors about impredicative instantiation | Passing a rank-2 continuation through `$` or a data constructor | Enable `ImpredicativeTypes`, use `BlockArguments` instead of `$` |

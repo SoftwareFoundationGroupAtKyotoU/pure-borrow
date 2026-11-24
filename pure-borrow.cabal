@@ -200,6 +200,7 @@ test-suite pure-borrow-test
     Control.Monad.Borrow.Pure.Experimental.BorrowsSpec
     Control.Monad.Borrow.Pure.Experimental.Loop.TypingCases
     Control.Monad.Borrow.Pure.Experimental.LoopSpec
+    Control.Monad.Borrow.Pure.Lifetime.Token.TypingCases
     Control.Monad.Borrow.Pure.Lifetime.TokenSpec
     Control.Monad.Borrow.Pure.Lifetime.TokenSpec.ClosedRun
     Control.Monad.Borrow.Pure.Lifetime.TokenSpec.Forced

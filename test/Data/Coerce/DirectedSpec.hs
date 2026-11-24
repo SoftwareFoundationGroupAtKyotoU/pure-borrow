@@ -434,6 +434,30 @@ test_typingRejections =
         "Generically1 refuses two distinct functors"
         ["No instance for"]
         badGenerically1DistinctFunctors
+    , expectDeferredTypeError
+        "Generically refuses two separate Generic instances of one type constructor"
+        ["Couldn't match type"]
+        badGenericallyTwoInstances
+    , expectDeferredTypeError
+        "Generically1 refuses two separate Generic1 instances of one type constructor"
+        ["No instance for"]
+        badGenerically1TwoInstances
+    , expectDeferredTypeError
+        "Subtype1 refuses MP1 'One to 'Many"
+        ["No instance for"]
+        badSubtype1Multiplicity
+    , expectDeferredTypeError
+        "a vector has no Generic instance"
+        ["has no Generic instance"]
+        badGenericVector
+    , expectDeferredTypeError
+        "a Mut has no Generic instance"
+        ["cannot be exposed through Generic"]
+        badGenericMut
+    , expectDeferredTypeError
+        "an EndToken has no Generic instance"
+        ["has no Generic instance"]
+        badGenericEndToken
     ]
 
 test_recursiveWitnesses :: TestTree

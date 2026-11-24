@@ -109,6 +109,8 @@ An instance declaration that fails to typecheck is never observable at run time 
 Put the cases GHC does not defer, or whose deferred error no evaluation would reach, in `test/typing-fail/` and validate their compile failure using the Cabal-selected compiler.
 Each fixture names the diagnostic it must fail with in one or more `-- EXPECT: <text>` lines, free of GHC's locale-dependent quotation marks, and `bash ci/scripts/check-typing-fail.sh` compiles every fixture against the built library and checks that each is rejected with its text.
 Run it after `cabal build all`; CI runs it after the test suites.
+Gather the cases of one topic in one fixture, each with an `EXPECT` that only its own error contains, such as the source line GHC quotes for it.
+GHC reports two identical unsolved constraints only once, and an insoluble error or a multiplicity error can keep another case's error from being reported, so check that each case still fails for its own reason, and keep apart a case that declares an instance the others could resolve to.
 Keep errors that GHC does defer, and that forcing a value raises, in `TypingCases`.
 A deferred class constraint is raised only when its dictionary is forced, so a case whose function ignores the dictionary (as `upcast` or `withLinearly` do) needs an equality instead, or a method call that forces it.
 

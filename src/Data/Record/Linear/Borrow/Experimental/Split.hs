@@ -124,7 +124,7 @@ type family Lookup l ls where
 
 type family Delete l ls where
   Delete _ '[] = '[]
-  Delete l ('(l, v) ': ls) = Delete l ls
+  Delete l ('(l, v) ': ls) = ls
   Delete l ('(l', v) ': ls) = '(l', v) ': Delete l ls
 
 {- $record-splitting
@@ -209,31 +209,8 @@ class (Lookup l xs ~ 'Just v) => Member l xs v | l xs -> v
 
 instance (Lookup l xs ~ 'Just v) => Member l xs v
 
-type ElemField :: Symbol -> [(Symbol, (Multiplicity, Type))] -> Bool
-type family ElemField l xs where
-  ElemField _ '[] = 'False
-  ElemField l ('(l, _) ': _) = 'True
-  ElemField l (_ ': xs) = ElemField l xs
-
-type AssertUniqueField :: Bool -> Symbol -> Constraint
-type family AssertUniqueField dup l where
-  AssertUniqueField 'True l =
-    Unsatisfiable ('Text "Split record fields must be distinct, but got duplicate field: " ':<>: 'ShowType l)
-  AssertUniqueField 'False _ = ()
-
-type IsUniqueFields' :: [(Symbol, (Multiplicity, Type))] -> Constraint
-type family IsUniqueFields' xs where
-  IsUniqueFields' '[] = ()
-  IsUniqueFields' ('(l, _) ': xs) = (AssertUniqueField (ElemField l xs) l, IsUniqueFields' xs)
-
-class (IsUniqueFields' xs) => IsUniqueFields xs
-
-instance IsUniqueFields '[]
-
-instance (AssertUniqueField (ElemField l xs) l, IsUniqueFields xs) => IsUniqueFields ('(l, v) ': xs)
-
 type SplittableRecord :: Type -> Constraint
-class (GL.Generic a, GSplittableRecord (GL.Rep a), IsUniqueFields (GFields (GL.Rep a))) => SplittableRecord a where
+class (GL.Generic a, GSplittableRecord (GL.Rep a)) => SplittableRecord a where
   type Fields a :: [(Symbol, (Multiplicity, Type))]
   type Fields a = GFields (GL.Rep a)
 

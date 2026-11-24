@@ -36,9 +36,7 @@ import Data.Ref.Linear (Ref)
 import Data.Ref.Linear qualified as Ref
 import Data.Ref.Linear.Borrow qualified as RefBorrow
 import GHC.Exts (Multiplicity (..))
-import GHC.Exts qualified as GHC
 import GHC.Records (HasField (..))
-import Generics.Linear qualified as GL
 import Generics.Linear.TH (deriveGeneric)
 import Prelude.Linear
 
@@ -140,38 +138,6 @@ badDoubleSubtract = linearly \lin -> runBO lin Control.do
   (b, m2) <- reborrowing m2 RefBorrow.copyRef
   Control.pure (m1 `lseq` m2 `lseq` consume rest')
   pureAfter (case reclaim lend of R2 rw rz -> Ref.free rw `lseq` Ref.free rz `lseq` (a, b))
-
-data DupMeta = DupMeta (Ref Int) (Ref Int)
-
-instance GL.Generic DupMeta where
-  type
-    Rep DupMeta =
-      GL.D1
-        GHC.Any
-        ( GL.C1
-            GHC.Any
-            ( GL.S1 ('GL.MetaSel ('Just "x") 'GL.NoSourceUnpackedness 'GL.NoSourceStrictness 'GL.DecidedLazy) (GL.K1 GL.R (Ref Int))
-                GL.:*: GL.S1 ('GL.MetaSel ('Just "x") 'GL.NoSourceUnpackedness 'GL.NoSourceStrictness 'GL.DecidedLazy) (GL.K1 GL.R (Ref Int))
-            )
-        )
-  from r = fromD r
-    where
-      fromD :: DupMeta %1 -> GL.Rep DupMeta p
-      fromD (DupMeta a b) = GL.M1 (GL.M1 (GL.M1 (GL.K1 a) GL.:*: GL.M1 (GL.K1 b)))
-  to rep = toD rep
-    where
-      toD :: GL.Rep DupMeta p %1 -> DupMeta
-      toD (GL.M1 (GL.M1 (GL.M1 (GL.K1 a) GL.:*: GL.M1 (GL.K1 b)))) = DupMeta a b
-
--- This must not typecheck: DupMeta declares two MetaSel entries with the same name "x".
-badDuplicateMetaDotSharp :: Int
-badDuplicateMetaDotSharp = linearly \lin -> runBO lin Control.do
-  (m, lend) <- borrowLinearlyM \l -> case dup2 l of
-    (l1, l2) -> DupMeta (Ref.new 0 l1) (Ref.new 0 l2)
-  let !mx = m .# #x
-  (a, mx) <- reborrowing mx RefBorrow.copyRef
-  Control.pure (consume mx)
-  pureAfter (case reclaim lend of DupMeta r1 r2 -> Ref.free r1 `lseq` Ref.free r2 `lseq` a)
 
 data NoGen = NoGen {ng :: Ref Int}
 

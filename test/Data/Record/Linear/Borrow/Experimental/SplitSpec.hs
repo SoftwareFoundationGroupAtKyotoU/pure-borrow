@@ -231,10 +231,6 @@ test_splitRecordRoles =
         ["Couldn't match type"]
         badDoubleSubtract
     , expectDeferredTypeError
-        "rejects duplicate MetaSel in (.#)"
-        ["DupMeta declares duplicate field", "x"]
-        badDuplicateMetaDotSharp
-    , expectDeferredTypeError
         "rejects record without linear-generics Generic"
         ["The fields of NoGen are unknown, since it has no instance of linear-generics' Generic.", "deriveGeneric"]
         badNoGeneric

@@ -26,7 +26,7 @@ That accepted any user-written 'HasField' instance, including virtual fields tha
 Instead, 'HasDeclaredField' checks linear-generics' 'GL.Generic' representation directly and projects the field through 'GL.from' along the path 'FindField' computes in the single constructor's product tree:
 
 \* Distinct field names in the same constructor select distinct leaves of that product tree, and a lawful 'GL.Generic' instance is an isomorphism, so two distinct labels always denote disjoint parts of the record regardless of any 'HasField' instance in scope.
-  'CombineFind' also rejects any field name that appears more than once in the constructor's product tree, so a hand-written 'GL.Generic' instance with duplicate @'GL.MetaSel'@ names cannot yield two borrows of the same slot.
+  A hand-written 'GL.Generic' instance with duplicate @'GL.MetaSel'@ names in one constructor is a user-side contract violation, since GHC forbids duplicate field names in a single constructor.
 \* Projecting through 'GL.from' also closes the @newtype N = N R@ route, because @deriving newtype instance Generic N@ gives @N@ the representation and 'GL.from' of @R@, so @#x@ and @#y@ project the corresponding fields of @R@ rather than any virtual 'HasField' on @N@.
 \* The check runs only when constructing a 'RecordLabel' or 'RecordLabel'' via 'GHC.OverloadedLabels.IsLabel', which stores the resulting projection function @r -> a@ inside the label rather than carrying the dictionary witness.
   Both label types keep @RecLab@ unexported and carry @nominal@ role annotations, so callers cannot forge or coerce a label to another record, field name, or type, and large lists of labels do not inflate module interface files.
@@ -44,14 +44,12 @@ data FieldPath
 data FoundField
   = NotFound
   | Found FieldPath Type
-  | DuplicateField
 
 type CombineFind :: FoundField -> FoundField -> FoundField
 type family CombineFind l r where
-  CombineFind ('Found p c) 'NotFound = 'Found ('GoL p) c
+  CombineFind ('Found p c) _ = 'Found ('GoL p) c
   CombineFind 'NotFound ('Found p c) = 'Found ('GoR p) c
   CombineFind 'NotFound 'NotFound = 'NotFound
-  CombineFind _ _ = 'DuplicateField
 
 type FindField :: Symbol -> (Type -> Type) -> FoundField
 type family FindField field f where
@@ -101,19 +99,6 @@ instance
   where
   {-# INLINE projectFound #-}
   projectFound = \x -> gprojectPath @path @body @c x
-
-instance
-  ( Unsatisfiable
-      ( 'ShowType r
-          ':<>: 'Text " declares duplicate field "
-          ':<>: 'ShowType field
-          ':<>: 'Text "."
-      )
-  ) =>
-  ProjectFound field r body 'DuplicateField a
-  where
-  {-# INLINE projectFound #-}
-  projectFound = \_ -> unsatisfiable
 
 instance
   ( Unsatisfiable

@@ -39,6 +39,7 @@ module Control.Monad.Borrow.Pure.Copyable (
   genericLiftCopy,
 ) where
 
+import Control.Monad.Borrow.Pure.Affine (Affine)
 import Control.Monad.Borrow.Pure.BO.Internal
 import Control.Monad.Borrow.Pure.Utils (coerceLin)
 import Data.Array.Mutable.Linear (Array)
@@ -52,6 +53,7 @@ import Data.Monoid qualified as Monoid
 import Data.Ord (Down (..))
 import Data.Semigroup qualified as Sem
 import Data.Set.Mutable.Linear (Set)
+import Data.Unrestricted.Linear (AsMovable (..))
 import Data.Vector.Mutable.Linear (Vector)
 import Data.Word
 import GHC.Exts (Multiplicity (..))
@@ -186,6 +188,8 @@ instance Dupable (Complex Double) where
 instance Movable (Complex Double) where
   move = Unsafe.toLinear \ !value -> Ur value
   {-# INLINE move #-}
+
+deriving via AsMovable (Complex Double) instance Affine (Complex Double)
 
 deriving via Generically1 Complex instance Copyable1 Complex
 

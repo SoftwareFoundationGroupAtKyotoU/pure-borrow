@@ -7,6 +7,7 @@
 {-# LANGUAGE UnliftedNewtypes #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# OPTIONS_HADDOCK hide #-}
 
 module Data.Ref.Linear.Internal (
@@ -66,7 +67,11 @@ instance (PL.Dupable a) => PL.Dupable (Ref a) where
         (kept, copied) -> (Ref (unsafeWriteRef# v kept), new copied l)
   {-# INLINE dup2 #-}
 
-instance Affine (Ref a) where
+{- | Dropping a reference drops its contents without consuming them, so they must be 'Affine' too.
+
+To drop a reference whose contents are 'Consumable' but not 'Affine', 'consume' it.
+-}
+instance (Affine a) => Affine (Ref a) where
   aff = unsafeAff
 
 atomicModify_ :: (a %1 -> a) %1 -> Ref a %1 -> Ref a

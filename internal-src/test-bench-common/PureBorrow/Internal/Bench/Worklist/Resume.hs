@@ -8,6 +8,8 @@
 {-# LANGUAGE LinearTypes #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE QualifiedDo #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
@@ -68,6 +70,7 @@ import Data.Vector.Unboxed qualified as U
 import Data.Vector.Unboxed.Mutable qualified as UM
 import GHC.Exts qualified as GHC
 import GHC.Generics (Generic)
+import Generics.Linear.TH (deriveGeneric)
 import Prelude.Linear (
   lseq,
   unur,
@@ -185,6 +188,14 @@ data WorklistStore = WorklistStore
   , worklistGraphRoots :: !WorklistGraphRoots
   , worklistFrontierRoots :: !WorklistFrontierRoots
   }
+
+deriveGeneric ''WorklistFixedRoots
+
+deriveGeneric ''WorklistGraphRoots
+
+deriveGeneric ''WorklistFrontierRoots
+
+deriveGeneric ''WorklistStore
 
 type FlatWorklist α =
   Muts

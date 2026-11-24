@@ -14,6 +14,7 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -47,7 +48,7 @@ module Data.Record.Linear.Borrow.Experimental.PatternMatch (
 
   -- ** Internal APIs
   RecordEliminator (..),
-  RecordLabel' (..),
+  RecordLabel' (),
 ) where
 
 import Control.Monad.Borrow.Pure
@@ -56,9 +57,9 @@ import Control.Monad.Borrow.Pure.Affine.Unsafe (unsafeAff)
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.BO.Internal
 import Data.Kind (Constraint)
-import GHC.Base (TYPE, Type, proxy#)
+import Data.Record.Linear.Borrow.Experimental.Utils (HasDeclaredField (..))
+import GHC.Base (Type, proxy#)
 import GHC.OverloadedLabels (IsLabel (..))
-import GHC.Records (HasField (..))
 import GHC.TypeError (ErrorMessage (..), Unsatisfiable)
 import GHC.TypeLits (KnownSymbol, Symbol, symbolVal')
 import Prelude.Linear hiding (All)
@@ -70,17 +71,22 @@ import Unsafe.Linear qualified as Unsafe
 -}
 
 {- |
-@'RecordLabel' r f a@ witnesses that the record type @r@ has a field named @f@ of type @a@.
-Intended to be constructed with @OverloadedLabels@ extension, so that you can construct it by @#f@ syntax when the field @f@ of @a@ is imported in the current scope.
-
-You can also expose 'RecordLabel' only, so that you can allow users to access such fields while internal implementation unexposed.
+@'RecordLabel' r f a@ witnesses that the record type @r@ declares a field named @f@ of type @a@.
+The record type needs one constructor and an instance of linear-generics' t'Generics.Linear.Generic'.
+A label for a field that @r@ does not declare is rejected, even when a @HasField@ instance provides it.
+Reach a nested field through its holder: @b '.#' #inner '.#' #x@.
+Polymorphic code takes the label as an argument.
+Intended to be constructed with @OverloadedLabels@, so that you can construct it by @#f@ syntax.
 -}
 type RecordLabel a f v = RecordLabel' a '(f, v)
 
 -- | The actual definition of 'RecordLabel' for type-level hacks.
-type RecordLabel' :: TYPE rep -> (Symbol, Type) -> Type
+type RecordLabel' :: Type -> (Symbol, Type) -> Type
 data RecordLabel' r fldVal where
-  RecLab :: forall field r a. (HasField field r a) => RecordLabel' r '(field, a)
+  RecLab :: forall field r a. !(r -> a) -> RecordLabel' r '(field, a)
+
+-- Nominal throughout: coercing the record or field tuple could bypass the declared-field check or project at another type.
+type role RecordLabel' nominal nominal
 
 {- $record-splitting
 == Overview
@@ -89,10 +95,15 @@ data RecordLabel' r fldVal where
 For that purpose, we provide '(.@)' operator for splitting a borrow of a record into FieldBorrows of its fields.
 Consider the following:
 
+>>> :set -XTemplateHaskell -XDataKinds -XTypeFamilies
 >>> import Data.Ref.Linear (Ref)
 >>> import Data.Vector.Mutable.Linear.Borrow (Vector)
 >>> import Control.Monad.Borrow.Pure.BO
->>> data MyRecord = MyRecord { int :: Ref Int, strs :: Vector String, bool :: Ref Bool }
+>>> import Generics.Linear.TH (deriveGeneric)
+>>> :{
+data MyRecord = MyRecord { int :: Ref Int, strs :: Vector String, bool :: Ref Bool }
+deriveGeneric ''MyRecord
+:}
 
 Suppose we have a mutable borrow of some @MyRecord@:
 
@@ -110,7 +121,7 @@ First, we just want to divide into all the fields, in arbitrary order:
 
 >>> (mutStrs, mutBool, mutInt) = mutRec .@ (#strs, #bool, #int)
 >>> :t mutStrs
-mutStrs :: Borrow 'Mut α (Vector String)
+mutStrs :: Borrow 'Mut α (Vector [Char])
 
 >>> :t mutBool
 mutBool :: Borrow 'Mut α (Ref Bool)
@@ -122,7 +133,7 @@ Or, we can just divide into some of the fields (say, @bool@ and @strs@):
 
 >>> (mutStrs, mutBool) = mutRec .@ (#strs, #bool)
 >>> :t mutStrs
-mutStrs :: Borrow 'Mut α (Vector String)
+mutStrs :: Borrow 'Mut α (Vector [Char])
 
 >>> :t mutBool
 mutBool :: Borrow 'Mut α (Ref Bool)
@@ -155,10 +166,11 @@ instance (KnownSymbol field) => Show (RecordLabel' r '(field, a)) where
 
 -- | This allows users to use @#f@ for constructing @'RecordLabel' a f v@.
 instance
-  (HasField field r a, fldVal ~ '(field, a)) =>
+  (HasDeclaredField field r a, fldVal ~ '(field, a)) =>
   IsLabel field (RecordLabel' r fldVal)
   where
-  fromLabel = RecLab
+  -- See Note [Record labels project through Generic] in "Data.Record.Linear.Borrow.Experimental.Utils".
+  fromLabel = RecLab (projectDeclaredField @field @r @a)
   {-# INLINE fromLabel #-}
 
 type Fst :: (k, v) -> k
@@ -237,7 +249,7 @@ infixl 4 .@
 
 instance (a ~ r) => RecordEliminator (RecordLabel' r '(field, val)) a where
   type SplitBorrow (RecordLabel' r '(field, val)) bk α a = Borrow bk α val
-  splitRecord RecLab = unsafeMapAlias (Unsafe.toLinear $ getField @field)
+  splitRecord (RecLab project) = unsafeMapAlias (Unsafe.toLinear project)
   {-# INLINE splitRecord #-}
 
 type Distinct' :: Symbol -> Symbol -> Constraint
@@ -259,10 +271,11 @@ instance
   type
     SplitBorrow (l, r) bk α a =
       (Borrow bk α (ValueOf l), Borrow bk α (ValueOf r))
-  splitRecord (RecLab, RecLab) = Unsafe.toLinear \r ->
-    ( unsafeMapAlias (Unsafe.toLinear (getField @f1)) r
-    , unsafeMapAlias (Unsafe.toLinear (getField @f2)) r
+  splitRecord (RecLab f1, RecLab f2) = Unsafe.toLinear \r ->
+    ( unsafeMapAlias (Unsafe.toLinear f1) r
+    , unsafeMapAlias (Unsafe.toLinear f2) r
     )
+  {-# INLINE splitRecord #-}
 
 instance
   ( IsRecordLabel' a l1 f1 v1
@@ -277,11 +290,12 @@ instance
   type
     SplitBorrow (l1, l2, l3) bk α a =
       (Borrow bk α (ValueOf l1), Borrow bk α (ValueOf l2), Borrow bk α (ValueOf l3))
-  splitRecord (RecLab, RecLab, RecLab) = Unsafe.toLinear \r ->
-    ( unsafeMapAlias (Unsafe.toLinear (getField @f1)) r
-    , unsafeMapAlias (Unsafe.toLinear (getField @f2)) r
-    , unsafeMapAlias (Unsafe.toLinear (getField @f3)) r
+  splitRecord (RecLab f1, RecLab f2, RecLab f3) = Unsafe.toLinear \r ->
+    ( unsafeMapAlias (Unsafe.toLinear f1) r
+    , unsafeMapAlias (Unsafe.toLinear f2) r
+    , unsafeMapAlias (Unsafe.toLinear f3) r
     )
+  {-# INLINE splitRecord #-}
 
 instance
   ( IsRecordLabel' a l1 f1 v1
@@ -304,12 +318,13 @@ instance
       , Borrow bk α (ValueOf l3)
       , Borrow bk α (ValueOf l4)
       )
-  splitRecord (RecLab, RecLab, RecLab, RecLab) = Unsafe.toLinear \r ->
-    ( unsafeMapAlias (Unsafe.toLinear (getField @f1)) r
-    , unsafeMapAlias (Unsafe.toLinear (getField @f2)) r
-    , unsafeMapAlias (Unsafe.toLinear (getField @f3)) r
-    , unsafeMapAlias (Unsafe.toLinear (getField @f4)) r
+  splitRecord (RecLab f1, RecLab f2, RecLab f3, RecLab f4) = Unsafe.toLinear \r ->
+    ( unsafeMapAlias (Unsafe.toLinear f1) r
+    , unsafeMapAlias (Unsafe.toLinear f2) r
+    , unsafeMapAlias (Unsafe.toLinear f3) r
+    , unsafeMapAlias (Unsafe.toLinear f4) r
     )
+  {-# INLINE splitRecord #-}
 
 instance
   ( IsRecordLabel' a l1 f1 v1
@@ -338,13 +353,14 @@ instance
       , Borrow bk α (ValueOf l4)
       , Borrow bk α (ValueOf l5)
       )
-  splitRecord (RecLab, RecLab, RecLab, RecLab, RecLab) = Unsafe.toLinear \r ->
-    ( unsafeMapAlias (Unsafe.toLinear (getField @f1)) r
-    , unsafeMapAlias (Unsafe.toLinear (getField @f2)) r
-    , unsafeMapAlias (Unsafe.toLinear (getField @f3)) r
-    , unsafeMapAlias (Unsafe.toLinear (getField @f4)) r
-    , unsafeMapAlias (Unsafe.toLinear (getField @f5)) r
+  splitRecord (RecLab f1, RecLab f2, RecLab f3, RecLab f4, RecLab f5) = Unsafe.toLinear \r ->
+    ( unsafeMapAlias (Unsafe.toLinear f1) r
+    , unsafeMapAlias (Unsafe.toLinear f2) r
+    , unsafeMapAlias (Unsafe.toLinear f3) r
+    , unsafeMapAlias (Unsafe.toLinear f4) r
+    , unsafeMapAlias (Unsafe.toLinear f5) r
     )
+  {-# INLINE splitRecord #-}
 
 type data Fun
   = BorrowOf BorrowKind Lifetime
@@ -361,10 +377,18 @@ data LabelsOrBorrows h xs where
   (:#-) :: Apply h '(k, v) %1 -> LabelsOrBorrows h xs %1 -> LabelsOrBorrows h ('(k, v) ': xs)
 
 {- |
-Heterogeneous record labels. If the record type @a@ is clear from the context, you can construct it with '(':#-')' and 'RNil' with @OverloadedLabels@ extension:
+Heterogeneous record labels.
+The record type needs one constructor and an instance of linear-generics' t'Generics.Linear.Generic'.
+If the record type @a@ is clear from the context, you can construct it with '(':#-')' and 'RNil' with @OverloadedLabels@ extension:
 
 @
+  {\-# LANGUAGE DataKinds, OverloadedLabels, TemplateHaskell, TypeFamilies #-\}
+  import Generics.Linear.TH ('Generics.Linear.TH.deriveGeneric')
+
   data MyRecord = MyRecord { foo :: Int, bar :: String, buz :: Bool }
+
+  'Generics.Linear.TH.deriveGeneric' ''MyRecord
+
   myLabels :: 'RecordLabels' MyRecord _
   myLabels = #foo ':#-' #bar ':#-' #buz ':#-' 'RNil'
 @
@@ -372,12 +396,19 @@ Heterogeneous record labels. If the record type @a@ is clear from the context, y
 type RecordLabels a fs = LabelsOrBorrows (RecordLabelOf a) fs
 
 {- |
-Heterogeneous FieldBorrows. If the record type @a@ is clear from the context, you can construct it with '(':#-')' and 'RNil' with @OverloadedLabels@ extension:
+Heterogeneous FieldBorrows.
+The record type needs one constructor and an instance of linear-generics' t'Generics.Linear.Generic'.
+If the record type @a@ is clear from the context, you can construct it with '(':#-')' and 'RNil' with @OverloadedLabels@ extension:
 
 @
+{\-# LANGUAGE DataKinds, OverloadedLabels, TemplateHaskell, TypeFamilies #-\}
+import Generics.Linear.TH ('Generics.Linear.TH.deriveGeneric')
+
 data MyRecord = MyRecord { foo :: Int, bar :: String, buz :: Bool }
 
-mutRec :: t'Control.Monad.Pure.Mut' α MyRecord
+'Generics.Linear.TH.deriveGeneric' ''MyRecord
+
+mutRec :: 'Mut' α MyRecord
 mutRec = ...
 
 buzMut ':#-' fooMut ':#-' 'RNil' = mutRec '.@' #buz ':#-' #foo ':#-' 'RNil'

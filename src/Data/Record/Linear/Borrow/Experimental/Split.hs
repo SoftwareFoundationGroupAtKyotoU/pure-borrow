@@ -49,28 +49,35 @@ module Data.Record.Linear.Borrow.Experimental.Split (
 import Control.Monad.Borrow.Pure.BO (Lifetime)
 import Control.Monad.Borrow.Pure.BO.Internal
 import Data.Kind (Constraint)
-import GHC.Base (Multiplicity (..), TYPE, Type)
+import Data.Record.Linear.Borrow.Experimental.Utils (HasDeclaredField (..))
+import GHC.Base (Multiplicity (..), Type)
 import GHC.OverloadedLabels (IsLabel (..))
-import GHC.Records (HasField (..))
 import GHC.TypeError (ErrorMessage (..), Unsatisfiable)
 import GHC.TypeLits (Symbol, TypeError)
 import Generics.Linear.TH
-import Prelude.Linear hiding (All)
+import Prelude.Linear
 import Prelude.Linear.Generically qualified as GL
 import Unsafe.Linear qualified as Unsafe
 
 {- |
-@'RecordLabel' r field a@ witnesses that the record type @r@ has a field named @field@ of type @a@.
+@'RecordLabel' r field a@ witnesses that the record type @r@ declares a field named @field@ of type @a@.
+The record type needs one constructor and an instance of linear-generics' t'GL.Generic'.
+A label for a field that @r@ does not declare is rejected, even when a @HasField@ instance provides it.
+Reach a nested field through its holder: @b '.#' #inner '.#' #x@.
+Polymorphic code takes the label as an argument.
 To be used as a label argument for '(.#)', '(-#)', '(+#)', and '(!#)'.
 
-The record label is usually constructed by overloaded labels as `#field` under `OverloadedLabels` extension.
+The record label is usually constructed by overloaded labels as @#field@ under @OverloadedLabels@.
 -}
-type RecordLabel :: TYPE rep -> Symbol -> Type -> Type
-data RecordLabel r field a where
-  RecLab :: (HasField field r a) => RecordLabel r field a
+type RecordLabel :: Type -> Symbol -> Type -> Type
+newtype RecordLabel r field a = RecLab (r -> a)
 
-instance (HasField field r a, field ~ field') => IsLabel field (RecordLabel r field' a) where
-  fromLabel = RecLab
+-- Nominal throughout: coercing the record, field name, or type could bypass the declared-field check or project at another type.
+type role RecordLabel nominal nominal nominal
+
+-- See Note [Record labels project through Generic] in "Data.Record.Linear.Borrow.Experimental.Utils".
+instance (HasDeclaredField field r a, field ~ field') => IsLabel field (RecordLabel r field' a) where
+  fromLabel = RecLab (projectDeclaredField @field @r @a)
   {-# INLINE fromLabel #-}
 
 {- |
@@ -78,8 +85,12 @@ Borrow-level field accessor.
 @record '.#' #field@ returns a borrow of the @field@ of the @record@ of the same kind.
 
 @
-{\-# LANGUAGE OverloadedLabels #-\}
+{\-# LANGUAGE DataKinds, OverloadedLabels, TemplateHaskell, TypeFamilies #-\}
+import Generics.Linear.TH ('deriveGeneric')
+
 data MyRecord = MyRecord {field :: Ref Int, otherField :: Vector String}
+
+'deriveGeneric' ''MyRecord
 
 recordBor :: 'Borrow' bk α MyRecord
 recordBor = ...
@@ -91,7 +102,8 @@ otherFieldOfRecordBor :: 'Borrow' bk α (Vector String)
 otherFieldOfRecordBor = recordBor '.#' #otherField
 @
 
-In above example, we annotate type of the divided field borows for clarity, but the type can be inferred by the record type and labels.
+In the above example, we annotate the types of the divided field borrows for clarity, but the types can be inferred from the record type and labels.
+The record type needs one constructor and an instance of linear-generics' t'GL.Generic'.
 
 For more complex, partial splitting of a record, see [Splitting a record borrow into pieces](#split) for more detail.
 -}
@@ -100,7 +112,8 @@ For more complex, partial splitting of a record, see [Splitting a record borrow 
   Borrow bk α r %1 ->
   RecordLabel r field a ->
   Borrow bk α a
-UnsafeAlias !r .# RecLab = UnsafeAlias $! Unsafe.toLinear (getField @field @r @a) r
+UnsafeAlias !r .# RecLab project = UnsafeAlias $! Unsafe.toLinear project r
+{-# INLINE (.#) #-}
 
 infixl 9 .#
 
@@ -196,27 +209,8 @@ class (Lookup l xs ~ 'Just v) => Member l xs v | l xs -> v
 
 instance (Lookup l xs ~ 'Just v) => Member l xs v
 
-type All_ :: (k -> Constraint) -> [k] -> Constraint
-type family All_ c xs where
-  All_ c '[] = ()
-  All_ c (x ': xs) = (c x, All c xs)
-
-type All :: (k -> Constraint) -> [k] -> Constraint
-class (All_ c xs) => All c xs
-
-instance All c '[]
-
-instance (c x, All c xs) => All c (x ': xs)
-
-type family IsFieldOf_ a xs where
-  IsFieldOf_ a '(l, '(_, v)) = HasField l a v
-
-class (IsFieldOf_ a x) => IsFieldOf a x
-
-instance (HasField l a v) => IsFieldOf a '(l, '(m, v))
-
 type SplittableRecord :: Type -> Constraint
-class (All (IsFieldOf a) (Fields a)) => SplittableRecord a where
+class (GL.Generic a, GSplittableRecord (GL.Rep a)) => SplittableRecord a where
   type Fields a :: [(Symbol, (Multiplicity, Type))]
   type Fields a = GFields (GL.Rep a)
 
@@ -240,22 +234,37 @@ instance (GSplittableRecord f) => GSplittableRecord (GL.D1 i f) where
 instance (GSplittableRecord f) => GSplittableRecord (GL.C1 i f) where
   type GFields (GL.C1 i f) = GFields f
 
+instance GSplittableRecord GL.U1 where
+  type GFields GL.U1 = '[]
+
+instance
+  (Unsatisfiable ('Text "A record without constructors cannot be a splittable record")) =>
+  GSplittableRecord GL.V1
+  where
+  type GFields GL.V1 = TypeError ('Text "A record without constructors cannot be a splittable record")
+
 instance
   (Unsatisfiable ('Text "A record field must have a name")) =>
   GSplittableRecord (GL.S1 ('GL.MetaSel 'Nothing unp str str') (GL.K1 i c))
   where
   type GFields (GL.S1 ('GL.MetaSel 'Nothing unp str str') (GL.K1 i c)) = TypeError ('Text "A record field must have a name")
 
+instance
+  (Unsatisfiable ('Text "A record field must have a name")) =>
+  GSplittableRecord (GL.S1 ('GL.MetaSel 'Nothing unp str str') (GL.MP1 m (GL.K1 i c)))
+  where
+  type GFields (GL.S1 ('GL.MetaSel 'Nothing unp str str') (GL.MP1 m (GL.K1 i c))) = TypeError ('Text "A record field must have a name")
+
 type MultOf :: Type -> Multiplicity
 type family MultOf c where
   MultOf (Ur x) = 'Many
   MultOf x = 'One
 
-instance
-  (GSplittableRecord f) =>
-  GSplittableRecord (GL.S1 ('GL.MetaSel ('Just name) unp str str') (GL.K1 i c))
-  where
-  type GFields (GL.S1 ('GL.MetaSel ('Just name) unp str str') (GL.K1 i c)) = '[ '(name, '((MultOf c), c))]
+instance GSplittableRecord (GL.S1 ('GL.MetaSel ('Just name) unp str str') (GL.K1 i c)) where
+  type GFields (GL.S1 ('GL.MetaSel ('Just name) unp str str') (GL.K1 i c)) = '[ '(name, '(MultOf c, c))]
+
+instance GSplittableRecord (GL.S1 ('GL.MetaSel ('Just name) unp str str') (GL.MP1 m (GL.K1 i c))) where
+  type GFields (GL.S1 ('GL.MetaSel ('Just name) unp str str') (GL.MP1 m (GL.K1 i c))) = '[ '(name, '(MultOf c, c))]
 
 instance (GSplittableRecord f, GSplittableRecord g) => GSplittableRecord (f GL.:*: g) where
   type GFields (f GL.:*: g) = GFields f ++ GFields g

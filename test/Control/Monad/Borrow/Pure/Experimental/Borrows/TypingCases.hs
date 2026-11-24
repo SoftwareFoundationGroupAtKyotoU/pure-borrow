@@ -21,6 +21,7 @@ import Control.Functor.Linear qualified as Control
 import Control.Monad.Borrow.Pure.Affine
 import Control.Monad.Borrow.Pure.BO
 import Control.Monad.Borrow.Pure.Experimental.Borrows
+import Data.Ref.Linear qualified as Ref
 import Prelude.Linear
 
 -- | A bundle of lenders is not 'Affine', so it cannot be popped away.
@@ -35,6 +36,10 @@ badLendsConsume = consume
 badLendAff :: Lend α a %1 -> ()
 badLendAff lend = pop (aff lend)
 
+-- | Storing a lender in a 'Ref' does not make it 'Affine' either.
+badRefLendAff :: Lend α a %1 -> Linearly %1 -> ()
+badRefLendAff lend lin = pop (aff (Ref.new lend lin))
+
 -- | The scalar reference: a single lender is not 'Consumable'.
 badLendConsume :: Lend α a %1 -> ()
 badLendConsume = consume
@@ -47,6 +52,17 @@ badLendsConsumeCase = discardingLenders badLendsConsume
 
 badLendAffCase :: Int
 badLendAffCase = discardingLender badLendAff
+
+badRefLendAffCase :: Int
+badRefLendAffCase =
+  linearly \linear -> case dup linear of
+    (linRun, linRef) ->
+      runBO_ linRun Control.do
+        (mut, lend) <- borrowM (42 :: Int)
+        let
+          !() = consume mut
+          !() = badRefLendAff lend linRef
+        Control.pure 0
 
 badLendConsumeCase :: Int
 badLendConsumeCase = discardingLender badLendConsume

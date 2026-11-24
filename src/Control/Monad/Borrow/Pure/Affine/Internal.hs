@@ -22,12 +22,15 @@ import Data.Comonad.Linear qualified as Data
 import Data.Functor.Linear qualified as Data
 import Data.Int
 import Data.Kind
+import Data.List.NonEmpty (NonEmpty)
 import Data.Monoid qualified as Mon
 import Data.Semigroup qualified as Sem
+import Data.Tuple (Solo)
 import Data.Unrestricted.Linear
 import Data.Word
 import GHC.Base
 import Generics.Linear
+import Numeric.Natural (Natural)
 import Prelude.Linear qualified as PL
 import Unsafe.Linear qualified as Unsafe
 
@@ -70,6 +73,7 @@ instance Data.ComonadApply Aff where
   (UnsafeAff f) <@> (UnsafeAff a) = UnsafeAff (f a)
   {-# INLINE (<@>) #-}
 
+-- | Types whose values may be dropped with @'pop' ('aff' x)@ without being consumed.
 type Affine :: Type -> Constraint
 class Affine a where
   aff :: a %1 -> Aff a
@@ -103,6 +107,16 @@ deriving via AsMovable Word16 instance Affine Word16
 deriving via AsMovable Word32 instance Affine Word32
 
 deriving via AsMovable Word64 instance Affine Word64
+
+deriving via AsMovable Double instance Affine Double
+
+deriving via AsMovable Float instance Affine Float
+
+deriving via AsMovable Integer instance Affine Integer
+
+deriving via AsMovable Natural instance Affine Natural
+
+deriving via AsMovable Ordering instance Affine Ordering
 
 newtype AsAffine a = AsAffine a
 
@@ -154,6 +168,10 @@ deriving via GenericallyAffine (Sem.Last a) instance (Affine a) => Affine (Sem.L
 deriving via GenericallyAffine (Sem.Dual a) instance (Affine a) => Affine (Sem.Dual a)
 
 deriving via GenericallyAffine [a] instance (Affine a) => Affine [a]
+
+deriving via GenericallyAffine (NonEmpty a) instance (Affine a) => Affine (NonEmpty a)
+
+deriving via GenericallyAffine (Solo a) instance (Affine a) => Affine (Solo a)
 
 deriving via (Maybe a) instance (Affine a) => Affine (Mon.First a)
 

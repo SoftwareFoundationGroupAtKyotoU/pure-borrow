@@ -200,6 +200,7 @@ unsafeFromMutable =
 
 The complete source is initialized. No immutable alias may be observed after
 this operation because subsequent growth and mutation reuse its storage.
+The elements must be GC-owned, because the vector does not own them and may drop or copy any of them.
 -}
 unsafeFromVector ::
   (G.Vector v a) =>

@@ -218,6 +218,7 @@ fromVector =
 
 The caller must ensure that no alias of the source vector, including an
 overlapping slice, is ever observed again.
+At 'Many, the elements must be GC-owned, because the vector does not own them and may drop or copy any of them.
 -}
 unsafeFromVector ::
   (G.Vector v a) =>

@@ -75,7 +75,7 @@ newtype RecordLabel r field a = RecLab (r -> a)
 -- Nominal throughout: coercing the record, field name, or type could bypass the declared-field check or project at another type.
 type role RecordLabel nominal nominal nominal
 
--- Guard against Template Haskell deriving a representation that drops the record, field name, or field type.
+-- A Generic instance derived for this abstract type would drop the record, field name, or field type.
 instance
   ( Unsatisfiable
       ( 'ShowType (RecordLabel r field a)
@@ -228,7 +228,7 @@ newtype SplitRecord a bk α s = SplitRecord (Borrow bk α a)
 -- Nominal throughout: coercing the field list or the record could hand back a field already split out.
 type role SplitRecord nominal nominal nominal nominal
 
--- Guard against Template Haskell deriving a representation that drops the borrow kind, lifetime, or remaining field list.
+-- A Generic instance derived for this abstract type would drop the borrow kind, lifetime, or remaining field list.
 instance
   ( Unsatisfiable
       ( 'ShowType (SplitRecord a bk α s)

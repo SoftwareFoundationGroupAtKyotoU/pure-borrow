@@ -39,7 +39,7 @@ import Unsafe.Linear qualified as Unsafe
 data Aff a where
   UnsafeAff :: !a %One -> Aff a
 
--- Guard against Template Haskell deriving a representation that allows constructing or unwrapping 'Aff' without 'Affine'.
+-- A Generic instance derived for this abstract type would allow constructing or unwrapping 'Aff' without 'Affine'.
 instance
   ( Unsatisfiable
       ( 'ShowType (Aff a)

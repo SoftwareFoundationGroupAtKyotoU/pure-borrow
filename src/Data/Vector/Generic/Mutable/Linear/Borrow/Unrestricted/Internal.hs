@@ -41,7 +41,7 @@ newtype Vector v a = Vector {content :: G.Mutable v RealWorld a}
 
 type role Vector nominal nominal
 
--- Guard against Template Haskell deriving a representation that exposes the hidden constructor.
+-- A Generic instance derived for this abstract type would expose the hidden constructor.
 instance
   ( Unsatisfiable
       ( 'ShowType (Vector v a)

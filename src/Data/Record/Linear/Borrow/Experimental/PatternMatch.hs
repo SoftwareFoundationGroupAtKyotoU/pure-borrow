@@ -89,7 +89,7 @@ data RecordLabel' r fldVal where
 -- Nominal throughout: coercing the record or field tuple could bypass the declared-field check or project at another type.
 type role RecordLabel' nominal nominal
 
--- Guard against Template Haskell deriving a representation that drops the record, field name, or field type.
+-- A Generic instance derived for this abstract type would drop the record, field name, or field type.
 instance
   ( Unsatisfiable
       ( 'ShowType (RecordLabel' r fldVal)

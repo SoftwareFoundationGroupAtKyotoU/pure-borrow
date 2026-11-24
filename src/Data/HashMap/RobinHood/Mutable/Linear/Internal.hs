@@ -241,7 +241,7 @@ data HashMap k v where
 -- Nominal in the key: the slots are placed by the hash of the key type.
 type role HashMap nominal representational
 
--- Guard against Template Haskell deriving a representation that exposes the hidden constructor.
+-- A Generic instance derived for this abstract type would expose the hidden constructor.
 instance
   ( Unsatisfiable
       ( 'ShowType (HashMap k v)
@@ -282,7 +282,7 @@ data InsertPlan k
       {-# UNPACK #-} !DIB
       !(Maybe DIB)
 
--- Guard against Template Haskell deriving a representation that exposes the hidden constructor.
+-- A Generic instance derived for this abstract type would expose the hidden constructor.
 instance
   ( Unsatisfiable
       ( 'ShowType (InsertPlan k)

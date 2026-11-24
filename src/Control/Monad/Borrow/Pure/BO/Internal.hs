@@ -122,7 +122,7 @@ newtype BO α a = BO (State# (ForBO α) %1 -> (# State# (ForBO α), a #))
 
 type role BO nominal representational
 
--- Guard against Template Haskell deriving a representation that exposes the hidden constructor or 'ForBO'.
+-- A Generic instance derived for this abstract type would expose the hidden constructor or 'ForBO'.
 instance
   ( Unsatisfiable
       ( 'ShowType (BO α a)
@@ -659,7 +659,7 @@ restoreWithEnd a after = BO \s -> case reviveAliasWithEnd# @β a s of
 
 type role Alias nominal representational
 
--- Guard against Template Haskell deriving a representation that drops the borrow kind or lifetime.
+-- A Generic instance derived for this abstract type would drop the borrow kind or lifetime.
 instance
   ( Unsatisfiable
       ( 'ShowType (Alias ak a)

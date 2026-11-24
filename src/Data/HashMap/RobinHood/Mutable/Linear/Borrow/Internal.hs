@@ -34,7 +34,7 @@ import Unsafe.Linear qualified as Unsafe
 newtype HashMap k v = HashMap (Ref (Raw.HashMap k v))
   deriving newtype (LinearOnly, Consumable, Dupable, Clone)
 
--- Guard against Template Haskell deriving a representation that exposes the hidden constructor.
+-- A Generic instance derived for this abstract type would expose the hidden constructor.
 instance
   ( Unsatisfiable
       ( 'ShowType (HashMap k v)
@@ -64,7 +64,7 @@ instance
 -- | A plan that 'Data.HashMap.RobinHood.Mutable.Linear.Borrow.Unsafe.lookupForInsert' made on a miss, good for one 'Data.HashMap.RobinHood.Mutable.Linear.Borrow.Unsafe.unsafeInsertPrepared' into the same table before anything else changes it.
 newtype InsertPlan k = InsertPlan (Raw.InsertPlan k)
 
--- Guard against Template Haskell deriving a representation that exposes the hidden constructor.
+-- A Generic instance derived for this abstract type would expose the hidden constructor.
 instance
   ( Unsatisfiable
       ( 'ShowType (InsertPlan k)

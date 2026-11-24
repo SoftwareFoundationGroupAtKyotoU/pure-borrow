@@ -24,7 +24,7 @@ A typical mutable container:
 - if it is element-owning, materialises into unrestricted form only with `Movable a`, calling `move` on every element (a bare, unused constraint is not enough); a non-element-owning container may freeze its storage in O(1);
 - is disposable: an element-owning container whose elements may be non-`Movable` needs a `Consumable` instance, or users can never get rid of it;
 - has no instance of linear-generics' `Generic` or `Generic1`: `from` and `to` take an owner apart and rebuild it outside its own operations, which makes a second owner of whatever handle it keeps, and so do the `Clone`, `Copyable`, `Dupable` and `DistributesAlias` instances derived from them.
-  linear-generics' Template Haskell derives one even where the constructor is hidden, so rule both out with instances whose context is `Unsatisfiable` (defining `Rep`/`Rep1` as `V1`), as the library's own abstract token, borrow, computation, affine, record-splitter, record-label, vector, hash map, unique-source, and deque types do.
+  A user can derive one even where the constructor is hidden, so rule both out with instances whose context is `Unsatisfiable` (defining `Rep`/`Rep1` as `V1`), as the library's own abstract token, borrow, computation, affine, record-splitter, record-label, vector, hash map, unique-source, and deque types do.
 
 ## Operations on borrows
 

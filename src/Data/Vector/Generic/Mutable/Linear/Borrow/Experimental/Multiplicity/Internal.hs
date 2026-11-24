@@ -52,7 +52,7 @@ type UrVector = Vector Many
 
 type role Vector nominal nominal nominal
 
--- Guard against Template Haskell deriving a representation that exposes the hidden constructor or drops the multiplicity parameter.
+-- A Generic instance derived for this abstract type would expose the hidden constructor or drop the multiplicity parameter.
 instance
   ( Unsatisfiable
       ( 'ShowType (Vector p v a)

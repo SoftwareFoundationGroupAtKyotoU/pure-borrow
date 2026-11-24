@@ -56,7 +56,7 @@ type role Header nominal
 
 type role GrowableVector nominal
 
--- Guard against Template Haskell deriving a representation that exposes the hidden constructor.
+-- A Generic instance derived for this abstract type would expose the hidden constructor.
 instance
   ( Unsatisfiable
       ( 'ShowType (GrowableVector a)

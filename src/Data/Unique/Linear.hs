@@ -43,7 +43,7 @@ data UniqueSource where
   UniqueSource :: !Int %1 -> !Int %1 -> !Int %1 -> UniqueSource
   deriving (Show, NL.Eq, NL.Ord)
 
--- Guard against Template Haskell deriving a representation that allows constructing duplicate unique sources without 'Linearly'.
+-- A Generic instance derived for this abstract type would allow constructing duplicate unique sources without 'Linearly'.
 instance
   ( Unsatisfiable
       ( 'ShowType UniqueSource

@@ -111,7 +111,7 @@ instance LinearOnly (Now α) where
   linearOnly = UnsafeLinearOnly
   {-# INLINE linearOnly #-}
 
--- Guard against Template Haskell deriving a representation that drops the lifetime parameter.
+-- A Generic instance derived for this abstract type would drop the lifetime parameter.
 instance
   ( Unsatisfiable
       ( 'ShowType (Now α)
@@ -161,7 +161,7 @@ pattern UnsafeEnd <- UnsafeEndToken !_
 instance (α >= β) => EndToken α <: EndToken β where
   subtype = UnsafeSubtype
 
--- Guard against Template Haskell deriving a representation that drops the lifetime parameter.
+-- A Generic instance derived for this abstract type would drop the lifetime parameter.
 instance
   ( Unsatisfiable
       ( 'ShowType (EndToken α)
@@ -350,7 +350,7 @@ instance LinearOnly Linearly where
   linearOnly = UnsafeLinearOnly
   {-# INLINE linearOnly #-}
 
--- Guard against Template Haskell deriving a representation that hides the linearity token.
+-- A Generic instance derived for this abstract type would hide the linearity token.
 instance
   ( Unsatisfiable
       ( 'ShowType Linearly

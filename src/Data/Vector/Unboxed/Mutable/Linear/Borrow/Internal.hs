@@ -42,7 +42,7 @@ newtype Vector a = Vector {content :: UM.IOVector a}
 
 type role Vector nominal
 
--- Guard against Template Haskell deriving a representation that exposes the hidden constructor.
+-- A Generic instance derived for this abstract type would expose the hidden constructor.
 instance
   ( Unsatisfiable
       ( 'ShowType (Vector a)

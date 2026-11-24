@@ -53,7 +53,7 @@ data ChaseLevDeq a = CL
   , estimatedSize :: {-# UNPACK #-} !(PrimVar RealWorld Int)
   }
 
--- Guard against Template Haskell deriving a representation that exposes the hidden constructor and internal synchronization primitives.
+-- A Generic instance derived for this abstract type would expose the hidden constructor and internal synchronization primitives.
 instance
   ( Unsatisfiable
       ( 'ShowType (ChaseLevDeq a)

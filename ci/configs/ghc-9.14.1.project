@@ -4,6 +4,7 @@
 -- Please place this file next to your .cabal file as cabal.config
 -- To only use tested packages, uncomment the following line:
 -- remote-repo: stackage-nightly-2026-04-24:http://www.stackage.org/nightly-2026-04-24
+-- linear-base is 0.8.1, not the snapshot's 0.7.0, so CI covers both ends of its bound.
 import: ../../cabal.project
 with-compiler: ghc-9.14.1
 constraints:
@@ -1740,7 +1741,7 @@ constraints:
   lift-generics ==0.3.1,
   lift-type ==0.1.2.0,
   linear ==1.23.3,
-  linear-base ==0.7.0,
+  linear-base ==0.8.1,
   linear-circuit ==0.1.0.4,
   linear-generics ==0.2.3,
   linear-geo ==0.1.0.0,

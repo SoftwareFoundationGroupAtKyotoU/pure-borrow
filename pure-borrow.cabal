@@ -3,8 +3,8 @@ name: pure-borrow
 version: 0.2.0.0
 synopsis: Rust-style borrowing in Linear Haskell with purity
 description:
-  This package realizes rust-style borrowing in Linear Haskell with purity and concurrency support.
-  See "Control.Monad.Borrow.Pure" for the main API documentation, and see our paper [/Pure Borrowing: Linear Haskell Meets Rust-Style Borrowing/](https://arxiv.org/abs/2604.15290) by Y. Matsushita and H. Ishii for the details.
+  This package realizes Rust-style borrowing in Linear Haskell with purity and concurrency support.
+  See "Control.Monad.Borrow.Pure" for the main API documentation, and see our paper [/Pure Borrow: Linear Haskell Meets Rust-Style Borrowing/](https://arxiv.org/abs/2604.15290) by Y. Matsushita and H. Ishii for the details.
 
 license: BSD-3-Clause
 license-file: LICENSE
@@ -68,11 +68,11 @@ common base-defaults
     -Wredundant-constraints
     -Wunused-packages
 
-  build-depends: base >=4.17 && <5
+  build-depends: base >=4.20.1 && <5
 
 common defaults
   import: base-defaults
-  build-depends: linear-base >=0.7
+  build-depends: linear-base >=0.7 && <0.9
 
 common examples
   import: defaults
@@ -252,7 +252,7 @@ test-suite pure-borrow-test
   build-depends:
     containers,
     deepseq,
-    falsify,
+    falsify >=0.2 && <0.4,
     hashable,
     linear-generics,
     pure-borrow,

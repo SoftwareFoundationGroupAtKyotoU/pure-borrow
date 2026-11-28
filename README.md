@@ -30,5 +30,5 @@ See [agent-plugins/README.md](https://github.com/SoftwareFoundationGroupAtKyotoU
 ## Publication(s)
 
 - Y. Matsushita and H. Ishii, *Pure Borrow: Linear Haskell Meets Rust-Style Borrowing*, 2026. 
-  To appear in: PLDI 2026. Boulder, Colorado, USA, June 15-19. DOI: [10.1145/3808259](https://doi.org/10.1145/3808259). Extended Version: [arxiv:2604.15290](https://arxiv.org/abs/2604.15290).
+  In: PLDI 2026. Boulder, Colorado, USA, June 15-19. DOI: [10.1145/3808259](https://doi.org/10.1145/3808259). Extended Version: [arxiv:2604.15290](https://arxiv.org/abs/2604.15290).
 - Y. Matsushita and H. Ishii, *Artifact for PLDI 2026 "Pure Borrow: Linear Haskell Meets Rust-Style Borrowing"*, 2026. Zenodo: https://zenodo.org/records/19622061.

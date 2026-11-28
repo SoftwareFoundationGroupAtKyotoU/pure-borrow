@@ -72,7 +72,7 @@ common base-defaults
 
 common defaults
   import: base-defaults
-  build-depends: linear-base >=0.7
+  build-depends: linear-base >=0.7 && <0.9
 
 common examples
   import: defaults

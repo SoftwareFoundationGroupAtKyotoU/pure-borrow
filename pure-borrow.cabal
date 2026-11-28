@@ -68,7 +68,7 @@ common base-defaults
     -Wredundant-constraints
     -Wunused-packages
 
-  build-depends: base >=4.17 && <5
+  build-depends: base >=4.20.1 && <5
 
 common defaults
   import: base-defaults

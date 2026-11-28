@@ -2,7 +2,7 @@
 
 ## 0.2.0.0 - unreleased
 
-Each breaking change closes a soundness hole: a program that typechecks against 0.1.0.0 using only the safe modules and breaks an invariant of the library.
+Each breaking change, except the overlap with orphan instances, closes a soundness hole: a program that typechecks against 0.1.0.0 using only the safe modules and breaks an invariant of the library.
 
 ### Breaking changes
 
@@ -21,6 +21,9 @@ Each breaking change closes a soundness hole: a program that typechecks against 
 - `nowStatic :: BO α (Now Static)` replaces the top-level `nowStatic :: Now Static`, and has moved to `Control.Monad.Borrow.Pure.BO`.
   The previous, pure `nowStatic` could unsoundly let a `Linearly` token spill into a non-linear context.
 - Fix the bug where the subtyping relation `(<:)` wrongly made `Many` a subtype of `One`, which allowed any nonlinear function to be unsoundly upcast into a linear one.
+  An `upcast` between function types whose multiplicities it cannot compare, such as two different variables, is rejected with "Cannot satisfy: multiplicity … <= …"; require the upcast itself in the signature instead, as in `((a %p -> b) <: (a %q -> b))`.
+  The orphan instance of `Data.Type.Ord.Compare` for multiplicities is removed.
+- A `(<:)` instance derived via a type requires that type to be representationally equal to the instance's target, since deriving one via its source, such as `Mut α R <: Mut Static R` via `Mut α R`, lengthened a borrow to `Static`.
 - `Control.Monad.Borrow.Pure.Experimental.Loop.foldBorrowOf` is removed: it ran the `Fold` purely on the value behind a borrow, so reads of a mutable container were not ordered by `BO` and could see writes made after the borrow's lifetime.
   Replace `foldBorrowOf fld` with `foldBorrowVia sp` for a splitter `sp` such as `Control.Monad.Borrow.Pure.split`.
   `foldBorrow`, which was `foldBorrowOf foldMap` with the `foldMap` of the same module, is now `foldBorrowVia split`, so it requires `DistributesAlias t`.
